@@ -10,6 +10,7 @@ type ListModuleAction struct {
 	BeforeAction func(c *gin.Context) error
 	AfterAction  func(c *gin.Context)
 	Label        string                                       `json:"label"`
+	Labels       map[string]string                              `json:"-"`
 	Columns      []pg.Column                                  `json:"-"`
 	ColumnsFunc  func(c *gin.Context) []pg.Column             `json:"-"`
 	Size         int64                                        `json:"size,omitempty"`

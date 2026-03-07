@@ -9,6 +9,7 @@ import (
 	pg "github.com/go-jet/jet/v2/postgres"
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/go-ozzo/ozzo-validation/v4/is"
+	"github.com/portalenergy/pe-request-generator/locale"
 )
 
 const (
@@ -99,6 +100,7 @@ type ModuleField struct {
 	Column               pg.Column                                       `json:"-"`
 	SelectExpression     pg.Projection                                   `json:"-"`
 	Title                string                                          `json:"title"`
+	Titles               map[string]string                               `json:"-"`
 	Type                 ModuleFieldType                                 `json:"type"`
 	FormType             ModuleFieldFormType                             `json:"form_type,omitempty"`
 	Example              string                                          `json:"example,omitempty"`
@@ -148,6 +150,7 @@ func (f ModuleField) NewScanValue() interface{} {
 type ModuleFilterField struct {
 	Column   pg.Column                                    `json:"-"`
 	Title    string                                       `json:"title"`
+	Titles   map[string]string                            `json:"-"`
 	Type     ModuleFieldType                              `json:"type"`
 	FormType ModuleFieldFormType                          `json:"form_type,omitempty"`
 	Example  string                                       `json:"example,omitempty"`
@@ -164,12 +167,13 @@ func (f ModuleFilterField) ColumnName() string {
 }
 
 type ModuleFieldOptions struct {
-	Value interface{} `json:"value"`
-	Label string      `json:"label"`
+	Value  interface{}       `json:"value"`
+	Label  string            `json:"label"`
+	Labels map[string]string `json:"-"`
 }
 
 type CheckRules interface {
-	Validate(obj interface{}) error
+	Validate(obj interface{}, lang string) error
 	GetScenarios() []Scenario
 }
 
@@ -267,11 +271,11 @@ func (rule lengthRule) GetScenarios() []Scenario {
 	return rule.Scenarios
 }
 
-func (rule requiredRule) Validate(obj interface{}) error {
-	return validation.Required.Error(fmt.Sprintf("%s - не может быть пустым", rule.Field)).Validate(obj)
+func (rule requiredRule) Validate(obj interface{}, lang string) error {
+	return validation.Required.Error(fmt.Sprintf(locale.Message(locale.Lang(lang), "required"), rule.Field)).Validate(obj)
 }
 
-func (rule inRule) Validate(obj interface{}) error {
+func (rule inRule) Validate(obj interface{}, lang string) error {
 	if obj == nil {
 		return nil
 	}
@@ -279,23 +283,23 @@ func (rule inRule) Validate(obj interface{}) error {
 	for _, validationVal := range rule.Values {
 		stringValues = append(stringValues, fmt.Sprintf("%v", validationVal))
 	}
-	return validation.In(stringValues...).Error(fmt.Sprintf("%s - должен быть одним из %v", rule.Field, rule.Values)).Validate(fmt.Sprintf("%v", obj))
+	return validation.In(stringValues...).Error(fmt.Sprintf(locale.Message(locale.Lang(lang), "in"), rule.Field, rule.Values)).Validate(fmt.Sprintf("%v", obj))
 }
 
-func (rule emailRule) Validate(obj interface{}) error {
-	return is.Email.Error(fmt.Sprintf("%s неправильный Email адрес", rule.Field)).Validate(obj)
+func (rule emailRule) Validate(obj interface{}, lang string) error {
+	return is.Email.Error(fmt.Sprintf(locale.Message(locale.Lang(lang), "email"), rule.Field)).Validate(obj)
 }
 
-func (rule urlRule) Validate(obj interface{}) error {
-	return is.URL.Error(fmt.Sprintf("%s неправильный URL адрес", rule.Field)).Validate(obj)
+func (rule urlRule) Validate(obj interface{}, lang string) error {
+	return is.URL.Error(fmt.Sprintf(locale.Message(locale.Lang(lang), "url"), rule.Field)).Validate(obj)
 }
 
-func (rule lengthRule) Validate(obj interface{}) error {
+func (rule lengthRule) Validate(obj interface{}, lang string) error {
 	return validation.Length(
 		rule.Min,
 		rule.Max,
 	).Error(
-		fmt.Sprintf("%s должен быть в пределах %v - %v", rule.Field, rule.Min, rule.Max),
+		fmt.Sprintf(locale.Message(locale.Lang(lang), "length"), rule.Field, rule.Min, rule.Max),
 	).Validate(obj)
 }
 

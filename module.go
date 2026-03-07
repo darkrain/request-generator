@@ -10,6 +10,7 @@ import (
 type BaseModule struct {
 	Name           string                     `json:"name"`
 	Label          string                     `json:"label"`
+	Labels         map[string]string          `json:"-"`
 	Table          pg.Table                   `json:"-"`
 	PrimaryKey     pg.Column                  `json:"-"`
 	Path           string                     `json:"path"`
