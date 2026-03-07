@@ -209,6 +209,19 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 
 		ctx := c.Request.Context()
 		l, _ := icontext.GetLogger(ctx)
+		role := actions.GetRoleFromContext(c)
+
+		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
+			if err := hook(c); err != nil {
+				response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+				return
+			}
+		}
+		defer func() {
+			if hook := actions.ResolveRoleAfterHook(module.RoleAfterHook, role); hook != nil {
+				hook(c)
+			}
+		}()
 
 		err := action.BeforeRequest(c)
 		if err != nil {
@@ -234,8 +247,21 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 		}
 
 		var where pg.BoolExpression
+		if whereFn := actions.ResolveRoleWhere(module.RoleWhere, role); whereFn != nil {
+			where = whereFn(c)
+		}
 		if action.Where != nil {
-			where = action.Where(c)
+			actionWhere := action.Where(c)
+			if where != nil {
+				where = pg.AND(where, actionWhere)
+			} else {
+				where = actionWhere
+			}
+		}
+
+		joins := action.Join
+		if roleJoins := actions.ResolveRoleJoin(module.RoleJoin, role); roleJoins != nil {
+			joins = append(roleJoins, joins...)
 		}
 
 		results, count, err := generator.db(module).List(
@@ -249,7 +275,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			searchText,
 			filters,
 			where,
-			action.Join,
+			joins,
 		)
 
 		if err != nil {
@@ -282,6 +308,13 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 					if realField.OptionsFunc != nil {
 						for _, item := range realField.OptionsFunc(c) {
 							options = append(options, item)
+						}
+					}
+					roleStr := string(actions.GetRoleFromContext(c))
+					for _, ro := range realField.RoleOptions {
+						if ro.Role == roleStr || ro.Role == string(actions.RoleAll) {
+							options = append(options, ro.Options...)
+							break
 						}
 					}
 
@@ -380,6 +413,19 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		l, _ := icontext.GetLogger(ctx)
+		role := actions.GetRoleFromContext(c)
+
+		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
+			if err := hook(c); err != nil {
+				response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+				return
+			}
+		}
+		defer func() {
+			if hook := actions.ResolveRoleAfterHook(module.RoleAfterHook, role); hook != nil {
+				hook(c)
+			}
+		}()
 
 		err := action.BeforeRequest(c)
 		if err != nil {
@@ -441,6 +487,8 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 
 		output := make([]fields.ModuleField, 0, 10)
 
+		role := string(actions.GetRoleFromContext(c))
+
 		for _, field := range module.Fields {
 			checkItems := make([]fields.CheckRules, 0, 10)
 			optionItems := make([]fields.ModuleFieldOptions, 0, 10)
@@ -455,6 +503,12 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 					optionItems = append(optionItems, option)
 				}
 			}
+			for _, ro := range field.RoleOptions {
+				if ro.Role == role || ro.Role == string(actions.RoleAll) {
+					optionItems = append(optionItems, ro.Options...)
+					break
+				}
+			}
 
 			if field.Check != nil {
 				for _, check := range field.Check {
@@ -466,6 +520,13 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 					checkItems = append(checkItems, check)
 				}
 			}
+			for _, rc := range field.RoleCheck {
+				if rc.Role == role || rc.Role == string(actions.RoleAll) {
+					checkItems = append(checkItems, rc.Rules...)
+					break
+				}
+			}
+
 			field.Options = optionItems
 			field.Check = checkItems
 
@@ -482,6 +543,19 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		l, _ := icontext.GetLogger(ctx)
+		role := actions.GetRoleFromContext(c)
+
+		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
+			if err := hook(c); err != nil {
+				response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+				return
+			}
+		}
+		defer func() {
+			if hook := actions.ResolveRoleAfterHook(module.RoleAfterHook, role); hook != nil {
+				hook(c)
+			}
+		}()
 
 		err := action.BeforeRequest(c)
 		if err != nil {
@@ -491,7 +565,6 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 
 		whereKey := c.Param("bykey")
 
-		// Validate that bykey is one of the allowed columns
 		allowedKeys := make([]interface{}, 0, len(action.By))
 		for _, col := range action.By {
 			allowedKeys = append(allowedKeys, col.Name())
@@ -521,12 +594,10 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			}
 		}
 
-		// Build WHERE condition from bykey/value
 		where := pg.RawBool(
 			fmt.Sprintf(`%s."%s" = #val`, module.Table.Alias(), whereKey),
 			pg.RawArgs{"#val": whereValue},
 		)
-		// If table has no alias, use table name
 		if module.Table.Alias() == "" {
 			where = pg.RawBool(
 				fmt.Sprintf(`"%s"."%s" = #val`, module.Table.TableName(), whereKey),
@@ -534,7 +605,12 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			)
 		}
 
-		result, err := generator.db(module).View(l, module.Table, module.PrimaryKey, realFields, where, action.Join)
+		joins := action.Join
+		if roleJoins := actions.ResolveRoleJoin(module.RoleJoin, role); roleJoins != nil {
+			joins = append(roleJoins, joins...)
+		}
+
+		result, err := generator.db(module).View(l, module.Table, module.PrimaryKey, realFields, where, joins)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
@@ -550,6 +626,19 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		l, _ := icontext.GetLogger(ctx)
+		role := actions.GetRoleFromContext(c)
+
+		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
+			if err := hook(c); err != nil {
+				response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+				return
+			}
+		}
+		defer func() {
+			if hook := actions.ResolveRoleAfterHook(module.RoleAfterHook, role); hook != nil {
+				hook(c)
+			}
+		}()
 
 		err := action.BeforeRequest(c)
 		if err != nil {
@@ -624,6 +713,19 @@ func (generator *Generator) actionDelete(module *BaseModule, action actions.Dele
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		l, _ := icontext.GetLogger(ctx)
+		role := actions.GetRoleFromContext(c)
+
+		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
+			if err := hook(c); err != nil {
+				response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+				return
+			}
+		}
+		defer func() {
+			if hook := actions.ResolveRoleAfterHook(module.RoleAfterHook, role); hook != nil {
+				hook(c)
+			}
+		}()
 
 		err := action.BeforeRequest(c)
 		if err != nil {

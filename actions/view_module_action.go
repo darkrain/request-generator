@@ -17,6 +17,7 @@ type ViewModuleAction struct {
 	Join         []ModuleActionJoin `json:"join"`
 	By           []pg.Column        `json:"-"`
 	Extra        interface{}        `json:"extra"`
+	Fields       []RoleContext      `json:"-"`
 }
 
 func (action ViewModuleAction) Action() ModuleActionName {
@@ -39,6 +40,12 @@ func (action ViewModuleAction) AfterRequest(c *gin.Context) {
 }
 
 func (action ViewModuleAction) GetColumns(c *gin.Context) []pg.Column {
+	if len(action.Fields) > 0 {
+		role := GetRoleFromContext(c)
+		if cols := ResolveRoleColumns(action.Fields, role); cols != nil {
+			return cols
+		}
+	}
 	if action.ColumnsFunc != nil {
 		return action.ColumnsFunc(c)
 	}

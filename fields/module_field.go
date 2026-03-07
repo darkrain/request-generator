@@ -85,6 +85,16 @@ const (
 	ScenarioUpdate Scenario = "update"
 )
 
+type RoleCheck struct {
+	Role  string
+	Rules []CheckRules
+}
+
+type RoleOptions struct {
+	Role    string
+	Options []ModuleFieldOptions
+}
+
 type ModuleField struct {
 	Column               pg.Column                                       `json:"-"`
 	SelectExpression     pg.Projection                                   `json:"-"`
@@ -94,8 +104,10 @@ type ModuleField struct {
 	Example              string                                          `json:"example,omitempty"`
 	Options              []ModuleFieldOptions                            `json:"options,omitempty"`
 	OptionsFunc          func(context *gin.Context) []ModuleFieldOptions `json:"-"`
+	RoleOptions          []RoleOptions                                   `json:"-"`
 	Check                []CheckRules                                    `json:"check,omitempty"`
 	CheckFunc            func(context *gin.Context) []CheckRules         `json:"-"`
+	RoleCheck            []RoleCheck                                     `json:"-"`
 	Convert              func(value interface{}) (interface{}, error)    `json:"-"`
 	ResultValueConverter func(value interface{}) interface{}             `json:"-"`
 }

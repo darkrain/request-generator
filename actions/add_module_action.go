@@ -12,8 +12,9 @@ type AddModuleAction struct {
 	Label        string                           `json:"label"`
 	Columns      []pg.Column                      `json:"-"`
 	ColumnsFunc  func(c *gin.Context) []pg.Column `json:"-"`
-	Permission   []Role      `json:"permission"`
-	Auth         bool        `json:"auth"`
+	Permission   []Role        `json:"permission"`
+	Auth         bool          `json:"auth"`
+	Fields       []RoleContext `json:"-"`
 }
 
 func (action AddModuleAction) Action() ModuleActionName {
@@ -36,6 +37,12 @@ func (action AddModuleAction) AfterRequest(c *gin.Context) {
 }
 
 func (action AddModuleAction) GetColumns(c *gin.Context) []pg.Column {
+	if len(action.Fields) > 0 {
+		role := GetRoleFromContext(c)
+		if cols := ResolveRoleColumns(action.Fields, role); cols != nil {
+			return cols
+		}
+	}
 	if action.ColumnsFunc != nil {
 		return action.ColumnsFunc(c)
 	}
