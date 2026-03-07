@@ -106,6 +106,7 @@ func (db *DB) List(
 	}
 
 	// Build WHERE conditions
+	tableRef := table.TableName()
 	var conditions []pg.BoolExpression
 	if where != nil {
 		conditions = append(conditions, where)
@@ -117,7 +118,7 @@ func (db *DB) List(
 		for _, col := range searchColumns {
 			searchConds = append(searchConds,
 				pg.RawBool(
-					fmt.Sprintf(`LOWER(parent."%s"::text) LIKE '%%' || #search || '%%'`, col.Name()),
+					fmt.Sprintf(`LOWER(%s."%s"::text) LIKE '%%' || #search || '%%'`, tableRef, col.Name()),
 					pg.RawArgs{"#search": strings.ToLower(searchText)},
 				),
 			)
@@ -139,7 +140,7 @@ func (db *DB) List(
 			} else {
 				conditions = append(conditions,
 					pg.RawBool(
-						fmt.Sprintf(`parent."%s" = #val`, key),
+						fmt.Sprintf(`%s."%s" = #val`, tableRef, key),
 						pg.RawArgs{"#val": value},
 					),
 				)

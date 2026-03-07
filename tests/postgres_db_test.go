@@ -51,7 +51,7 @@ func newTestTable() testTable {
 	all := postgres.ColumnList{id, name, email, age, role}
 
 	return testTable{
-		Table: postgres.NewTable("public", "test_items", "parent", all...),
+		Table: postgres.NewTable("public", "test_items", "", all...),
 		ID:    id,
 		Name:  name,
 		Email: email,
@@ -203,7 +203,7 @@ func TestView(t *testing.T) {
 	seedItem(t, "Bob", "bob@test.com", 30, "admin")
 
 	mf := testModuleFields()
-	where := postgres.RawBool(`parent."id" = #id`, postgres.RawArgs{"#id": 1})
+	where := postgres.RawBool(`test_items."id" = #id`, postgres.RawArgs{"#id": 1})
 
 	result, err := testDB.View(testLog, tbl, tbl.ID, mf, where, nil)
 	require.NoError(t, err)
@@ -220,7 +220,7 @@ func TestViewNotFound(t *testing.T) {
 	cleanTable(t)
 
 	mf := testModuleFields()
-	where := postgres.RawBool(`parent."id" = #id`, postgres.RawArgs{"#id": 999})
+	where := postgres.RawBool(`test_items."id" = #id`, postgres.RawArgs{"#id": 999})
 
 	_, err := testDB.View(testLog, tbl, tbl.ID, mf, where, nil)
 	assert.Error(t, err)
@@ -303,7 +303,7 @@ func TestListWhere(t *testing.T) {
 	seedItem(t, "Bob", "bob@test.com", 30, "user")
 
 	mf := testModuleFields()
-	where := postgres.RawBool(`parent."age" > #age`, postgres.RawArgs{"#age": 26})
+	where := postgres.RawBool(`test_items."age" > #age`, postgres.RawArgs{"#age": 26})
 
 	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, 0, 100, nil, "", nil, where, nil)
 	require.NoError(t, err)
@@ -400,7 +400,7 @@ func TestListWithJoin(t *testing.T) {
 	join := actions.ModuleActionJoin{
 		Table:           tagsTable,
 		Type:            actions.JoinTypeLeft,
-		OnCondition:     postgres.RawBool(`parent."id" = tags."item_id"`, nil),
+		OnCondition:     postgres.RawBool(`test_items."id" = tags."item_id"`, nil),
 		Columns:         []postgres.Column{tagCol},
 		ResultArrayName: "tags",
 	}
