@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS test_tags;
+DROP TABLE IF EXISTS test_items;

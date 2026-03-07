@@ -1,15 +1,18 @@
 package actions
 
-import "github.com/gin-gonic/gin"
+import (
+	"github.com/gin-gonic/gin"
+	pg "github.com/go-jet/jet/v2/postgres"
+)
 
 type DeleteModuleAction struct {
 	ModuleAction
 	BeforeAction func(c *gin.Context) error
 	AfterAction  func(c *gin.Context)
-	Label        string        `json:"label"`
-	Permission   []string      `json:"permission"`
-	Auth         bool          `json:"auth"`
-	By           []interface{} `json:"by"`
+	Label        string      `json:"label"`
+	Permission   []Role      `json:"permission"`
+	Auth         bool        `json:"auth"`
+	By           []pg.Column `json:"-"`
 }
 
 func (action DeleteModuleAction) Action() ModuleActionName {
@@ -29,4 +32,8 @@ func (action DeleteModuleAction) AfterRequest(c *gin.Context) {
 	}
 
 	action.AfterAction(c)
+}
+
+func (action DeleteModuleAction) GetColumns(c *gin.Context) []pg.Column {
+	return nil
 }

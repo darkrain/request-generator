@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	pg "github.com/go-jet/jet/v2/postgres"
 	"github.com/portalenergy/pe-request-generator/actions"
 	"github.com/portalenergy/pe-request-generator/fields"
 )
@@ -30,14 +31,14 @@ func (generator *Generator) normalizeFilters(data map[string]string, module *Bas
 
 	filters := make(map[string]fields.ModuleField)
 	for _, realField := range module.Fields {
-		if containsStrings(listAction.Filter, realField.Name) {
-			filters[realField.Name] = realField
+		if containsColumn(listAction.Filter, realField.Column) {
+			filters[realField.ColumnName()] = realField
 		}
 	}
 
 parentLoop:
 	for _, filter := range filters {
-		filterValue, ok := data[filter.Name]
+		filterValue, ok := data[filter.ColumnName()]
 		if !ok || len(filterValue) == 0 {
 			continue
 		}
@@ -48,7 +49,7 @@ parentLoop:
 			}
 		}
 
-		resultFilterMap[filter.Name] = filterValue
+		resultFilterMap[filter.ColumnName()] = filterValue
 	}
 
 	for key, value := range data {
@@ -69,12 +70,12 @@ func (generator *Generator) checkRequest(
 	scenario fields.Scenario,
 ) map[string]string {
 	errs := make(map[string]string)
-	actionFields := action.GetFields()
-	fmt.Println("fields: ", actionFields)
+	actionColumns := action.GetColumns(context)
 
-	for _, fieldName := range actionFields {
-		value := data[fieldName]
-		field := module.GetField(fieldName)
+	for _, col := range actionColumns {
+		colName := col.Name()
+		value := data[colName]
+		field := module.GetField(colName)
 		if field == nil {
 			continue
 		}
@@ -84,14 +85,14 @@ func (generator *Generator) checkRequest(
 		for _, rule := range rules {
 			err := rule.Validate(value)
 			if err != nil {
-				errs[fieldName] = err.Error()
+				errs[colName] = err.Error()
 			}
 		}
 
 		if field.Convert != nil && value != nil {
 			_, err := field.Convert(value)
 			if err != nil {
-				errs[fieldName] = err.Error()
+				errs[colName] = err.Error()
 			}
 		}
 	}
@@ -102,21 +103,22 @@ func (generator *Generator) checkRequest(
 func (generator *Generator) mapRequestInput(
 	data map[string]interface{},
 	module *BaseModule,
-	actionFields []string,
+	actionColumns []pg.Column,
 ) map[string]interface{} {
 	output := make(map[string]interface{})
 
 	for _, field := range module.Fields {
-		value, ok := data[field.Name]
-		if ok && containsStrings(actionFields, field.Name) {
+		colName := field.ColumnName()
+		value, ok := data[colName]
+		if ok && containsColumn(actionColumns, field.Column) {
 			if field.Convert != nil {
 				convertedValue, err := field.Convert(value)
 				if err != nil {
 					continue
 				}
-				output[field.Name] = convertedValue
+				output[colName] = convertedValue
 			} else {
-				output[field.Name] = value
+				output[colName] = value
 			}
 		}
 	}
@@ -145,18 +147,13 @@ func int64QueryParam(c *gin.Context, param string, defaultValue int64) int64 {
 
 	result, err := strconv.ParseInt(resultString, 0, 10)
 	if err != nil {
-		fmt.Println("PARSE INT ERR: ", err)
+		_ = err
 		return defaultValue
 	}
 
 	return result
 }
 
-func containsStrings(coll []string, item string) bool {
-	for _, a := range coll {
-		if a == item {
-			return true
-		}
-	}
-	return false
+func containsColumn(columns []pg.Column, target pg.Column) bool {
+	return fields.ContainsColumn(columns, target)
 }

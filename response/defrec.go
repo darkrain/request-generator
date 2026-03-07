@@ -12,7 +12,7 @@ type DefrecResponse struct {
 func NewDefrecResponse(Extra interface{}, fields []f.ModuleField) DefrecResponse {
 	fieldsMap := make(map[string]f.ModuleField)
 	for _, field := range fields {
-		fieldsMap[field.Name] = field
+		fieldsMap[field.ColumnName()] = field
 	}
 
 	return DefrecResponse{

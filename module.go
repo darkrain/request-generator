@@ -2,6 +2,7 @@ package module
 
 import (
 	"github.com/gin-gonic/gin"
+	pg "github.com/go-jet/jet/v2/postgres"
 	"github.com/portalenergy/pe-request-generator/actions"
 	"github.com/portalenergy/pe-request-generator/fields"
 )
@@ -9,21 +10,25 @@ import (
 type BaseModule struct {
 	Name       string                     `json:"name"`
 	Label      string                     `json:"label"`
-	TableName  string                     `json:"table_name"`
-	PrimaryKey string                     `json:"primary_key"`
+	Table      pg.Table                   `json:"-"`
+	PrimaryKey pg.Column                  `json:"-"`
 	Path       string                     `json:"path"`
 	Fields     []fields.ModuleField       `json:"fields"`
 	Defrec     actions.DefrecModuleAction `json:"defrec"`
 	Actions    []actions.ModuleAction     `json:"actions"`
 }
 
-func (module BaseModule) GetField(fieldName string) *fields.ModuleField {
+func (module BaseModule) GetField(columnName string) *fields.ModuleField {
 	for _, field := range module.Fields {
-		if field.Name == fieldName {
+		if field.ColumnName() == columnName {
 			return &field
 		}
 	}
 	return nil
+}
+
+func (module BaseModule) GetFieldByColumn(col pg.Column) *fields.ModuleField {
+	return module.GetField(col.Name())
 }
 
 func (module BaseModule) GetRules(context *gin.Context, field fields.ModuleField, scenario fields.Scenario) []fields.CheckRules {

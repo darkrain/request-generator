@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/gin-gonic/gin"
+	pg "github.com/go-jet/jet/v2/postgres"
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/go-ozzo/ozzo-validation/v4/is"
 )
@@ -49,6 +50,8 @@ const (
 	ModuleFieldFormTypeCheckBox    ModuleFieldFormType = "checkbox"
 	ModuleFieldFormTypeMultiselect ModuleFieldFormType = "multiselect"
 	ModuleFieldFormTypeMap         ModuleFieldFormType = "map"
+	ModuleFieldFormTypeHidden      ModuleFieldFormType = "hidden"
+	ModuleFieldFormTypeOnlyView    ModuleFieldFormType = "onlyview"
 )
 
 func ModuleFieldFormTypeOf(value string) (ModuleFieldFormType, error) {
@@ -67,6 +70,10 @@ func ModuleFieldFormTypeOf(value string) (ModuleFieldFormType, error) {
 		return ModuleFieldFormTypeMultiselect, nil
 	case string(ModuleFieldFormTypeMap):
 		return ModuleFieldFormTypeMap, nil
+	case string(ModuleFieldFormTypeHidden):
+		return ModuleFieldFormTypeHidden, nil
+	case string(ModuleFieldFormTypeOnlyView):
+		return ModuleFieldFormTypeOnlyView, nil
 	}
 	return ModuleFieldFormTypeMap, errors.New(ErrorUnknownFormType)
 }
@@ -79,9 +86,8 @@ const (
 )
 
 type ModuleField struct {
-	ScanObject           sql.Scanner                                     `json:"-"`
-	Name                 string                                          `json:"-"`
-	SelectFunction       *string                                         `json:"-"`
+	Column               pg.Column                                       `json:"-"`
+	SelectExpression     pg.Projection                                   `json:"-"`
 	Title                string                                          `json:"title"`
 	Type                 ModuleFieldType                                 `json:"type"`
 	FormType             ModuleFieldFormType                             `json:"form_type,omitempty"`
@@ -94,16 +100,55 @@ type ModuleField struct {
 	ResultValueConverter func(value interface{}) interface{}             `json:"-"`
 }
 
+// ColumnName returns the database column name from the Jet column.
+func (f ModuleField) ColumnName() string {
+	if f.Column != nil {
+		return f.Column.Name()
+	}
+	return ""
+}
+
+// GetProjection returns the SELECT expression for this field.
+// If SelectExpression is set (e.g. a function wrapper), it is used instead of the raw column.
+func (f ModuleField) GetProjection() pg.Projection {
+	if f.SelectExpression != nil {
+		return f.SelectExpression
+	}
+	return f.Column
+}
+
+// NewScanValue returns a fresh sql scan destination appropriate for this column's type.
+func (f ModuleField) NewScanValue() interface{} {
+	switch f.Column.(type) {
+	case pg.ColumnBool:
+		return &sql.NullBool{}
+	case pg.ColumnInteger:
+		return &sql.NullInt64{}
+	case pg.ColumnFloat:
+		return &sql.NullFloat64{}
+	case pg.ColumnTimestamp, pg.ColumnTimestampz, pg.ColumnDate, pg.ColumnTime, pg.ColumnTimez:
+		return &sql.NullTime{}
+	default:
+		return &sql.NullString{}
+	}
+}
+
 type ModuleFilterField struct {
-	ScanObject sql.Scanner                                  `json:"-"`
-	Name       string                                       `json:"-"`
-	Title      string                                       `json:"title"`
-	Type       ModuleFieldType                              `json:"type"`
-	FormType   ModuleFieldFormType                          `json:"form_type,omitempty"`
-	Example    string                                       `json:"example,omitempty"`
-	Options    []ModuleFieldOptions                         `json:"options,omitempty"`
-	Check      []CheckRules                                 `json:"-"`
-	Convert    func(value interface{}) (interface{}, error) `json:"-"`
+	Column   pg.Column                                    `json:"-"`
+	Title    string                                       `json:"title"`
+	Type     ModuleFieldType                              `json:"type"`
+	FormType ModuleFieldFormType                          `json:"form_type,omitempty"`
+	Example  string                                       `json:"example,omitempty"`
+	Options  []ModuleFieldOptions                         `json:"options,omitempty"`
+	Check    []CheckRules                                 `json:"-"`
+	Convert  func(value interface{}) (interface{}, error) `json:"-"`
+}
+
+func (f ModuleFilterField) ColumnName() string {
+	if f.Column != nil {
+		return f.Column.Name()
+	}
+	return ""
 }
 
 type ModuleFieldOptions struct {
@@ -240,4 +285,15 @@ func (rule lengthRule) Validate(obj interface{}) error {
 	).Error(
 		fmt.Sprintf("%s должен быть в пределах %v - %v", rule.Field, rule.Min, rule.Max),
 	).Validate(obj)
+}
+
+// ContainsColumn checks if a column is present in the list by name.
+func ContainsColumn(columns []pg.Column, target pg.Column) bool {
+	targetName := target.Name()
+	for _, c := range columns {
+		if c.Name() == targetName {
+			return true
+		}
+	}
+	return false
 }

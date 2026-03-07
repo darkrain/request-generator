@@ -2,6 +2,7 @@ package actions
 
 import (
 	"github.com/gin-gonic/gin"
+	pg "github.com/go-jet/jet/v2/postgres"
 )
 
 type ModuleActionName string
@@ -20,45 +21,7 @@ type ModuleAction interface {
 	Action() ModuleActionName
 	BeforeRequest(c *gin.Context) error
 	AfterRequest(c *gin.Context)
-	GetFields() []string
-}
-
-func NewWhere(
-	fields []ModuleActionWhereField,
-	values []interface{},
-) *ModuleActionWhere {
-	return &ModuleActionWhere{
-		Fields: fields,
-		Values: values,
-	}
-}
-
-func NewJoin(tableName string, joinType JoinType, onParentKey string, onKey string, fields []string, resultArrayName string) ModuleActionJoin {
-	return ModuleActionJoin{
-		TableName:       tableName,
-		Type:            joinType,
-		OnParentKey:     onParentKey,
-		OnKey:           onKey,
-		Fields:          fields,
-		ResultArrayName: resultArrayName,
-	}
-}
-
-type ModuleActionWhereConditionType string
-
-const (
-	ModuleActionWhereConditionTypeAnd ModuleActionWhereConditionType = "AND"
-	ModuleActionWhereConditionTypeOR  ModuleActionWhereConditionType = "OR"
-)
-
-type ModuleActionWhere struct {
-	Fields []ModuleActionWhereField `json:"fields"`
-	Values []interface{}            `json:"values"`
-}
-
-type ModuleActionWhereField struct {
-	Name          string
-	ConditionType ModuleActionWhereConditionType
+	GetColumns(c *gin.Context) []pg.Column
 }
 
 type JoinType string
@@ -72,10 +35,19 @@ const (
 )
 
 type ModuleActionJoin struct {
-	TableName       string   `json:"table_name"`
-	Type            JoinType `json:"type"`
-	OnParentKey     string   `json:"on"`
-	OnKey           string   `json:"on_key"`
-	Fields          []string `json:"fields"`
-	ResultArrayName string   `json:"result_array_name"`
+	Table           pg.ReadableTable  `json:"-"`
+	Type            JoinType          `json:"type"`
+	OnCondition     pg.BoolExpression `json:"-"`
+	Columns         []pg.Column       `json:"-"`
+	ResultArrayName string            `json:"result_array_name"`
+}
+
+func NewJoin(table pg.ReadableTable, joinType JoinType, onCondition pg.BoolExpression, columns []pg.Column, resultArrayName string) ModuleActionJoin {
+	return ModuleActionJoin{
+		Table:           table,
+		Type:            joinType,
+		OnCondition:     onCondition,
+		Columns:         columns,
+		ResultArrayName: resultArrayName,
+	}
 }

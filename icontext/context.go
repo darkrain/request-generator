@@ -3,7 +3,6 @@ package icontext
 import (
 	"context"
 
-	"github.com/portalenergy/pe-api-admin/app/models"
 	"github.com/rs/xid"
 	log "github.com/sirupsen/logrus"
 )
@@ -31,14 +30,22 @@ func GetRequestID(ctx context.Context) (*string, bool) {
 	return u, ok
 }
 
-//todo add get user method
-func GetUser(ctx context.Context) (*models.User, bool) {
-	u, ok := ctx.Value(UserContext).(*models.User)
-	return u, ok
-}
-
 // GetLogger - return logger instance from context if it exists.
 func GetLogger(ctx context.Context) (*log.Entry, bool) {
 	u, ok := ctx.Value(LoggerContextKey).(*log.Entry)
+	return u, ok
+}
+
+type UserInfo struct {
+	ID   int64
+	Role string
+}
+
+func SetUser(ctx context.Context, user *UserInfo) context.Context {
+	return context.WithValue(ctx, UserContext, user)
+}
+
+func GetUser(ctx context.Context) (*UserInfo, bool) {
+	u, ok := ctx.Value(UserContext).(*UserInfo)
 	return u, ok
 }

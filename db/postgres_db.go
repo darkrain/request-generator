@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
+	pg "github.com/go-jet/jet/v2/postgres"
 	_ "github.com/lib/pq"
 	"github.com/portalenergy/pe-request-generator/actions"
 	"github.com/portalenergy/pe-request-generator/fields"
@@ -18,7 +18,8 @@ import (
 
 type DB struct {
 	DBExecutor
-	sql *sql.DB
+	sql   *sql.DB
+	Debug bool
 }
 type Tx struct {
 	sql *sql.Tx
@@ -27,6 +28,12 @@ type Tx struct {
 func NewDB(sql *sql.DB) *DB {
 	return &DB{
 		sql: sql,
+	}
+}
+
+func (db *DB) debugLog(log *log.Entry, args ...interface{}) {
+	if db.Debug {
+		log.Infoln(args...)
 	}
 }
 
@@ -42,66 +49,134 @@ func (db *DB) RowExists(query string, args ...interface{}) bool {
 	var exists bool
 	query = fmt.Sprintf("SELECT exists (%s)", query)
 	_ = db.sql.QueryRow(query, args...).Scan(&exists)
-
 	return exists
+}
+
+// applyJoin applies a single join to the FROM clause
+func applyJoin(from pg.ReadableTable, join actions.ModuleActionJoin) pg.ReadableTable {
+	switch join.Type {
+	case actions.JoinTypeRight:
+		return from.RIGHT_JOIN(join.Table, join.OnCondition)
+	case actions.JoinTypeInner:
+		return from.INNER_JOIN(join.Table, join.OnCondition)
+	default:
+		return from.LEFT_JOIN(join.Table, join.OnCondition)
+	}
+}
+
+// buildJoinProjection builds a json_agg(json_build_array(...)) projection for a join's columns
+func buildJoinProjection(join actions.ModuleActionJoin) pg.Projection {
+	colRefs := make([]string, 0, len(join.Columns))
+	for _, col := range join.Columns {
+		colRefs = append(colRefs, fmt.Sprintf(`%s."%s"`, join.ResultArrayName, col.Name()))
+	}
+	rawExpr := fmt.Sprintf("json_agg(json_build_array(%s))", strings.Join(colRefs, ", "))
+	return pg.Raw(rawExpr)
 }
 
 func (db *DB) List(
 	log *log.Entry,
-	tableName string,
-	primaryKey string,
-	fields []fields.ModuleField,
+	table pg.Table,
+	primaryKey pg.Column,
+	moduleFields []fields.ModuleField,
 	page int64,
 	size int64,
-	searchFields []string,
+	searchColumns []pg.Column,
 	searchText string,
 	filter map[string]string,
-	where *actions.ModuleActionWhere,
+	where pg.BoolExpression,
 	joins []actions.ModuleActionJoin,
 ) (result []interface{}, rowsCount int64, err error) {
-	fieldsString := make([]string, 0, 10)
-	fieldsFunction := make(map[string]string)
-	for _, field := range fields {
-		fieldsString = append(fieldsString, field.Name)
-		if field.SelectFunction != nil {
-			fieldsFunction[field.Name] = *field.SelectFunction
+
+	// Build projections: primary key + field columns + join aggregations
+	projections := []pg.Projection{primaryKey}
+	for _, field := range moduleFields {
+		projections = append(projections, field.GetProjection())
+	}
+	for _, join := range joins {
+		if len(join.Columns) > 0 {
+			projections = append(projections, buildJoinProjection(join))
 		}
 	}
 
-	pq := PostgresQuery{
-		TableName:      tableName,
-		PrimaryKey:     primaryKey,
-		Fields:         fieldsString,
-		FieldsFunction: fieldsFunction,
-		SearchFields:   searchFields,
-		SearchText:     searchText,
-		Filter:         filter,
-		Joins:          joins,
-		Where:          where,
-		Page:           page,
-		Size:           size,
+	// Build FROM clause with joins
+	var from pg.ReadableTable = table
+	for _, join := range joins {
+		from = applyJoin(from, join)
 	}
-	query, values := pq.GetQuery(false)
-	countQuery, _ := pq.GetQuery(true)
 
-	log.Infoln("LIST QUERY: ", query)
-	log.Infoln("LIST COUNT QUERY: ", countQuery)
-	fmt.Println("LIST QUERY: ", query, values)
-	fmt.Println("LIST COUNT QUERY: ", countQuery)
+	// Build WHERE conditions
+	var conditions []pg.BoolExpression
+	if where != nil {
+		conditions = append(conditions, where)
+	}
 
+	// Search
+	if len(searchText) > 0 && len(searchColumns) > 0 {
+		searchConds := make([]pg.BoolExpression, 0, len(searchColumns))
+		for _, col := range searchColumns {
+			searchConds = append(searchConds,
+				pg.RawBool(
+					fmt.Sprintf(`LOWER(parent."%s"::text) LIKE '%%' || #search || '%%'`, col.Name()),
+					pg.RawArgs{"#search": strings.ToLower(searchText)},
+				),
+			)
+		}
+		conditions = append(conditions, pg.OR(searchConds...))
+	}
+
+	// Filters
+	if len(filter) > 0 {
+		for key, value := range filter {
+			parts := strings.Split(key, ".")
+			if len(parts) > 1 {
+				conditions = append(conditions,
+					pg.RawBool(
+						fmt.Sprintf(`%s."%s" = #val`, parts[0], parts[1]),
+						pg.RawArgs{"#val": value},
+					),
+				)
+			} else {
+				conditions = append(conditions,
+					pg.RawBool(
+						fmt.Sprintf(`parent."%s" = #val`, key),
+						pg.RawArgs{"#val": value},
+					),
+				)
+			}
+		}
+	}
+
+	// Build SELECT statement
+	stmt := pg.SELECT(projections[0], projections[1:]...).FROM(from)
+	if len(conditions) > 0 {
+		stmt = stmt.WHERE(pg.AND(conditions...))
+	}
+	stmt = stmt.GROUP_BY(primaryKey).LIMIT(size).OFFSET(size * page)
+
+	// Build COUNT statement
+	countStmt := pg.SELECT(pg.COUNT(pg.STAR)).FROM(from)
+	if len(conditions) > 0 {
+		countStmt = countStmt.WHERE(pg.AND(conditions...))
+	}
+	if len(joins) > 0 {
+		countStmt = countStmt.GROUP_BY(primaryKey)
+	}
+
+	query, args := stmt.Sql()
+	countQuery, countArgs := countStmt.Sql()
+
+	db.debugLog(log, "[DEBUG] LIST QUERY: ", query)
+	db.debugLog(log, "[DEBUG] LIST COUNT QUERY: ", countQuery)
+
+	// Execute main query
 	var rows *sql.Rows
-	var countResult *sql.Rows
-
-	if len(values) > 0 {
-		rows, err = db.sql.Query(query, values...)
-		countResult, err = db.sql.Query(countQuery, values...)
+	if len(args) > 0 {
+		rows, err = db.sql.Query(query, args...)
 	} else {
 		rows, err = db.sql.Query(query)
-		countResult, err = db.sql.Query(countQuery)
 	}
-
 	if err != nil {
-		fmt.Println("LIST ERR: ", err)
 		log.Errorln("LIST ERR: ", err)
 		return nil, 0, err
 	}
@@ -113,12 +188,11 @@ func (db *DB) List(
 		var primaryValue interface{}
 		columnValues = append(columnValues, &primaryValue)
 
-		for i := 0; i < len(fields); i++ {
-			value := fields[i].ScanObject
-			columnValues = append(columnValues, value)
+		for i := 0; i < len(moduleFields); i++ {
+			columnValues = append(columnValues, moduleFields[i].NewScanValue())
 		}
 		for _, join := range joins {
-			if len(join.Fields) == 0 {
+			if len(join.Columns) == 0 {
 				continue
 			}
 			var columnValue json.RawMessage
@@ -127,32 +201,31 @@ func (db *DB) List(
 
 		err = rows.Scan(columnValues...)
 		if err != nil {
-			fmt.Println("SCAN ERR: ", err)
+			log.Errorln("[DEBUG] SCAN ERR: ", err)
 			continue
 		}
 
 		currentResult := make(map[string]interface{})
 		offset := 1
-		for index, field := range fields {
+		for index, field := range moduleFields {
 			value, ok := columnValues[index+offset].(driver.Valuer)
-
 			if ok {
 				if field.ResultValueConverter != nil {
-					currentResult[field.Name] = field.ResultValueConverter(value)
+					currentResult[field.ColumnName()] = field.ResultValueConverter(value)
 				} else {
-					currentResult[field.Name], _ = value.Value()
+					currentResult[field.ColumnName()], _ = value.Value()
 				}
 			} else {
 				if field.ResultValueConverter != nil {
-					currentResult[field.Name] = field.ResultValueConverter(value)
+					currentResult[field.ColumnName()] = field.ResultValueConverter(value)
 				} else {
-					currentResult[field.Name] = value
+					currentResult[field.ColumnName()] = value
 				}
 			}
 		}
 
-		if len(fields) > 0 {
-			offset = offset + len(fields)
+		if len(moduleFields) > 0 {
+			offset = offset + len(moduleFields)
 		}
 
 		for index, join := range joins {
@@ -165,7 +238,7 @@ func (db *DB) List(
 			var joinValues [][]interface{}
 			err := json.Unmarshal(*converted, &joinValues)
 			if err != nil {
-				log.Errorln("VIEW JOIN ERR: ", err)
+				log.Errorln("LIST JOIN ERR: ", err)
 				continue
 			}
 
@@ -174,7 +247,6 @@ func (db *DB) List(
 				if val == nil {
 					continue
 				}
-
 				for _, v := range val {
 					if v == nil {
 						continue
@@ -184,16 +256,14 @@ func (db *DB) List(
 			}
 
 			joinResults := make([]map[string]interface{}, 0, 10)
-
 			if len(checkString) > 0 {
 				for _, joinValue := range joinValues {
 					resultMap := make(map[string]interface{})
-					for index, field := range join.Fields {
-						resultMap[field] = joinValue[index]
+					for idx, col := range join.Columns {
+						resultMap[col.Name()] = joinValue[idx]
 					}
 					joinResults = append(joinResults, resultMap)
 				}
-				log.Infoln("VIEW JOIN RESULTS: ", joinResults)
 			}
 
 			joinStringsArray := make([]string, 0, 10)
@@ -202,7 +272,6 @@ func (db *DB) List(
 				if err != nil {
 					continue
 				}
-
 				joinStringsArray = append(joinStringsArray, string(jsonRes))
 			}
 			resultUnique := removeDuplicate(joinStringsArray)
@@ -214,18 +283,29 @@ func (db *DB) List(
 				if err != nil {
 					continue
 				}
-
 				joinResultUnique = append(joinResultUnique, mapResult)
 			}
 
 			currentResult[join.ResultArrayName] = joinResultUnique
-			//offset += 1
 		}
 
 		results = append(results, currentResult)
 	}
 
 	result = append(result, results...)
+
+	// Execute count query
+	var countResult *sql.Rows
+	if len(countArgs) > 0 {
+		countResult, err = db.sql.Query(countQuery, countArgs...)
+	} else {
+		countResult, err = db.sql.Query(countQuery)
+	}
+	if err != nil {
+		log.Errorln("COUNT ERR: ", err)
+		return result, 0, nil
+	}
+	defer countResult.Close()
 
 	var count int64
 	if len(joins) > 0 {
@@ -242,77 +322,49 @@ func (db *DB) List(
 		}
 	}
 
-	fmt.Println("COUNT OF RESULT: ", count)
-
 	return result, count, nil
 }
 
 func (db *DB) View(
 	log *log.Entry,
-	tableName string,
-	primaryKey string,
-	fields []fields.ModuleField,
-	keys []interface{},
-	values []interface{},
-	where *actions.ModuleActionWhere,
+	table pg.Table,
+	primaryKey pg.Column,
+	moduleFields []fields.ModuleField,
+	where pg.BoolExpression,
 	joins []actions.ModuleActionJoin,
 ) (interface{}, error) {
-	fieldsString := make([]string, 0, 10)
-	fieldsFunction := make(map[string]string)
-	for _, field := range fields {
-		fieldsString = append(fieldsString, field.Name)
-		if field.SelectFunction != nil {
-			fieldsFunction[field.Name] = *field.SelectFunction
+
+	projections := []pg.Projection{primaryKey}
+	for _, field := range moduleFields {
+		projections = append(projections, field.GetProjection())
+	}
+	for _, join := range joins {
+		if len(join.Columns) > 0 {
+			projections = append(projections, buildJoinProjection(join))
 		}
 	}
 
-	//fmt.Println("SSSSSSSSSSSSS")
-	//fmt.Printf("\n\n\nWhere 1 TEST: %+v\n\n\n", where)
-	//fmt.Printf("\n\n\nWhere keys TEST: %+v\n\n\n", keys)
-
-	for index, key := range keys {
-		if where == nil || len(where.Fields) == 0 {
-			where = &actions.ModuleActionWhere{
-				Fields: make([]actions.ModuleActionWhereField, 0, 10),
-				Values: make([]interface{}, 0, 10),
-			}
-			where.Fields = append(where.Fields, actions.ModuleActionWhereField{
-				Name:          key.(string),
-				ConditionType: actions.ModuleActionWhereConditionTypeAnd,
-			})
-			where.Values = append(where.Values, values[index])
-		}
-
+	var from pg.ReadableTable = table
+	for _, join := range joins {
+		from = applyJoin(from, join)
 	}
 
-	//fmt.Printf("\n\n\nWhere 2 TEST: %+v\n\n\n", where)
-
-	pq := PostgresQuery{
-		TableName:      tableName,
-		PrimaryKey:     primaryKey,
-		Fields:         fieldsString,
-		FieldsFunction: fieldsFunction,
-		SearchFields:   nil,
-		SearchText:     "",
-		Filter:         nil,
-		Joins:          joins,
-		Where:          where,
-		Page:           0,
-		Size:           1,
+	stmt := pg.SELECT(projections[0], projections[1:]...).FROM(from)
+	if where != nil {
+		stmt = stmt.WHERE(where)
 	}
-	where = nil
-	query, values := pq.GetQuery(false)
-	log.Infoln("VIEW QUERY: ", query)
-	fmt.Println("VIEW QUERY: ", query)
+	stmt = stmt.GROUP_BY(primaryKey).LIMIT(1)
+
+	query, args := stmt.Sql()
+	db.debugLog(log, "[DEBUG] VIEW QUERY: ", query)
 
 	var rows *sql.Rows
 	var err error
-	if len(values) > 0 {
-		rows, err = db.sql.Query(query, values...)
+	if len(args) > 0 {
+		rows, err = db.sql.Query(query, args...)
 	} else {
 		rows, err = db.sql.Query(query)
 	}
-
 	if err != nil {
 		log.Errorln("VIEW ERR: ", err)
 		return nil, err
@@ -325,12 +377,11 @@ func (db *DB) View(
 		var primaryValue interface{}
 		columnValues = append(columnValues, &primaryValue)
 
-		for i := 0; i < len(fields); i++ {
-			value := fields[i].ScanObject
-			columnValues = append(columnValues, value)
+		for i := 0; i < len(moduleFields); i++ {
+			columnValues = append(columnValues, moduleFields[i].NewScanValue())
 		}
 		for _, join := range joins {
-			if len(join.Fields) == 0 {
+			if len(join.Columns) == 0 {
 				continue
 			}
 			var columnValue json.RawMessage
@@ -339,23 +390,23 @@ func (db *DB) View(
 
 		err = rows.Scan(columnValues...)
 		if err != nil {
-			fmt.Println("ERROR: ", err)
+			log.Errorln("[DEBUG] VIEW SCAN ERR: ", err)
 			continue
 		}
 
 		currentResult := make(map[string]interface{})
 		offset := 1
-		for index, field := range fields {
+		for index, field := range moduleFields {
 			value, ok := columnValues[index+offset].(driver.Valuer)
 			if ok {
-				currentResult[field.Name], _ = value.Value()
+				currentResult[field.ColumnName()], _ = value.Value()
 			} else {
-				currentResult[field.Name] = value
+				currentResult[field.ColumnName()] = value
 			}
 		}
 
-		if len(fields) > 0 {
-			offset = offset + len(fields)
+		if len(moduleFields) > 0 {
+			offset = offset + len(moduleFields)
 		}
 
 		for index, join := range joins {
@@ -372,14 +423,11 @@ func (db *DB) View(
 				continue
 			}
 
-			log.Infoln("VIEW JOIN VALUES: ", joinValues, join)
-
 			checkString := ""
 			for _, val := range joinValues {
 				if val == nil {
 					continue
 				}
-
 				for _, v := range val {
 					if v == nil {
 						continue
@@ -389,16 +437,14 @@ func (db *DB) View(
 			}
 
 			joinResults := make([]map[string]interface{}, 0, 10)
-
 			if len(checkString) > 0 {
 				for _, joinValue := range joinValues {
 					resultMap := make(map[string]interface{})
-					for index, field := range join.Fields {
-						resultMap[field] = joinValue[index]
+					for idx, col := range join.Columns {
+						resultMap[col.Name()] = joinValue[idx]
 					}
 					joinResults = append(joinResults, resultMap)
 				}
-				log.Infoln("VIEW JOIN RESULTS: ", joinResults)
 			}
 
 			currentResult[join.ResultArrayName] = joinResults
@@ -408,8 +454,6 @@ func (db *DB) View(
 		results = append(results, currentResult)
 	}
 
-	fmt.Println("RESULTS:  ", results)
-
 	if len(results) > 0 {
 		return results[0], nil
 	}
@@ -417,85 +461,134 @@ func (db *DB) View(
 	return nil, errors.New("Record not found")
 }
 
-func (db *DB) Add(log *log.Entry, tableName string, primaryKey string, fields []fields.ModuleField, input map[string]interface{}) (interface{}, error) {
-	query := fmt.Sprintf(`INSERT INTO public."%s"`, tableName)
+func (db *DB) Add(log *log.Entry, table pg.Table, primaryKey pg.Column, moduleFields []fields.ModuleField, input map[string]interface{}) (interface{}, error) {
+	tx, err := db.sql.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
 	output := struct {
 		Value      int64  `json:"value"`
 		PrimaryKey string `json:"primary_key"`
 	}{}
 
-	keys := make([]string, 0, 10)
-	values := make([]interface{}, 0, 10)
-	fieldsString := make([]string, 0, 10)
+	keys := make([]string, 0, len(input))
+	values := make([]interface{}, 0, len(input))
 
-	sortedInput := make([]string, 0, len(input))
-	for k := range input {
-		sortedInput = append(sortedInput, k)
-	}
-	sort.Strings(sortedInput)
-
-	for _, key := range sortedInput {
-		value, _ := input[key]
-		fieldsString = append(fieldsString, key)
-		keys = append(keys, fmt.Sprintf(`"%s"`, key))
+	for _, field := range moduleFields {
+		colName := field.ColumnName()
+		value, ok := input[colName]
+		if !ok {
+			continue
+		}
+		keys = append(keys, fmt.Sprintf(`"%s"`, colName))
 		values = append(values, value)
 	}
-	keys = append(keys, `"created_ts"`, `"updated_ts"`)
-	values = append(values, time.Now().Unix(), time.Now().Unix())
 
-	names := strings.Join(keys, ",")
-	valueNumbers := make([]string, 0, 10)
-
-	for index, _ := range values {
-		valueNumbers = append(valueNumbers, fmt.Sprintf(`$%d`, index+1))
+	valueNumbers := make([]string, 0, len(values))
+	for i := range values {
+		valueNumbers = append(valueNumbers, fmt.Sprintf(`$%d`, i+1))
 	}
 
-	valueNumberString := strings.Join(valueNumbers, ",")
+	tableName := table.TableName()
+	schemaName := table.SchemaName()
+	fullTableName := fmt.Sprintf(`"%s"`, tableName)
+	if schemaName != "" {
+		fullTableName = fmt.Sprintf(`%s."%s"`, schemaName, tableName)
+	}
 
-	query = fmt.Sprintf(`%s (%s) VALUES (%s) RETURNING "%s"`, query, names, valueNumberString, primaryKey)
-	log.Infoln("ADD QUERY: ", query)
+	query := fmt.Sprintf(`INSERT INTO %s (%s) VALUES (%s) RETURNING "%s"`,
+		fullTableName,
+		strings.Join(keys, ","),
+		strings.Join(valueNumbers, ","),
+		primaryKey.Name(),
+	)
 
-	fmt.Println(query)
-	fmt.Println(values)
+	db.debugLog(log, "[DEBUG] ADD QUERY: ", query)
 
-	err := db.sql.QueryRow(query, values...).Scan(&output.Value)
+	err = tx.QueryRow(query, values...).Scan(&output.Value)
 	if err != nil {
-		fmt.Println("ERR: ", err)
 		log.Errorln("ADD ERR: ", err)
 		return nil, err
 	}
 
-	output.PrimaryKey = primaryKey
+	output.PrimaryKey = primaryKey.Name()
 
-	//fmt.Println("PK: ", primaryKey, output.Value)
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
 
 	return output, nil
-
-	//return db.View(log, tableName, primaryKey, fields, []interface{}{primaryKey}, []interface{}{value}, nil, nil)
 }
 
-func (db *DB) Update(log *log.Entry, tableName string, primaryKey string, fields []fields.ModuleField, input map[string]interface{}, key interface{}, value interface{}) (interface{}, error) {
-	query := fmt.Sprintf(`UPDATE public."%s" SET`, tableName)
-	values := make([]interface{}, 0, 10)
-	index := 1
-	fieldsString := make([]string, 0, 10)
-	for key, value := range input {
-		fieldsString = append(fieldsString, key)
-		query = fmt.Sprintf(`%s "%s" = $%d, `, query, key, index)
-		values = append(values, value)
-		index++
+func (db *DB) Update(log *log.Entry, table pg.Table, primaryKey pg.Column, moduleFields []fields.ModuleField, input map[string]interface{}, where pg.BoolExpression) (interface{}, error) {
+	tx, err := db.sql.Begin()
+	if err != nil {
+		return nil, err
 	}
-	values = append(values, value)
+	defer tx.Rollback()
 
-	query = strings.TrimSpace(query)
-	query = strings.TrimSuffix(query, ",")
+	setClauses := make([]string, 0, len(input))
+	values := make([]interface{}, 0, len(input))
+	paramIdx := 1
 
-	query = fmt.Sprintf(`%s WHERE "%s"=$%d`, query, key, index)
+	for _, field := range moduleFields {
+		colName := field.ColumnName()
+		value, ok := input[colName]
+		if !ok {
+			continue
+		}
+		setClauses = append(setClauses, fmt.Sprintf(`"%s" = $%d`, colName, paramIdx))
+		values = append(values, value)
+		paramIdx++
+	}
 
-	log.Infoln(`UPDATE QUERY: `, query)
-	log.Infoln(`UPDATE VALUES: `, values)
+	setClauses = append(setClauses, fmt.Sprintf(`"update_date" = $%d`, paramIdx))
+	values = append(values, time.Now())
+	paramIdx++
 
-	result, err := db.sql.Exec(query, values...)
+	if where == nil {
+		return nil, errors.New("WHERE condition is required for UPDATE")
+	}
+
+	// Get WHERE clause SQL from a dummy select
+	whereStmt := pg.SELECT(pg.Raw("1")).FROM(table).WHERE(where)
+	whereSql, whereArgs := whereStmt.Sql()
+
+	// Extract WHERE part from the full query
+	whereIdx := strings.Index(whereSql, "WHERE")
+	if whereIdx == -1 {
+		return nil, errors.New("could not build WHERE clause")
+	}
+	whereClause := whereSql[whereIdx:]
+
+	// Re-number placeholders in WHERE clause
+	for i, arg := range whereArgs {
+		oldPlaceholder := fmt.Sprintf("$%d", i+1)
+		newPlaceholder := fmt.Sprintf("$%d", paramIdx)
+		whereClause = strings.Replace(whereClause, oldPlaceholder, newPlaceholder, 1)
+		values = append(values, arg)
+		paramIdx++
+	}
+
+	tableName := table.TableName()
+	schemaName := table.SchemaName()
+	fullTableName := fmt.Sprintf(`"%s"`, tableName)
+	if schemaName != "" {
+		fullTableName = fmt.Sprintf(`%s."%s"`, schemaName, tableName)
+	}
+
+	query := fmt.Sprintf(`UPDATE %s SET %s %s`,
+		fullTableName,
+		strings.Join(setClauses, ", "),
+		whereClause,
+	)
+
+	db.debugLog(log, "[DEBUG] UPDATE QUERY: ", query)
+	db.debugLog(log, "[DEBUG] UPDATE VALUES: ", values)
+
+	result, err := tx.Exec(query, values...)
 	if err != nil {
 		return nil, err
 	}
@@ -509,13 +602,26 @@ func (db *DB) Update(log *log.Entry, tableName string, primaryKey string, fields
 		return nil, errors.New("record not found")
 	}
 
-	return db.View(log, tableName, primaryKey, fields, []interface{}{key}, []interface{}{value}, nil, nil)
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	return db.View(log, table, primaryKey, moduleFields, where, nil)
 }
 
-func (db *DB) Delete(log *log.Entry, tableName string, key interface{}, value interface{}) error {
-	query := fmt.Sprintf(`DELETE FROM "%s" WHERE "%s"=$1`, tableName, key)
-	log.Infoln("DELETE QUERY: ", query)
-	result, err := db.sql.Exec(query, value)
+func (db *DB) Delete(log *log.Entry, table pg.Table, where pg.BoolExpression) error {
+	tx, err := db.sql.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt := table.DELETE().WHERE(where)
+	query, args := stmt.Sql()
+
+	db.debugLog(log, "[DEBUG] DELETE QUERY: ", query)
+
+	result, err := tx.Exec(query, args...)
 	if err != nil {
 		return err
 	}
@@ -525,12 +631,12 @@ func (db *DB) Delete(log *log.Entry, tableName string, key interface{}, value in
 		return err
 	}
 
-	log.Infoln("DELETE COUNT OF DELETED: ", countOfDeleted)
+	db.debugLog(log, "[DEBUG] DELETE COUNT OF DELETED: ", countOfDeleted)
 	if countOfDeleted == 0 {
 		return errors.New("record not found")
 	}
 
-	return nil
+	return tx.Commit()
 }
 
 func (db *DB) RawRequest(log *log.Entry, query string, params ...interface{}) (*sql.Rows, error) {

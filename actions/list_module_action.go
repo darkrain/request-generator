@@ -2,23 +2,25 @@ package actions
 
 import (
 	"github.com/gin-gonic/gin"
+	pg "github.com/go-jet/jet/v2/postgres"
 )
 
 type ListModuleAction struct {
 	ModuleAction
 	BeforeAction func(c *gin.Context) error
 	AfterAction  func(c *gin.Context)
-	Label        string                                  `json:"label"`
-	Fields       []string                                `json:"fields"`
-	Size         int64                                   `json:"size,omitempty"`
-	Maxsize      int64                                   `json:"maxsize"`
-	Permission   []string                                `json:"permission"`
-	Auth         bool                                    `json:"auth"`
-	Join         []ModuleActionJoin                      `json:"join"`
-	Where        func(c *gin.Context) *ModuleActionWhere `json:"where"`
-	Extra        interface{}                             `json:"extra"`
-	Search       []string                                `json:"search"`
-	Filter       []string                                `json:"filter"`
+	Label        string                                       `json:"label"`
+	Columns      []pg.Column                                  `json:"-"`
+	ColumnsFunc  func(c *gin.Context) []pg.Column             `json:"-"`
+	Size         int64                                        `json:"size,omitempty"`
+	Maxsize      int64                                        `json:"maxsize"`
+	Permission   []Role                                       `json:"permission"`
+	Auth         bool                                         `json:"auth"`
+	Join         []ModuleActionJoin                           `json:"join"`
+	Where        func(c *gin.Context) pg.BoolExpression       `json:"-"`
+	Extra        interface{}                                  `json:"extra"`
+	Search       []pg.Column                                  `json:"-"`
+	Filter       []pg.Column                                  `json:"-"`
 }
 
 func (action ListModuleAction) Action() ModuleActionName {
@@ -38,4 +40,11 @@ func (action ListModuleAction) AfterRequest(c *gin.Context) {
 	}
 
 	action.AfterAction(c)
+}
+
+func (action ListModuleAction) GetColumns(c *gin.Context) []pg.Column {
+	if action.ColumnsFunc != nil {
+		return action.ColumnsFunc(c)
+	}
+	return action.Columns
 }

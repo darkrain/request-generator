@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 
+	pg "github.com/go-jet/jet/v2/postgres"
 	"github.com/portalenergy/pe-request-generator/actions"
 	"github.com/portalenergy/pe-request-generator/fields"
 	log "github.com/sirupsen/logrus"
@@ -11,29 +12,27 @@ import (
 type DBExecutor interface {
 	List(
 		log *log.Entry,
-		tableName string,
-		primaryKey string,
-		fields []fields.ModuleField,
+		table pg.Table,
+		primaryKey pg.Column,
+		moduleFields []fields.ModuleField,
 		page int64,
 		size int64,
-		searchFields []string,
+		searchColumns []pg.Column,
 		searchText string,
 		filter map[string]string,
-		where *actions.ModuleActionWhere,
+		where pg.BoolExpression,
 		joins []actions.ModuleActionJoin,
 	) (result []interface{}, rowsCount int64, err error)
 	View(
 		log *log.Entry,
-		tableName string,
-		primaryKey string,
-		fields []fields.ModuleField,
-		keys []interface{},
-		values []interface{},
-		where *actions.ModuleActionWhere,
+		table pg.Table,
+		primaryKey pg.Column,
+		moduleFields []fields.ModuleField,
+		where pg.BoolExpression,
 		joins []actions.ModuleActionJoin,
 	) (interface{}, error)
-	Add(log *log.Entry, tableName string, primaryKey string, fields []fields.ModuleField, input map[string]interface{}) (interface{}, error)
-	Update(log *log.Entry, tableName string, primaryKey string, fields []fields.ModuleField, input map[string]interface{}, key interface{}, value interface{}) (interface{}, error)
-	Delete(log *log.Entry, tableName string, key interface{}, value interface{}) error
+	Add(log *log.Entry, table pg.Table, primaryKey pg.Column, moduleFields []fields.ModuleField, input map[string]interface{}) (interface{}, error)
+	Update(log *log.Entry, table pg.Table, primaryKey pg.Column, moduleFields []fields.ModuleField, input map[string]interface{}, where pg.BoolExpression) (interface{}, error)
+	Delete(log *log.Entry, table pg.Table, where pg.BoolExpression) error
 	RawRequest(log *log.Entry, query string, params ...interface{}) (*sql.Rows, error)
 }

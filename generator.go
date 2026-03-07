@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	"github.com/gin-gonic/gin"
+	pg "github.com/go-jet/jet/v2/postgres"
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/portalenergy/pe-request-generator/actions"
 	"github.com/portalenergy/pe-request-generator/db"
@@ -30,14 +31,14 @@ type Generator struct {
 	Modules              []*BaseModule
 	Features             []Features
 	AuthMiddleware       func(module actions.ModuleAction) gin.HandlerFunc
-	PermissionMiddleware func(action actions.ModuleAction, permissions []string) gin.HandlerFunc
+	PermissionMiddleware func(action actions.ModuleAction, permissions []actions.Role) gin.HandlerFunc
 }
 
 func NewGenerator(
 	db func(module *BaseModule) db.DBExecutor,
 	group gin.RouterGroup,
 	modules []*BaseModule,
-	permissionMiddleware func(action actions.ModuleAction, permissions []string) gin.HandlerFunc,
+	permissionMiddleware func(action actions.ModuleAction, permissions []actions.Role) gin.HandlerFunc,
 	authMiddleware func(action actions.ModuleAction) gin.HandlerFunc,
 ) *Generator {
 	return &Generator{
@@ -86,14 +87,12 @@ func (generator *Generator) Run() {
 						panic(fmt.Sprintf("auth middleware not implemented in module: %s", module.Name))
 					}
 					listGrpup.Use(generator.AuthMiddleware(listAction))
-					fmt.Println("listAction.Permission AUTH ADDED!!!: ", listAction.Permission)
 				}
 				if len(listAction.Permission) > 0 {
 					if generator.PermissionMiddleware == nil {
 						panic(fmt.Sprintf("permission middleware not implemented in module: %s", module.Name))
 					}
 					listGrpup.Use(generator.PermissionMiddleware(listAction, listAction.Permission))
-					fmt.Println("listAction.Permission ADDED!!!: ", listAction.Permission)
 				}
 
 				listGrpup.GET(module.Name, generator.actionList(module, listAction))
@@ -177,7 +176,7 @@ func (generator *Generator) Run() {
 				updateGroup.POST(fmt.Sprintf("%s/:bykey/:value", module.Name), generator.actionUpdate(module, updateAction))
 			case actions.ModuleActionNameDelete:
 				deleteAction, _ := action.(actions.DeleteModuleAction)
-				featuresModule.Actions["update"] = FeaturesActions{
+				featuresModule.Actions["delete"] = FeaturesActions{
 					Label: deleteAction.Label,
 					Url:   module.Path + "/" + module.Name,
 					Type:  "DELETE",
@@ -225,25 +224,23 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 		addFilters := c.Query("addFilters")
 		addHeads := c.Query("addHeads")
 
+		columns := action.GetColumns(c)
+
 		realFields := make([]fields.ModuleField, 0, 10)
 		for _, realField := range module.Fields {
-			if containsStrings(action.Fields, realField.Name) {
+			if containsColumn(columns, realField.Column) {
 				realFields = append(realFields, realField)
 			}
 		}
 
-		var whereResult *actions.ModuleActionWhere
+		var where pg.BoolExpression
 		if action.Where != nil {
-			whereResult = action.Where(c)
-			fmt.Println("whereResult: ", whereResult)
+			where = action.Where(c)
 		}
 
-		if len(filters) > 0 {
-			fmt.Println("filters: ", filters)
-		}
 		results, count, err := generator.db(module).List(
 			l,
-			module.TableName,
+			module.Table,
 			module.PrimaryKey,
 			realFields,
 			page,
@@ -251,7 +248,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			action.Search,
 			searchText,
 			filters,
-			whereResult,
+			where,
 			action.Join,
 		)
 
@@ -265,8 +262,8 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			heads = make(map[string]string)
 
 			for _, realField := range module.Fields {
-				if containsStrings(action.Fields, realField.Name) {
-					heads[realField.Name] = realField.Title
+				if containsColumn(columns, realField.Column) {
+					heads[realField.ColumnName()] = realField.Title
 				}
 			}
 		}
@@ -275,7 +272,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 		if addFilters == "true" {
 			filter = make(map[string]fields.ModuleFilterField)
 			for _, realField := range module.Fields {
-				if containsStrings(action.Filter, realField.Name) {
+				if containsColumn(action.Filter, realField.Column) {
 					options := make([]fields.ModuleFieldOptions, 0, 10)
 					if realField.Options != nil {
 						for _, item := range realField.Options {
@@ -289,17 +286,16 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 					}
 
 					filterField := fields.ModuleFilterField{
-						ScanObject: realField.ScanObject,
-						Name:       realField.Name,
-						Title:      realField.Title,
-						Type:       realField.Type,
-						FormType:   realField.FormType,
-						Example:    realField.Example,
-						Options:    options,
-						Check:      realField.Check,
-						Convert:    realField.Convert,
+						Column:   realField.Column,
+						Title:    realField.Title,
+						Type:     realField.Type,
+						FormType: realField.FormType,
+						Example:  realField.Example,
+						Options:  options,
+						Check:    realField.Check,
+						Convert:  realField.Convert,
 					}
-					filter[realField.Name] = filterField
+					filter[realField.ColumnName()] = filterField
 				}
 			}
 		}
@@ -349,7 +345,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			csvResults := make([][]string, 0, 10)
 			keys := make([]string, 0, 10)
 			for _, v := range d {
-				for key, _ := range v {
+				for key := range v {
 					keys = append(keys, key)
 				}
 				break
@@ -374,7 +370,6 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			w := csv.NewWriter(b)
 			w.Comma = '\t'
 			err = w.WriteAll(csvResults)
-			fmt.Println("ERR: ", err)
 
 			response.ResponseCSV(l, c, b.Bytes())
 		}
@@ -409,16 +404,17 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 			return
 		}
 
+		columns := action.GetColumns(c)
+
 		realFields := make([]fields.ModuleField, 0, 10)
 		for _, realField := range module.Fields {
-			if containsStrings(action.Fields, realField.Name) {
+			if containsColumn(columns, realField.Column) {
 				realFields = append(realFields, realField)
 			}
 		}
 
-		mapInput := generator.mapRequestInput(input, module, action.Fields)
-		fmt.Println(mapInput)
-		output, err := generator.db(module).Add(l, module.TableName, module.PrimaryKey, realFields, mapInput)
+		mapInput := generator.mapRequestInput(input, module, columns)
+		output, err := generator.db(module).Add(l, module.Table, module.PrimaryKey, realFields, mapInput)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{
 				err.Error(),
@@ -494,7 +490,13 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 		}
 
 		whereKey := c.Param("bykey")
-		err = validation.In(action.By...).Error(fmt.Sprintf(`allowed keys %v`, action.By)).Validate(whereKey)
+
+		// Validate that bykey is one of the allowed columns
+		allowedKeys := make([]interface{}, 0, len(action.By))
+		for _, col := range action.By {
+			allowedKeys = append(allowedKeys, col.Name())
+		}
+		err = validation.In(allowedKeys...).Error(fmt.Sprintf(`allowed keys %v`, allowedKeys)).Validate(whereKey)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorDelete, []string{
 				err.Error(),
@@ -510,14 +512,29 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			return
 		}
 
+		columns := action.GetColumns(c)
+
 		realFields := make([]fields.ModuleField, 0, 10)
 		for _, realField := range module.Fields {
-			if containsStrings(action.Fields, realField.Name) {
+			if containsColumn(columns, realField.Column) {
 				realFields = append(realFields, realField)
 			}
 		}
 
-		result, err := generator.db(module).View(l, module.TableName, module.PrimaryKey, realFields, []interface{}{whereKey}, []interface{}{whereValue}, &action.Where, action.Join)
+		// Build WHERE condition from bykey/value
+		where := pg.RawBool(
+			fmt.Sprintf(`%s."%s" = #val`, module.Table.Alias(), whereKey),
+			pg.RawArgs{"#val": whereValue},
+		)
+		// If table has no alias, use table name
+		if module.Table.Alias() == "" {
+			where = pg.RawBool(
+				fmt.Sprintf(`"%s"."%s" = #val`, module.Table.TableName(), whereKey),
+				pg.RawArgs{"#val": whereValue},
+			)
+		}
+
+		result, err := generator.db(module).View(l, module.Table, module.PrimaryKey, realFields, where, action.Join)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
@@ -541,9 +558,13 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 		}
 
 		whereKey := c.Param("bykey")
-		err = validation.In(action.By...).Error(fmt.Sprintf(`allowed keys %v`, action.By)).Validate(whereKey)
+		allowedKeys := make([]interface{}, 0, len(action.By))
+		for _, col := range action.By {
+			allowedKeys = append(allowedKeys, col.Name())
+		}
+		err = validation.In(allowedKeys...).Error(fmt.Sprintf(`allowed keys %v`, allowedKeys)).Validate(whereKey)
 		if err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorDelete, []string{
+			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, []string{
 				err.Error(),
 			})
 			return
@@ -551,7 +572,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 
 		whereValue := c.Param("value")
 		if len(whereValue) == 0 {
-			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorDelete, []string{
+			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, []string{
 				"value param not found",
 			})
 			return
@@ -570,15 +591,24 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 			return
 		}
 
+		columns := action.GetColumns(c)
+
 		realFields := make([]fields.ModuleField, 0, 10)
 		for _, realField := range module.Fields {
-			if containsStrings(action.Fields, realField.Name) {
+			if containsColumn(columns, realField.Column) {
 				realFields = append(realFields, realField)
 			}
 		}
 
-		mapInput := generator.mapRequestInput(input, module, action.Fields)
-		output, err := generator.db(module).Update(l, module.TableName, module.PrimaryKey, realFields, mapInput, whereKey, whereValue)
+		mapInput := generator.mapRequestInput(input, module, columns)
+
+		// Build WHERE condition
+		where := pg.RawBool(
+			fmt.Sprintf(`"%s" = #val`, whereKey),
+			pg.RawArgs{"#val": whereValue},
+		)
+
+		output, err := generator.db(module).Update(l, module.Table, module.PrimaryKey, realFields, mapInput, where)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, nil)
 			return
@@ -602,7 +632,11 @@ func (generator *Generator) actionDelete(module *BaseModule, action actions.Dele
 		}
 
 		whereKey := c.Param("bykey")
-		err = validation.In(action.By...).Error(fmt.Sprintf(`allowed keys %v`, action.By)).Validate(whereKey)
+		allowedKeys := make([]interface{}, 0, len(action.By))
+		for _, col := range action.By {
+			allowedKeys = append(allowedKeys, col.Name())
+		}
+		err = validation.In(allowedKeys...).Error(fmt.Sprintf(`allowed keys %v`, allowedKeys)).Validate(whereKey)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorDelete, []string{
 				err.Error(),
@@ -616,9 +650,13 @@ func (generator *Generator) actionDelete(module *BaseModule, action actions.Dele
 			return
 		}
 
-		err = generator.db(module).Delete(l, module.TableName, whereKey, whereValue)
+		// Build WHERE condition
+		where := pg.RawBool(
+			fmt.Sprintf(`"%s" = #val`, whereKey),
+			pg.RawArgs{"#val": whereValue},
+		)
 
-		fmt.Println("DELETE eRROR: ", err)
+		err = generator.db(module).Delete(l, module.Table, where)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorDelete, []string{
 				err.Error(),

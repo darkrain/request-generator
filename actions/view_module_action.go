@@ -1,20 +1,22 @@
 package actions
 
-import "github.com/gin-gonic/gin"
+import (
+	"github.com/gin-gonic/gin"
+	pg "github.com/go-jet/jet/v2/postgres"
+)
 
 type ViewModuleAction struct {
 	ModuleAction
 	BeforeAction func(c *gin.Context) error
 	AfterAction  func(c *gin.Context)
-	Label        string `json:"label"`
-
-	Fields     []string           `json:"fields"`
-	Permission []string           `json:"permission"`
-	Auth       bool               `json:"auth"`
-	Join       []ModuleActionJoin `json:"join"`
-	Where      ModuleActionWhere  `json:"where"`
-	By         []interface{}      `json:"by"`
-	Extra      interface{}        `json:"extra"`
+	Label        string                           `json:"label"`
+	Columns      []pg.Column                      `json:"-"`
+	ColumnsFunc  func(c *gin.Context) []pg.Column `json:"-"`
+	Permission   []Role             `json:"permission"`
+	Auth         bool               `json:"auth"`
+	Join         []ModuleActionJoin `json:"join"`
+	By           []pg.Column        `json:"-"`
+	Extra        interface{}        `json:"extra"`
 }
 
 func (action ViewModuleAction) Action() ModuleActionName {
@@ -34,4 +36,11 @@ func (action ViewModuleAction) AfterRequest(c *gin.Context) {
 	}
 
 	action.AfterAction(c)
+}
+
+func (action ViewModuleAction) GetColumns(c *gin.Context) []pg.Column {
+	if action.ColumnsFunc != nil {
+		return action.ColumnsFunc(c)
+	}
+	return action.Columns
 }
