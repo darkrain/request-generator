@@ -35,6 +35,7 @@ type Generator struct {
 	PermissionMiddleware func(action actions.ModuleAction, permissions []actions.Role) gin.HandlerFunc
 	Locales              []locale.Lang
 	DefaultLocale        locale.Lang
+	translations         map[locale.Lang]map[string]string
 }
 
 func NewGenerator(
@@ -85,12 +86,12 @@ func (generator *Generator) FeaturesMiddleware() gin.HandlerFunc {
 		localized := make([]Features, len(generator.Features))
 		for i, f := range generator.Features {
 			lf := Features{
-				ModuleName: locale.Resolve(f.ModuleNameLabels, lang, f.ModuleName),
+				ModuleName: generator.Translate(lang, f.ModuleName),
 				Actions:    make(map[string]FeaturesActions, len(f.Actions)),
 			}
 			for k, a := range f.Actions {
 				lf.Actions[k] = FeaturesActions{
-					Label: locale.Resolve(a.Labels, lang, a.Label),
+					Label: generator.Translate(lang, a.Label),
 					Url:   a.Url,
 					Type:  a.Type,
 					Roles: a.Roles,
@@ -105,11 +106,11 @@ func (generator *Generator) FeaturesMiddleware() gin.HandlerFunc {
 			moduleI18n := make(map[string]FeaturesI18n, len(generator.Features))
 			for _, f := range generator.Features {
 				fi := FeaturesI18n{
-					ModuleName: locale.Resolve(f.ModuleNameLabels, loc, f.ModuleName),
+					ModuleName: generator.Translate(loc, f.ModuleName),
 					Actions:    make(map[string]string, len(f.Actions)),
 				}
 				for k, a := range f.Actions {
-					fi.Actions[k] = locale.Resolve(a.Labels, loc, a.Label)
+					fi.Actions[k] = generator.Translate(loc, a.Label)
 				}
 				moduleI18n[f.ModuleName] = fi
 			}
@@ -365,7 +366,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 
 			for _, realField := range module.Fields {
 				if containsColumn(columns, realField.Column) {
-					heads[realField.ColumnName()] = locale.Resolve(realField.Titles, lang, realField.Title)
+					heads[realField.ColumnName()] = generator.Translate(lang, realField.Title)
 				}
 			}
 		}
@@ -395,12 +396,12 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 					}
 
 					for i, opt := range options {
-						options[i].Label = locale.Resolve(opt.Labels, lang, opt.Label)
+						options[i].Label = generator.Translate(lang, opt.Label)
 					}
 
 					filterField := fields.ModuleFilterField{
 						Column:   realField.Column,
-						Title:    locale.Resolve(realField.Titles, lang, realField.Title),
+						Title:    generator.Translate(lang, realField.Title),
 						Type:     realField.Type,
 						FormType: realField.FormType,
 						Example:  realField.Example,
@@ -428,7 +429,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 				locHeads := make(map[string]string)
 				for _, realField := range module.Fields {
 					if containsColumn(columns, realField.Column) {
-						locHeads[realField.ColumnName()] = locale.Resolve(realField.Titles, loc, realField.Title)
+						locHeads[realField.ColumnName()] = generator.Translate(loc, realField.Title)
 					}
 				}
 				headsI18n[string(loc)] = locHeads
@@ -613,7 +614,7 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 			}
 
 			for i, opt := range optionItems {
-				optionItems[i].Label = locale.Resolve(opt.Labels, lang, opt.Label)
+				optionItems[i].Label = generator.Translate(lang, opt.Label)
 			}
 
 			if field.Check != nil {
@@ -633,14 +634,33 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 				}
 			}
 
-			field.Title = locale.Resolve(field.Titles, lang, field.Title)
+			field.Title = generator.Translate(lang, field.Title)
 			field.Options = optionItems
 			field.Check = checkItems
 
 			output = append(output, field)
 		}
 
-		response.Response(l, c, response.NewDefrecResponse(nil, output, lang, generator.Locales))
+		// Build i18n block for all supported locales
+		i18n := make(map[string]map[string]locale.FieldI18n, len(generator.Locales))
+		for _, loc := range generator.Locales {
+			fieldI18n := make(map[string]locale.FieldI18n, len(module.Fields))
+			for _, field := range module.Fields {
+				fi := locale.FieldI18n{
+					Title: generator.Translate(loc, field.Title),
+				}
+				if len(field.Options) > 0 {
+					fi.Options = make(map[string]string, len(field.Options))
+					for _, opt := range field.Options {
+						fi.Options[fmt.Sprintf("%v", opt.Value)] = generator.Translate(loc, opt.Label)
+					}
+				}
+				fieldI18n[field.ColumnName()] = fi
+			}
+			i18n[string(loc)] = fieldI18n
+		}
+
+		response.Response(l, c, response.NewDefrecResponse(nil, output, string(lang), generator.localeStrings(), i18n))
 
 		module.Defrec.AfterRequest(c)
 	}
