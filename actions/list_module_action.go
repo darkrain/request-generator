@@ -22,6 +22,8 @@ type ListModuleAction struct {
 	Extra        interface{}                                  `json:"extra"`
 	Search       []pg.Column                                  `json:"-"`
 	Filter       []pg.Column                                  `json:"-"`
+	Sort         []pg.Column                                  `json:"-"`
+	SortDefault  pg.Column                                   `json:"-"`
 	Fields       []RoleContext                                `json:"-"`
 }
 

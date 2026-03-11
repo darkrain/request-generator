@@ -22,6 +22,7 @@ type DBExecutor interface {
 		filter map[string]string,
 		where pg.BoolExpression,
 		joins []actions.ModuleActionJoin,
+		sort *actions.SortOption,
 	) (result []interface{}, rowsCount int64, err error)
 	View(
 		log *log.Entry,

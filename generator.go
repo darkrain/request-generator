@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/darkrain/request-generator/actions"
 	"github.com/darkrain/request-generator/db"
@@ -307,7 +308,14 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 		}
 
 		page := int64QueryParam(c, "page", 0)
-		size := int64QueryParam(c, "size", 3000)
+		defaultSize := int64(3000)
+		if action.Size > 0 {
+			defaultSize = action.Size
+		}
+		size := int64QueryParam(c, "size", defaultSize)
+		if action.Maxsize > 0 && size > action.Maxsize {
+			size = action.Maxsize
+		}
 		isCSV := int64QueryParam(c, "csv", 0)
 		filters := generator.normalizeFilters(c.QueryMap("filter"), module, action, lang)
 		searchText := c.Query("search")
@@ -341,6 +349,24 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			joins = append(roleJoins, joins...)
 		}
 
+		var activeSort *actions.SortOption
+		if sortParam := c.Query("sort"); sortParam != "" && len(action.Sort) > 0 {
+			parts := strings.SplitN(sortParam, ":", 2)
+			colName := parts[0]
+			dir := actions.SortASC
+			if len(parts) == 2 && parts[1] == "desc" {
+				dir = actions.SortDESC
+			}
+			for _, col := range action.Sort {
+				if col.Name() == colName {
+					activeSort = &actions.SortOption{Column: col, Direction: dir}
+					break
+				}
+			}
+		} else if action.SortDefault != nil {
+			activeSort = &actions.SortOption{Column: action.SortDefault, Direction: actions.SortASC}
+		}
+
 		results, count, err := generator.db(module).List(
 			l,
 			module.Table,
@@ -353,6 +379,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			filters,
 			where,
 			joins,
+			activeSort,
 		)
 
 		if err != nil {
@@ -436,6 +463,21 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			}
 		}
 
+		var sortOptions []actions.SortResponseItem
+		if len(action.Sort) > 0 {
+			for _, col := range action.Sort {
+				field := module.GetFieldByColumn(col)
+				label := col.Name()
+				if field != nil {
+					label = generator.Translate(lang, field.Title)
+				}
+				sortOptions = append(sortOptions,
+					actions.SortResponseItem{Value: col.Name() + ":asc", Text: label + " ↑"},
+					actions.SortResponseItem{Value: col.Name() + ":desc", Text: label + " ↓"},
+				)
+			}
+		}
+
 		output := struct {
 			Count     int64                               `json:"count"`
 			Size      int64                               `json:"size"`
@@ -447,6 +489,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			Heads     map[string]string                   `json:"heads"`
 			HeadsI18n map[string]map[string]string        `json:"heads_i18n,omitempty"`
 			Filters   map[string]fields.ModuleFilterField `json:"filters,omitempty"`
+			Sort      []actions.SortResponseItem          `json:"sort,omitempty"`
 		}{
 			Count:     count,
 			Size:      size,
@@ -458,6 +501,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			Heads:     heads,
 			HeadsI18n: headsI18n,
 			Filters:   filter,
+			Sort:      sortOptions,
 		}
 
 		if isCSV == 0 {

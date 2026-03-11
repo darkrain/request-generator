@@ -37,6 +37,14 @@ func (db *DB) debugLog(log *log.Entry, args ...interface{}) {
 	}
 }
 
+func interpolateQuery(query string, args []interface{}) string {
+	for i := len(args); i >= 1; i-- {
+		placeholder := fmt.Sprintf("$%d", i)
+		query = strings.Replace(query, placeholder, fmt.Sprintf("'%v'", args[i-1]), 1)
+	}
+	return query
+}
+
 func (db *DB) Begin() (*Tx, error) {
 	tx, err := db.sql.Begin()
 	if err != nil {
@@ -86,6 +94,7 @@ func (db *DB) List(
 	filter map[string]string,
 	where pg.BoolExpression,
 	joins []actions.ModuleActionJoin,
+	sort *actions.SortOption,
 ) (result []interface{}, rowsCount int64, err error) {
 
 	// Build projections: primary key + field columns + join aggregations
@@ -153,7 +162,16 @@ func (db *DB) List(
 	if len(conditions) > 0 {
 		stmt = stmt.WHERE(pg.AND(conditions...))
 	}
-	stmt = stmt.GROUP_BY(primaryKey).LIMIT(size).OFFSET(size * page)
+	stmt = stmt.GROUP_BY(primaryKey)
+	if sort != nil {
+		colExpr := pg.Raw(fmt.Sprintf(`%s."%s"`, table.TableName(), sort.Column.Name()))
+		if sort.Direction == actions.SortDESC {
+			stmt = stmt.ORDER_BY(colExpr.DESC())
+		} else {
+			stmt = stmt.ORDER_BY(colExpr.ASC())
+		}
+	}
+	stmt = stmt.LIMIT(size).OFFSET(size * page)
 
 	// Build COUNT statement
 	countStmt := pg.SELECT(pg.COUNT(pg.STAR)).FROM(from)
@@ -167,8 +185,8 @@ func (db *DB) List(
 	query, args := stmt.Sql()
 	countQuery, countArgs := countStmt.Sql()
 
-	db.debugLog(log, "[DEBUG] LIST QUERY: ", query)
-	db.debugLog(log, "[DEBUG] LIST COUNT QUERY: ", countQuery)
+	db.debugLog(log, "[DEBUG] LIST QUERY: ", interpolateQuery(query, args))
+	db.debugLog(log, "[DEBUG] LIST COUNT QUERY: ", interpolateQuery(countQuery, countArgs))
 
 	// Execute main query
 	var rows *sql.Rows
@@ -357,7 +375,7 @@ func (db *DB) View(
 	stmt = stmt.GROUP_BY(primaryKey).LIMIT(1)
 
 	query, args := stmt.Sql()
-	db.debugLog(log, "[DEBUG] VIEW QUERY: ", query)
+	db.debugLog(log, "[DEBUG] VIEW QUERY: ", interpolateQuery(query, args))
 
 	var rows *sql.Rows
 	var err error
@@ -506,7 +524,7 @@ func (db *DB) Add(log *log.Entry, table pg.Table, primaryKey pg.Column, moduleFi
 		primaryKey.Name(),
 	)
 
-	db.debugLog(log, "[DEBUG] ADD QUERY: ", query)
+	db.debugLog(log, "[DEBUG] ADD QUERY: ", interpolateQuery(query, values))
 
 	err = tx.QueryRow(query, values...).Scan(&output.Value)
 	if err != nil {
@@ -586,8 +604,7 @@ func (db *DB) Update(log *log.Entry, table pg.Table, primaryKey pg.Column, modul
 		whereClause,
 	)
 
-	db.debugLog(log, "[DEBUG] UPDATE QUERY: ", query)
-	db.debugLog(log, "[DEBUG] UPDATE VALUES: ", values)
+	db.debugLog(log, "[DEBUG] UPDATE QUERY: ", interpolateQuery(query, values))
 
 	result, err := tx.Exec(query, values...)
 	if err != nil {
@@ -620,7 +637,7 @@ func (db *DB) Delete(log *log.Entry, table pg.Table, where pg.BoolExpression) er
 	stmt := table.DELETE().WHERE(where)
 	query, args := stmt.Sql()
 
-	db.debugLog(log, "[DEBUG] DELETE QUERY: ", query)
+	db.debugLog(log, "[DEBUG] DELETE QUERY: ", interpolateQuery(query, args))
 
 	result, err := tx.Exec(query, args...)
 	if err != nil {
