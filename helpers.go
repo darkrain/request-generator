@@ -7,6 +7,7 @@ import (
 
 	"github.com/darkrain/request-generator/actions"
 	"github.com/darkrain/request-generator/fields"
+	"github.com/darkrain/request-generator/locale"
 	"github.com/gin-gonic/gin"
 	pg "github.com/go-jet/jet/v2/postgres"
 )
@@ -26,7 +27,7 @@ func (generator *Generator) getPagination(page int64, size int64) (int64, int64,
 	return limit, offset, page
 }
 
-func (generator *Generator) normalizeFilters(data map[string]string, module *BaseModule, listAction actions.ListModuleAction) map[string]string {
+func (generator *Generator) normalizeFilters(data map[string]string, module *BaseModule, listAction actions.ListModuleAction, lang locale.Lang) map[string]string {
 	resultFilterMap := make(map[string]string)
 
 	filters := make(map[string]fields.ModuleField)
@@ -44,7 +45,7 @@ parentLoop:
 		}
 
 		for _, rule := range filter.Check {
-			if err := rule.Validate(filterValue); err != nil {
+			if err := rule.Validate(filterValue, string(lang)); err != nil {
 				continue parentLoop
 			}
 		}
@@ -68,6 +69,7 @@ func (generator *Generator) checkRequest(
 	module *BaseModule,
 	action actions.ModuleAction,
 	scenario fields.Scenario,
+	lang locale.Lang,
 ) map[string]string {
 	errs := make(map[string]string)
 	actionColumns := action.GetColumns(context)
@@ -83,7 +85,7 @@ func (generator *Generator) checkRequest(
 		rules := module.GetRules(context, *field, scenario)
 
 		for _, rule := range rules {
-			err := rule.Validate(value)
+			err := rule.Validate(value, string(lang))
 			if err != nil {
 				errs[colName] = err.Error()
 			}

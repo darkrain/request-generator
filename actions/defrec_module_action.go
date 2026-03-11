@@ -6,7 +6,8 @@ import (
 
 type DefrecModuleAction struct {
 	ModuleAction
-	Label        string `json:"label"`
+	Label        string            `json:"label"`
+	Labels       map[string]string `json:"-"`
 	BeforeAction func(c *gin.Context) error
 	AfterAction  func(c *gin.Context)
 }

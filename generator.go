@@ -12,6 +12,7 @@ import (
 	"github.com/darkrain/request-generator/db"
 	"github.com/darkrain/request-generator/fields"
 	"github.com/darkrain/request-generator/icontext"
+	"github.com/darkrain/request-generator/locale"
 	"github.com/darkrain/request-generator/response"
 	"github.com/darkrain/request-generator/utils"
 	"github.com/gin-gonic/gin"
@@ -32,6 +33,9 @@ type Generator struct {
 	Features             []Features
 	AuthMiddleware       func(module actions.ModuleAction) gin.HandlerFunc
 	PermissionMiddleware func(action actions.ModuleAction, permissions []actions.Role) gin.HandlerFunc
+	Locales              []locale.Lang
+	DefaultLocale        locale.Lang
+	translations         map[locale.Lang]map[string]string
 }
 
 func NewGenerator(
@@ -48,14 +52,79 @@ func NewGenerator(
 		Features:             []Features{},
 		PermissionMiddleware: permissionMiddleware,
 		AuthMiddleware:       authMiddleware,
+		Locales:              []locale.Lang{locale.EN},
+		DefaultLocale:        locale.EN,
 	}
+}
+
+func (generator *Generator) getLang(c *gin.Context) locale.Lang {
+	if lang := c.Query("lang"); lang != "" {
+		l := locale.Lang(lang)
+		for _, s := range generator.Locales {
+			if s == l {
+				return l
+			}
+		}
+	}
+	return locale.ParseAcceptLanguage(c.GetHeader("Accept-Language"), generator.Locales, generator.DefaultLocale)
+}
+
+func (generator *Generator) localeStrings() []string {
+	result := make([]string, len(generator.Locales))
+	for i, l := range generator.Locales {
+		result[i] = string(l)
+	}
+	return result
 }
 
 func (generator *Generator) FeaturesMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		l, _ := icontext.GetLogger(ctx)
-		response.Response(l, c, generator.Features)
+		lang := generator.getLang(c)
+
+		localized := make([]Features, len(generator.Features))
+		for i, f := range generator.Features {
+			lf := Features{
+				ModuleName: generator.Translate(lang, f.ModuleName),
+				Actions:    make(map[string]FeaturesActions, len(f.Actions)),
+			}
+			for k, a := range f.Actions {
+				lf.Actions[k] = FeaturesActions{
+					Label: generator.Translate(lang, a.Label),
+					Url:   a.Url,
+					Type:  a.Type,
+					Roles: a.Roles,
+				}
+			}
+			localized[i] = lf
+		}
+
+		i18n := make(map[string]map[string]FeaturesI18n, len(generator.Locales))
+		for _, loc := range generator.Locales {
+			locStr := string(loc)
+			moduleI18n := make(map[string]FeaturesI18n, len(generator.Features))
+			for _, f := range generator.Features {
+				fi := FeaturesI18n{
+					ModuleName: generator.Translate(loc, f.ModuleName),
+					Actions:    make(map[string]string, len(f.Actions)),
+				}
+				for k, a := range f.Actions {
+					fi.Actions[k] = generator.Translate(loc, a.Label)
+				}
+				moduleI18n[f.ModuleName] = fi
+			}
+			i18n[locStr] = moduleI18n
+		}
+
+		resp := FeaturesResponse{
+			Locale:  string(lang),
+			Locales: generator.localeStrings(),
+			Modules: localized,
+			I18n:    i18n,
+		}
+
+		response.Response(l, c, resp)
 	}
 }
 
@@ -66,8 +135,9 @@ func (generator *Generator) Run() {
 
 	for _, module := range generator.Modules {
 		featuresModule := Features{
-			ModuleName: module.Label,
-			Actions:    make(map[string]FeaturesActions),
+			ModuleName:       module.Label,
+			ModuleNameLabels: module.Labels,
+			Actions:          make(map[string]FeaturesActions),
 		}
 
 		for _, action := range module.Actions {
@@ -76,10 +146,11 @@ func (generator *Generator) Run() {
 
 				listAction, _ := action.(actions.ListModuleAction)
 				featuresModule.Actions["list"] = FeaturesActions{
-					Label: listAction.Label,
-					Url:   module.Path + "/" + module.Name,
-					Type:  "GET",
-					Roles: listAction.Permission,
+					Label:  listAction.Label,
+					Labels: listAction.Labels,
+					Url:    module.Path + "/" + module.Name,
+					Type:   "GET",
+					Roles:  listAction.Permission,
 				}
 				listGrpup := generator.group.Group(module.Path)
 				if listAction.Auth {
@@ -99,16 +170,18 @@ func (generator *Generator) Run() {
 			case actions.ModuleActionNameAdd:
 				addAction, _ := action.(actions.AddModuleAction)
 				featuresModule.Actions["add"] = FeaturesActions{
-					Label: addAction.Label,
-					Url:   module.Path + "/" + module.Name,
-					Type:  "PUT",
-					Roles: addAction.Permission,
+					Label:  addAction.Label,
+					Labels: addAction.Labels,
+					Url:    module.Path + "/" + module.Name,
+					Type:   "PUT",
+					Roles:  addAction.Permission,
 				}
 				featuresModule.Actions["defrec"] = FeaturesActions{
-					Label: addAction.Label,
-					Url:   fmt.Sprintf("%s/%s/defrec/", module.Path, module.Name),
-					Type:  "GET",
-					Roles: addAction.Permission,
+					Label:  addAction.Label,
+					Labels: addAction.Labels,
+					Url:    fmt.Sprintf("%s/%s/defrec/", module.Path, module.Name),
+					Type:   "GET",
+					Roles:  addAction.Permission,
 				}
 				addGrpup := generator.group.Group(module.Path)
 				if addAction.Auth {
@@ -131,10 +204,11 @@ func (generator *Generator) Run() {
 			case actions.ModuleActionNameView:
 				viewAction, _ := action.(actions.ViewModuleAction)
 				featuresModule.Actions["view"] = FeaturesActions{
-					Label: viewAction.Label,
-					Url:   module.Path + "/" + module.Name,
-					Type:  "GET",
-					Roles: viewAction.Permission,
+					Label:  viewAction.Label,
+					Labels: viewAction.Labels,
+					Url:    module.Path + "/" + module.Name,
+					Type:   "GET",
+					Roles:  viewAction.Permission,
 				}
 				viewGrout := generator.group.Group(module.Path)
 				if viewAction.Auth {
@@ -154,10 +228,11 @@ func (generator *Generator) Run() {
 			case actions.ModuleActionNameUpdate:
 				updateAction, _ := action.(actions.UpdateModuleAction)
 				featuresModule.Actions["update"] = FeaturesActions{
-					Label: updateAction.Label,
-					Url:   module.Path + "/" + module.Name,
-					Type:  "POST",
-					Roles: updateAction.Permission,
+					Label:  updateAction.Label,
+					Labels: updateAction.Labels,
+					Url:    module.Path + "/" + module.Name,
+					Type:   "POST",
+					Roles:  updateAction.Permission,
 				}
 				updateGroup := generator.group.Group(module.Path)
 				if updateAction.Auth {
@@ -177,10 +252,11 @@ func (generator *Generator) Run() {
 			case actions.ModuleActionNameDelete:
 				deleteAction, _ := action.(actions.DeleteModuleAction)
 				featuresModule.Actions["delete"] = FeaturesActions{
-					Label: deleteAction.Label,
-					Url:   module.Path + "/" + module.Name,
-					Type:  "DELETE",
-					Roles: deleteAction.Permission,
+					Label:  deleteAction.Label,
+					Labels: deleteAction.Labels,
+					Url:    module.Path + "/" + module.Name,
+					Type:   "DELETE",
+					Roles:  deleteAction.Permission,
 				}
 				deleteGroup := generator.group.Group(module.Path)
 				if deleteAction.Auth {
@@ -209,6 +285,20 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 
 		ctx := c.Request.Context()
 		l, _ := icontext.GetLogger(ctx)
+		role := actions.GetRoleFromContext(c)
+		lang := generator.getLang(c)
+
+		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
+			if err := hook(c); err != nil {
+				response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+				return
+			}
+		}
+		defer func() {
+			if hook := actions.ResolveRoleAfterHook(module.RoleAfterHook, role); hook != nil {
+				hook(c)
+			}
+		}()
 
 		err := action.BeforeRequest(c)
 		if err != nil {
@@ -219,7 +309,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 		page := int64QueryParam(c, "page", 0)
 		size := int64QueryParam(c, "size", 3000)
 		isCSV := int64QueryParam(c, "csv", 0)
-		filters := generator.normalizeFilters(c.QueryMap("filter"), module, action)
+		filters := generator.normalizeFilters(c.QueryMap("filter"), module, action, lang)
 		searchText := c.Query("search")
 		addFilters := c.Query("addFilters")
 		addHeads := c.Query("addHeads")
@@ -234,8 +324,21 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 		}
 
 		var where pg.BoolExpression
+		if whereFn := actions.ResolveRoleWhere(module.RoleWhere, role); whereFn != nil {
+			where = whereFn(c)
+		}
 		if action.Where != nil {
-			where = action.Where(c)
+			actionWhere := action.Where(c)
+			if where != nil {
+				where = pg.AND(where, actionWhere)
+			} else {
+				where = actionWhere
+			}
+		}
+
+		joins := action.Join
+		if roleJoins := actions.ResolveRoleJoin(module.RoleJoin, role); roleJoins != nil {
+			joins = append(roleJoins, joins...)
 		}
 
 		results, count, err := generator.db(module).List(
@@ -249,7 +352,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			searchText,
 			filters,
 			where,
-			action.Join,
+			joins,
 		)
 
 		if err != nil {
@@ -263,7 +366,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 
 			for _, realField := range module.Fields {
 				if containsColumn(columns, realField.Column) {
-					heads[realField.ColumnName()] = realField.Title
+					heads[realField.ColumnName()] = generator.Translate(lang, realField.Title)
 				}
 			}
 		}
@@ -284,10 +387,21 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 							options = append(options, item)
 						}
 					}
+					roleStr := string(actions.GetRoleFromContext(c))
+					for _, ro := range realField.RoleOptions {
+						if ro.Role == roleStr || ro.Role == string(actions.RoleAll) {
+							options = append(options, ro.Options...)
+							break
+						}
+					}
+
+					for i, opt := range options {
+						options[i].Label = generator.Translate(lang, opt.Label)
+					}
 
 					filterField := fields.ModuleFilterField{
 						Column:   realField.Column,
-						Title:    realField.Title,
+						Title:    generator.Translate(lang, realField.Title),
 						Type:     realField.Type,
 						FormType: realField.FormType,
 						Example:  realField.Example,
@@ -308,22 +422,42 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			heads = make(map[string]string)
 		}
 
+		var headsI18n map[string]map[string]string
+		if addHeads == "true" {
+			headsI18n = make(map[string]map[string]string, len(generator.Locales))
+			for _, loc := range generator.Locales {
+				locHeads := make(map[string]string)
+				for _, realField := range module.Fields {
+					if containsColumn(columns, realField.Column) {
+						locHeads[realField.ColumnName()] = generator.Translate(loc, realField.Title)
+					}
+				}
+				headsI18n[string(loc)] = locHeads
+			}
+		}
+
 		output := struct {
-			Count   int64                               `json:"count"`
-			Size    int64                               `json:"size"`
-			Page    int64                               `json:"page"`
-			Extra   interface{}                         `json:"extra"`
-			Rows    []interface{}                       `json:"rows"`
-			Heads   map[string]string                   `json:"heads"`
-			Filters map[string]fields.ModuleFilterField `json:"filters,omitempty"`
+			Count     int64                               `json:"count"`
+			Size      int64                               `json:"size"`
+			Page      int64                               `json:"page"`
+			Locale    string                              `json:"locale"`
+			Locales   []string                            `json:"locales"`
+			Extra     interface{}                         `json:"extra"`
+			Rows      []interface{}                       `json:"rows"`
+			Heads     map[string]string                   `json:"heads"`
+			HeadsI18n map[string]map[string]string        `json:"heads_i18n,omitempty"`
+			Filters   map[string]fields.ModuleFilterField `json:"filters,omitempty"`
 		}{
-			Count:   count,
-			Size:    size,
-			Page:    page,
-			Extra:   action.Extra,
-			Rows:    results,
-			Heads:   heads,
-			Filters: filter,
+			Count:     count,
+			Size:      size,
+			Page:      page,
+			Locale:    string(lang),
+			Locales:   generator.localeStrings(),
+			Extra:     action.Extra,
+			Rows:      results,
+			Heads:     heads,
+			HeadsI18n: headsI18n,
+			Filters:   filter,
 		}
 
 		if isCSV == 0 {
@@ -380,6 +514,20 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		l, _ := icontext.GetLogger(ctx)
+		role := actions.GetRoleFromContext(c)
+		lang := generator.getLang(c)
+
+		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
+			if err := hook(c); err != nil {
+				response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+				return
+			}
+		}
+		defer func() {
+			if hook := actions.ResolveRoleAfterHook(module.RoleAfterHook, role); hook != nil {
+				hook(c)
+			}
+		}()
 
 		err := action.BeforeRequest(c)
 		if err != nil {
@@ -398,7 +546,7 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 			return
 		}
 
-		errs := generator.checkRequest(c, input, module, action, fields.ScenarioAdd)
+		errs := generator.checkRequest(c, input, module, action, fields.ScenarioAdd, lang)
 		if len(errs) > 0 {
 			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, errs)
 			return
@@ -432,6 +580,7 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		l, _ := icontext.GetLogger(ctx)
+		lang := generator.getLang(c)
 
 		err := module.Defrec.BeforeRequest(c)
 		if err != nil {
@@ -440,6 +589,8 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 		}
 
 		output := make([]fields.ModuleField, 0, 10)
+
+		role := string(actions.GetRoleFromContext(c))
 
 		for _, field := range module.Fields {
 			checkItems := make([]fields.CheckRules, 0, 10)
@@ -455,6 +606,16 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 					optionItems = append(optionItems, option)
 				}
 			}
+			for _, ro := range field.RoleOptions {
+				if ro.Role == role || ro.Role == string(actions.RoleAll) {
+					optionItems = append(optionItems, ro.Options...)
+					break
+				}
+			}
+
+			for i, opt := range optionItems {
+				optionItems[i].Label = generator.Translate(lang, opt.Label)
+			}
 
 			if field.Check != nil {
 				for _, check := range field.Check {
@@ -466,13 +627,40 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 					checkItems = append(checkItems, check)
 				}
 			}
+			for _, rc := range field.RoleCheck {
+				if rc.Role == role || rc.Role == string(actions.RoleAll) {
+					checkItems = append(checkItems, rc.Rules...)
+					break
+				}
+			}
+
+			field.Title = generator.Translate(lang, field.Title)
 			field.Options = optionItems
 			field.Check = checkItems
 
 			output = append(output, field)
 		}
 
-		response.Response(l, c, response.NewDefrecResponse(nil, output))
+		// Build i18n block for all supported locales
+		i18n := make(map[string]map[string]locale.FieldI18n, len(generator.Locales))
+		for _, loc := range generator.Locales {
+			fieldI18n := make(map[string]locale.FieldI18n, len(module.Fields))
+			for _, field := range module.Fields {
+				fi := locale.FieldI18n{
+					Title: generator.Translate(loc, field.Title),
+				}
+				if len(field.Options) > 0 {
+					fi.Options = make(map[string]string, len(field.Options))
+					for _, opt := range field.Options {
+						fi.Options[fmt.Sprintf("%v", opt.Value)] = generator.Translate(loc, opt.Label)
+					}
+				}
+				fieldI18n[field.ColumnName()] = fi
+			}
+			i18n[string(loc)] = fieldI18n
+		}
+
+		response.Response(l, c, response.NewDefrecResponse(nil, output, string(lang), generator.localeStrings(), i18n))
 
 		module.Defrec.AfterRequest(c)
 	}
@@ -482,6 +670,19 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		l, _ := icontext.GetLogger(ctx)
+		role := actions.GetRoleFromContext(c)
+
+		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
+			if err := hook(c); err != nil {
+				response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+				return
+			}
+		}
+		defer func() {
+			if hook := actions.ResolveRoleAfterHook(module.RoleAfterHook, role); hook != nil {
+				hook(c)
+			}
+		}()
 
 		err := action.BeforeRequest(c)
 		if err != nil {
@@ -491,7 +692,6 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 
 		whereKey := c.Param("bykey")
 
-		// Validate that bykey is one of the allowed columns
 		allowedKeys := make([]interface{}, 0, len(action.By))
 		for _, col := range action.By {
 			allowedKeys = append(allowedKeys, col.Name())
@@ -521,12 +721,10 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			}
 		}
 
-		// Build WHERE condition from bykey/value
 		where := pg.RawBool(
 			fmt.Sprintf(`%s."%s" = #val`, module.Table.Alias(), whereKey),
 			pg.RawArgs{"#val": whereValue},
 		)
-		// If table has no alias, use table name
 		if module.Table.Alias() == "" {
 			where = pg.RawBool(
 				fmt.Sprintf(`"%s"."%s" = #val`, module.Table.TableName(), whereKey),
@@ -534,7 +732,12 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			)
 		}
 
-		result, err := generator.db(module).View(l, module.Table, module.PrimaryKey, realFields, where, action.Join)
+		joins := action.Join
+		if roleJoins := actions.ResolveRoleJoin(module.RoleJoin, role); roleJoins != nil {
+			joins = append(roleJoins, joins...)
+		}
+
+		result, err := generator.db(module).View(l, module.Table, module.PrimaryKey, realFields, where, joins)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
@@ -550,6 +753,20 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		l, _ := icontext.GetLogger(ctx)
+		role := actions.GetRoleFromContext(c)
+		lang := generator.getLang(c)
+
+		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
+			if err := hook(c); err != nil {
+				response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+				return
+			}
+		}
+		defer func() {
+			if hook := actions.ResolveRoleAfterHook(module.RoleAfterHook, role); hook != nil {
+				hook(c)
+			}
+		}()
 
 		err := action.BeforeRequest(c)
 		if err != nil {
@@ -585,7 +802,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 			return
 		}
 
-		errs := generator.checkRequest(c, input, module, action, fields.ScenarioUpdate)
+		errs := generator.checkRequest(c, input, module, action, fields.ScenarioUpdate, lang)
 		if len(errs) > 0 {
 			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, errs)
 			return
@@ -624,6 +841,19 @@ func (generator *Generator) actionDelete(module *BaseModule, action actions.Dele
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		l, _ := icontext.GetLogger(ctx)
+		role := actions.GetRoleFromContext(c)
+
+		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
+			if err := hook(c); err != nil {
+				response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+				return
+			}
+		}
+		defer func() {
+			if hook := actions.ResolveRoleAfterHook(module.RoleAfterHook, role); hook != nil {
+				hook(c)
+			}
+		}()
 
 		err := action.BeforeRequest(c)
 		if err != nil {
