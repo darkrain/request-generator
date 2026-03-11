@@ -3,9 +3,9 @@ package db
 import (
 	"database/sql"
 
+	"github.com/darkrain/request-generator/actions"
+	"github.com/darkrain/request-generator/fields"
 	pg "github.com/go-jet/jet/v2/postgres"
-	"github.com/portalenergy/pe-request-generator/actions"
-	"github.com/portalenergy/pe-request-generator/fields"
 	log "github.com/sirupsen/logrus"
 )
 

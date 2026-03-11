@@ -1,7 +1,7 @@
 package response
 
 import (
-	f "github.com/portalenergy/pe-request-generator/fields"
+	f "github.com/darkrain/request-generator/fields"
 )
 
 type DefrecResponse struct {

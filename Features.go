@@ -1,6 +1,6 @@
 package module
 
-import "github.com/portalenergy/pe-request-generator/actions"
+import "github.com/darkrain/request-generator/actions"
 
 type Features struct {
 	ModuleName string                     `json:"module_name"`

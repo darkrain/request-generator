@@ -8,15 +8,15 @@ import (
 	"net/http"
 	"sort"
 
+	"github.com/darkrain/request-generator/actions"
+	"github.com/darkrain/request-generator/db"
+	"github.com/darkrain/request-generator/fields"
+	"github.com/darkrain/request-generator/icontext"
+	"github.com/darkrain/request-generator/response"
+	"github.com/darkrain/request-generator/utils"
 	"github.com/gin-gonic/gin"
 	pg "github.com/go-jet/jet/v2/postgres"
 	validation "github.com/go-ozzo/ozzo-validation/v4"
-	"github.com/portalenergy/pe-request-generator/actions"
-	"github.com/portalenergy/pe-request-generator/db"
-	"github.com/portalenergy/pe-request-generator/fields"
-	"github.com/portalenergy/pe-request-generator/icontext"
-	"github.com/portalenergy/pe-request-generator/response"
-	"github.com/portalenergy/pe-request-generator/utils"
 )
 
 const (

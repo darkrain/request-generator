@@ -1,10 +1,10 @@
 package module
 
 import (
+	"github.com/darkrain/request-generator/actions"
+	"github.com/darkrain/request-generator/fields"
 	"github.com/gin-gonic/gin"
 	pg "github.com/go-jet/jet/v2/postgres"
-	"github.com/portalenergy/pe-request-generator/actions"
-	"github.com/portalenergy/pe-request-generator/fields"
 )
 
 type BaseModule struct {
