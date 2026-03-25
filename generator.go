@@ -37,6 +37,7 @@ type Generator struct {
 	Locales              []locale.Lang
 	DefaultLocale        locale.Lang
 	translations         map[locale.Lang]map[string]string
+	EnableOpenAPI        bool
 }
 
 func NewGenerator(
@@ -70,14 +71,6 @@ func (generator *Generator) getLang(c *gin.Context) locale.Lang {
 	return locale.ParseAcceptLanguage(c.GetHeader("Accept-Language"), generator.Locales, generator.DefaultLocale)
 }
 
-func (generator *Generator) localeStrings() []string {
-	result := make([]string, len(generator.Locales))
-	for i, l := range generator.Locales {
-		result[i] = string(l)
-	}
-	return result
-}
-
 func (generator *Generator) FeaturesMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
@@ -101,28 +94,8 @@ func (generator *Generator) FeaturesMiddleware() gin.HandlerFunc {
 			localized[i] = lf
 		}
 
-		i18n := make(map[string]map[string]FeaturesI18n, len(generator.Locales))
-		for _, loc := range generator.Locales {
-			locStr := string(loc)
-			moduleI18n := make(map[string]FeaturesI18n, len(generator.Features))
-			for _, f := range generator.Features {
-				fi := FeaturesI18n{
-					ModuleName: generator.Translate(loc, f.ModuleName),
-					Actions:    make(map[string]string, len(f.Actions)),
-				}
-				for k, a := range f.Actions {
-					fi.Actions[k] = generator.Translate(loc, a.Label)
-				}
-				moduleI18n[f.ModuleName] = fi
-			}
-			i18n[locStr] = moduleI18n
-		}
-
 		resp := FeaturesResponse{
-			Locale:  string(lang),
-			Locales: generator.localeStrings(),
 			Modules: localized,
-			I18n:    i18n,
 		}
 
 		response.Response(l, c, resp)
@@ -278,6 +251,23 @@ func (generator *Generator) Run() {
 
 		generator.Features = append(generator.Features, featuresModule)
 	}
+
+	// Locale endpoints
+	featuresGroup.GET("/lang", generator.handleLangList())
+	featuresGroup.GET("/lang/:key", generator.handleLangTranslations())
+
+	// Build and serve OpenAPI 3.0 spec (only when enabled)
+	if generator.EnableOpenAPI {
+		spec := generator.buildOpenAPISpec("Muta Alim API", "1.0.0")
+		specJSON, err := json.MarshalIndent(spec, "", "  ")
+		if err != nil {
+			panic(fmt.Sprintf("failed to marshal OpenAPI spec: %v", err))
+		}
+
+		featuresGroup.GET("/openapi.json", func(c *gin.Context) {
+			c.Data(http.StatusOK, "application/json; charset=utf-8", specJSON)
+		})
+	}
 }
 
 func (generator *Generator) actionList(module *BaseModule, action actions.ListModuleAction) func(c *gin.Context) {
@@ -367,6 +357,8 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			activeSort = &actions.SortOption{Column: action.SortDefault, Direction: actions.SortASC}
 		}
 
+		tc := generator.buildTranslationContext(module)
+
 		results, count, err := generator.db(module).List(
 			l,
 			module.Table,
@@ -380,6 +372,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			where,
 			joins,
 			activeSort,
+			tc,
 		)
 
 		if err != nil {
@@ -387,13 +380,19 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			return
 		}
 
-		var heads map[string]string
+		var heads map[string]interface{}
 		if addHeads == "true" {
-			heads = make(map[string]string)
+			heads = make(map[string]interface{})
 
 			for _, realField := range module.Fields {
 				if containsColumn(columns, realField.Column) {
-					heads[realField.ColumnName()] = generator.Translate(lang, realField.Title)
+					headItem := map[string]interface{}{
+						"title": generator.Translate(lang, realField.Title),
+					}
+					if realField.Extra != nil && realField.Extra.List != nil {
+						headItem["extra"] = realField.Extra.List
+					}
+					heads[realField.ColumnName()] = headItem
 				}
 			}
 		}
@@ -446,21 +445,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 		}
 
 		if len(heads) == 0 {
-			heads = make(map[string]string)
-		}
-
-		var headsI18n map[string]map[string]string
-		if addHeads == "true" {
-			headsI18n = make(map[string]map[string]string, len(generator.Locales))
-			for _, loc := range generator.Locales {
-				locHeads := make(map[string]string)
-				for _, realField := range module.Fields {
-					if containsColumn(columns, realField.Column) {
-						locHeads[realField.ColumnName()] = generator.Translate(loc, realField.Title)
-					}
-				}
-				headsI18n[string(loc)] = locHeads
-			}
+			heads = make(map[string]interface{})
 		}
 
 		var sortOptions []actions.SortResponseItem
@@ -479,28 +464,22 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 		}
 
 		output := struct {
-			Count     int64                               `json:"count"`
-			Size      int64                               `json:"size"`
-			Page      int64                               `json:"page"`
-			Locale    string                              `json:"locale"`
-			Locales   []string                            `json:"locales"`
-			Extra     interface{}                         `json:"extra"`
-			Rows      []interface{}                       `json:"rows"`
-			Heads     map[string]string                   `json:"heads"`
-			HeadsI18n map[string]map[string]string        `json:"heads_i18n,omitempty"`
-			Filters   map[string]fields.ModuleFilterField `json:"filters,omitempty"`
-			Sort      []actions.SortResponseItem          `json:"sort,omitempty"`
+			Count   int64                               `json:"count"`
+			Size    int64                               `json:"size"`
+			Page    int64                               `json:"page"`
+			Extra   interface{}                         `json:"extra"`
+			Rows    []interface{}                       `json:"rows"`
+			Heads   map[string]interface{}               `json:"heads"`
+			Filters map[string]fields.ModuleFilterField `json:"filters,omitempty"`
+			Sort    []actions.SortResponseItem          `json:"sort,omitempty"`
 		}{
-			Count:     count,
-			Size:      size,
-			Page:      page,
-			Locale:    string(lang),
-			Locales:   generator.localeStrings(),
-			Extra:     action.Extra,
-			Rows:      results,
-			Heads:     heads,
-			HeadsI18n: headsI18n,
-			Filters:   filter,
+			Count:   count,
+			Size:    size,
+			Page:    page,
+			Extra:   action.Extra,
+			Rows:    results,
+			Heads:   heads,
+			Filters: filter,
 			Sort:      sortOptions,
 		}
 
@@ -605,8 +584,10 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 			}
 		}
 
+		tc := generator.buildTranslationContext(module)
+
 		mapInput := generator.mapRequestInput(input, module, columns)
-		output, err := generator.db(module).Add(l, module.Table, module.PrimaryKey, realFields, mapInput)
+		output, err := generator.db(module).Add(l, module.Table, module.PrimaryKey, realFields, mapInput, tc)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{
 				err.Error(),
@@ -685,26 +666,7 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 			output = append(output, field)
 		}
 
-		// Build i18n block for all supported locales
-		i18n := make(map[string]map[string]locale.FieldI18n, len(generator.Locales))
-		for _, loc := range generator.Locales {
-			fieldI18n := make(map[string]locale.FieldI18n, len(module.Fields))
-			for _, field := range module.Fields {
-				fi := locale.FieldI18n{
-					Title: generator.Translate(loc, field.Title),
-				}
-				if len(field.Options) > 0 {
-					fi.Options = make(map[string]string, len(field.Options))
-					for _, opt := range field.Options {
-						fi.Options[fmt.Sprintf("%v", opt.Value)] = generator.Translate(loc, opt.Label)
-					}
-				}
-				fieldI18n[field.ColumnName()] = fi
-			}
-			i18n[string(loc)] = fieldI18n
-		}
-
-		response.Response(l, c, response.NewDefrecResponse(nil, output, string(lang), generator.localeStrings(), i18n))
+		response.Response(l, c, response.NewDefrecResponse(nil, output))
 
 		module.Defrec.AfterRequest(c)
 	}
@@ -781,13 +743,84 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			joins = append(roleJoins, joins...)
 		}
 
-		result, err := generator.db(module).View(l, module.Table, module.PrimaryKey, realFields, where, joins)
+		tc := generator.buildTranslationContext(module)
+
+		result, err := generator.db(module).View(l, module.Table, module.PrimaryKey, realFields, where, joins, tc)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
 
-		response.Response(l, c, result)
+		// Build rich view response with field metadata
+		resultMap, ok := result.(map[string]interface{})
+		if !ok {
+			response.Response(l, c, result)
+			action.AfterRequest(c)
+			return
+		}
+
+		// Determine editable columns from UpdateAction
+		var editableColumns []pg.Column
+		if updateAction := findUpdateAction(module); updateAction != nil {
+			editableColumns = updateAction.GetColumns(c)
+		}
+
+		lang := generator.getLang(c)
+		roleStr := string(role)
+
+		item := make(map[string]interface{}, len(realFields))
+		for _, field := range realFields {
+			fieldKey := field.ColumnName()
+			if field.Translatable {
+				fieldKey = field.Name()
+			}
+			value := resultMap[fieldKey]
+
+			fieldItem := map[string]interface{}{
+				"title":     generator.Translate(lang, field.Title),
+				"type":      string(field.Type),
+				"form_type": string(field.FormType),
+				"value":     value,
+				"edit":      containsColumn(editableColumns, field.Column),
+			}
+
+			if field.Extra != nil && field.Extra.View != nil {
+				fieldItem["extra"] = field.Extra.View
+			}
+
+			// Collect options
+			options := make([]fields.ModuleFieldOptions, 0)
+			if field.Options != nil {
+				options = append(options, field.Options...)
+			}
+			if field.OptionsFunc != nil {
+				options = append(options, field.OptionsFunc(c)...)
+			}
+			for _, ro := range field.RoleOptions {
+				if ro.Role == roleStr || ro.Role == string(actions.RoleAll) {
+					options = append(options, ro.Options...)
+					break
+				}
+			}
+			if len(options) > 0 {
+				for i, opt := range options {
+					options[i].Label = generator.Translate(lang, opt.Label)
+				}
+				fieldItem["options"] = options
+			}
+
+			item[fieldKey] = fieldItem
+		}
+
+		output := struct {
+			Extra interface{}            `json:"extra"`
+			Item  map[string]interface{} `json:"item"`
+		}{
+			Extra: action.Extra,
+			Item:  item,
+		}
+
+		response.Response(l, c, output)
 
 		action.AfterRequest(c)
 	}
@@ -861,6 +894,11 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 			}
 		}
 
+		tc := generator.buildTranslationContext(module)
+		if tc != nil {
+			tc.EntityID = whereValue
+		}
+
 		mapInput := generator.mapRequestInput(input, module, columns)
 
 		// Build WHERE condition
@@ -869,13 +907,46 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 			pg.RawArgs{"#val": whereValue},
 		)
 
-		output, err := generator.db(module).Update(l, module.Table, module.PrimaryKey, realFields, mapInput, where)
+		_, err = generator.db(module).Update(l, module.Table, module.PrimaryKey, realFields, mapInput, where, tc)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, nil)
 			return
 		}
 
-		response.Response(l, c, output)
+		// Return view response if ViewAfterUpdate is enabled (default true) and ViewAction exists
+		useView := action.ViewAfterUpdate == nil || *action.ViewAfterUpdate
+		if useView {
+			if viewAction := findViewAction(module); viewAction != nil {
+				viewColumns := viewAction.GetColumns(c)
+				viewFields := make([]fields.ModuleField, 0, len(module.Fields))
+				for _, f := range module.Fields {
+					if containsColumn(viewColumns, f.Column) {
+						viewFields = append(viewFields, f)
+					}
+				}
+
+				viewJoins := viewAction.Join
+				if roleJoins := actions.ResolveRoleJoin(module.RoleJoin, role); roleJoins != nil {
+					viewJoins = append(roleJoins, viewJoins...)
+				}
+
+				viewResult, viewErr := generator.db(module).View(l, module.Table, module.PrimaryKey, viewFields, where, viewJoins, tc)
+				if viewErr == nil {
+					response.Response(l, c, viewResult)
+					action.AfterRequest(c)
+					return
+				}
+			}
+		}
+
+		// Fallback: re-fetch with update columns
+		fallbackResult, fallbackErr := generator.db(module).View(l, module.Table, module.PrimaryKey, realFields, where, nil, tc)
+		if fallbackErr != nil {
+			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, nil)
+			return
+		}
+
+		response.Response(l, c, fallbackResult)
 
 		action.AfterRequest(c)
 	}
@@ -924,13 +995,18 @@ func (generator *Generator) actionDelete(module *BaseModule, action actions.Dele
 			return
 		}
 
+		tc := generator.buildTranslationContext(module)
+		if tc != nil {
+			tc.EntityID = whereValue
+		}
+
 		// Build WHERE condition
 		where := pg.RawBool(
 			fmt.Sprintf(`"%s" = #val`, whereKey),
 			pg.RawArgs{"#val": whereValue},
 		)
 
-		err = generator.db(module).Delete(l, module.Table, where)
+		err = generator.db(module).Delete(l, module.Table, where, tc)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorDelete, []string{
 				err.Error(),

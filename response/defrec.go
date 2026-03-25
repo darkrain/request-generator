@@ -2,28 +2,40 @@ package response
 
 import (
 	f "github.com/darkrain/request-generator/fields"
-	"github.com/darkrain/request-generator/locale"
 )
 
 type DefrecResponse struct {
-	Extra   interface{}                            `json:"extra,omitempty"`
-	Locale  string                                 `json:"locale"`
-	Locales []string                               `json:"locales"`
-	Fields  map[string]f.ModuleField               `json:"fields"`
-	I18n    map[string]map[string]locale.FieldI18n `json:"i18n"`
+	Extra  interface{}                `json:"extra,omitempty"`
+	Fields map[string]interface{} `json:"fields"`
 }
 
-func NewDefrecResponse(extra interface{}, fields []f.ModuleField, lang string, locales []string, i18n map[string]map[string]locale.FieldI18n) DefrecResponse {
-	fieldsMap := make(map[string]f.ModuleField)
+func NewDefrecResponse(extra interface{}, fields []f.ModuleField) DefrecResponse {
+	fieldsMap := make(map[string]interface{}, len(fields))
 	for _, field := range fields {
-		fieldsMap[field.ColumnName()] = field
+		item := map[string]interface{}{
+			"title":     field.Title,
+			"type":      string(field.Type),
+			"form_type": string(field.FormType),
+		}
+		if field.Example != "" {
+			item["example"] = field.Example
+		}
+		if len(field.Options) > 0 {
+			item["options"] = field.Options
+		}
+		if field.Extra != nil && field.Extra.Defrec != nil {
+			item["extra"] = field.Extra.Defrec
+		}
+		key := field.ColumnName()
+		if field.Translatable {
+			key = field.Name()
+			item["translatable"] = true
+		}
+		fieldsMap[key] = item
 	}
 
 	return DefrecResponse{
-		Extra:   extra,
-		Locale:  lang,
-		Locales: locales,
-		Fields:  fieldsMap,
-		I18n:    i18n,
+		Extra:  extra,
+		Fields: fieldsMap,
 	}
 }

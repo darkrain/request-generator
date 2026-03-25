@@ -3,9 +3,11 @@ package module
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 
 	"github.com/darkrain/request-generator/locale"
+	"github.com/gin-gonic/gin"
 )
 
 // LoadTranslationsFile reads a nested JSON file, flattens it to dot-separated keys,
@@ -70,4 +72,47 @@ func (g *Generator) Translate(lang locale.Lang, key string) string {
 		}
 	}
 	return key
+}
+
+// handleLangList returns the list of supported locales.
+// GET /api/lang → [{"title":"English","key":"en"}, ...]
+func (g *Generator) handleLangList() gin.HandlerFunc {
+	type langItem struct {
+		Title string `json:"title"`
+		Key   string `json:"key"`
+	}
+
+	items := make([]langItem, 0, len(g.Locales))
+	for _, l := range g.Locales {
+		title := locale.LangTitles[l]
+		if title == "" {
+			title = string(l)
+		}
+		items = append(items, langItem{Title: title, Key: string(l)})
+	}
+
+	return func(c *gin.Context) {
+		c.JSON(http.StatusOK, items)
+	}
+}
+
+// handleLangTranslations returns all translations for a given locale.
+// GET /api/lang/:key → {"users.label": "Users", ...}
+func (g *Generator) handleLangTranslations() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		key := locale.Lang(c.Param("key"))
+
+		if g.translations == nil {
+			c.JSON(http.StatusNotFound, gin.H{"message": "no translations loaded"})
+			return
+		}
+
+		langMap, ok := g.translations[key]
+		if !ok {
+			c.JSON(http.StatusNotFound, gin.H{"message": fmt.Sprintf("locale %q not found", string(key))})
+			return
+		}
+
+		c.JSON(http.StatusOK, langMap)
+	}
 }

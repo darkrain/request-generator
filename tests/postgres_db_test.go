@@ -130,7 +130,7 @@ func seedItem(t *testing.T, name, email string, age int, role string) int64 {
 		"role":  role,
 	}
 
-	result, err := testDB.Add(testLog, tbl, tbl.ID, mf, input)
+	result, err := testDB.Add(testLog, tbl, tbl.ID, mf, input, nil)
 	require.NoError(t, err)
 
 	output := result.(struct {
@@ -153,7 +153,7 @@ func TestAdd(t *testing.T) {
 		"role":  "admin",
 	}
 
-	result, err := testDB.Add(testLog, tbl, tbl.ID, mf, input)
+	result, err := testDB.Add(testLog, tbl, tbl.ID, mf, input, nil)
 	require.NoError(t, err)
 	assert.NotNil(t, result)
 
@@ -176,10 +176,10 @@ func TestAddDuplicateEmail(t *testing.T) {
 		"role":  "user",
 	}
 
-	_, err := testDB.Add(testLog, tbl, tbl.ID, mf, input)
+	_, err := testDB.Add(testLog, tbl, tbl.ID, mf, input, nil)
 	require.NoError(t, err)
 
-	_, err = testDB.Add(testLog, tbl, tbl.ID, mf, input)
+	_, err = testDB.Add(testLog, tbl, tbl.ID, mf, input, nil)
 	assert.Error(t, err)
 }
 
@@ -192,7 +192,7 @@ func TestAddMissingRequiredField(t *testing.T) {
 		"age":   30,
 	}
 
-	_, err := testDB.Add(testLog, tbl, tbl.ID, mf, input)
+	_, err := testDB.Add(testLog, tbl, tbl.ID, mf, input, nil)
 	assert.Error(t, err)
 }
 
@@ -205,7 +205,7 @@ func TestView(t *testing.T) {
 	mf := testModuleFields()
 	where := postgres.RawBool(`test_items."id" = #id`, postgres.RawArgs{"#id": 1})
 
-	result, err := testDB.View(testLog, tbl, tbl.ID, mf, where, nil)
+	result, err := testDB.View(testLog, tbl, tbl.ID, mf, where, nil, nil)
 	require.NoError(t, err)
 	assert.NotNil(t, result)
 
@@ -222,7 +222,7 @@ func TestViewNotFound(t *testing.T) {
 	mf := testModuleFields()
 	where := postgres.RawBool(`test_items."id" = #id`, postgres.RawArgs{"#id": 999})
 
-	_, err := testDB.View(testLog, tbl, tbl.ID, mf, where, nil)
+	_, err := testDB.View(testLog, tbl, tbl.ID, mf, where, nil, nil)
 	assert.Error(t, err)
 }
 
@@ -232,7 +232,7 @@ func TestListEmpty(t *testing.T) {
 	cleanTable(t)
 
 	mf := testModuleFields()
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, 0, 100, nil, "", nil, nil, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, 0, 100, nil, "", nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), count)
 	assert.Empty(t, results)
@@ -245,7 +245,7 @@ func TestListMultipleItems(t *testing.T) {
 	seedItem(t, "Charlie", "charlie@test.com", 35, "user")
 
 	mf := testModuleFields()
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, 0, 100, nil, "", nil, nil, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, 0, 100, nil, "", nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), count)
 	assert.Len(t, results, 3)
@@ -259,11 +259,11 @@ func TestListPagination(t *testing.T) {
 
 	mf := testModuleFields()
 
-	results, _, err := testDB.List(testLog, tbl, tbl.ID, mf, 0, 2, nil, "", nil, nil, nil)
+	results, _, err := testDB.List(testLog, tbl, tbl.ID, mf, 0, 2, nil, "", nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Len(t, results, 2)
 
-	results, _, err = testDB.List(testLog, tbl, tbl.ID, mf, 1, 2, nil, "", nil, nil, nil)
+	results, _, err = testDB.List(testLog, tbl, tbl.ID, mf, 1, 2, nil, "", nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 }
@@ -276,7 +276,7 @@ func TestListSearch(t *testing.T) {
 	mf := testModuleFields()
 	searchColumns := []postgres.Column{tbl.Email}
 
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, 0, 100, searchColumns, "alice", nil, nil, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, 0, 100, searchColumns, "alice", nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 	assert.Len(t, results, 1)
@@ -291,7 +291,7 @@ func TestListFilter(t *testing.T) {
 	mf := testModuleFields()
 	filter := map[string]string{"role": "user"}
 
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, 0, 100, nil, "", filter, nil, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, 0, 100, nil, "", filter, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), count)
 	assert.Len(t, results, 2)
@@ -305,7 +305,7 @@ func TestListWhere(t *testing.T) {
 	mf := testModuleFields()
 	where := postgres.RawBool(`test_items."age" > #age`, postgres.RawArgs{"#age": 26})
 
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, 0, 100, nil, "", nil, where, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, 0, 100, nil, "", nil, where, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 	assert.Len(t, results, 1)
@@ -324,7 +324,7 @@ func TestUpdate(t *testing.T) {
 	}
 	where := postgres.RawBool(`"id" = #id`, postgres.RawArgs{"#id": 1})
 
-	result, err := testDB.Update(testLog, tbl, tbl.ID, mf, input, where)
+	result, err := testDB.Update(testLog, tbl, tbl.ID, mf, input, where, nil)
 	require.NoError(t, err)
 	assert.NotNil(t, result)
 
@@ -340,7 +340,7 @@ func TestUpdateNotFound(t *testing.T) {
 	input := map[string]interface{}{"name": "Ghost"}
 	where := postgres.RawBool(`"id" = #id`, postgres.RawArgs{"#id": 999})
 
-	_, err := testDB.Update(testLog, tbl, tbl.ID, mf, input, where)
+	_, err := testDB.Update(testLog, tbl, tbl.ID, mf, input, where, nil)
 	assert.Error(t, err)
 }
 
@@ -350,7 +350,7 @@ func TestUpdateNilWhere(t *testing.T) {
 	mf := testModuleFields()
 	input := map[string]interface{}{"name": "Bad"}
 
-	_, err := testDB.Update(testLog, tbl, tbl.ID, mf, input, nil)
+	_, err := testDB.Update(testLog, tbl, tbl.ID, mf, input, nil, nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "WHERE condition is required")
 }
@@ -363,11 +363,11 @@ func TestDelete(t *testing.T) {
 
 	where := postgres.RawBool(`"id" = #id`, postgres.RawArgs{"#id": 1})
 
-	err := testDB.Delete(testLog, tbl, where)
+	err := testDB.Delete(testLog, tbl, where, nil)
 	require.NoError(t, err)
 
 	mf := testModuleFields()
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, 0, 100, nil, "", nil, nil, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, 0, 100, nil, "", nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), count)
 	assert.Empty(t, results)
@@ -378,7 +378,7 @@ func TestDeleteNotFound(t *testing.T) {
 
 	where := postgres.RawBool(`"id" = #id`, postgres.RawArgs{"#id": 999})
 
-	err := testDB.Delete(testLog, tbl, where)
+	err := testDB.Delete(testLog, tbl, where, nil)
 	assert.Error(t, err)
 }
 
@@ -406,7 +406,7 @@ func TestListWithJoin(t *testing.T) {
 	}
 
 	mf := testModuleFields()
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, 0, 100, nil, "", nil, nil, []actions.ModuleActionJoin{join})
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, 0, 100, nil, "", nil, nil, []actions.ModuleActionJoin{join}, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 	assert.Len(t, results, 1)
@@ -424,14 +424,14 @@ func TestAddRollbackOnError(t *testing.T) {
 
 	mf := testModuleFields()
 	input1 := map[string]interface{}{"name": "First", "email": "first@test.com", "age": 20, "role": "user"}
-	_, err := testDB.Add(testLog, tbl, tbl.ID, mf, input1)
+	_, err := testDB.Add(testLog, tbl, tbl.ID, mf, input1, nil)
 	require.NoError(t, err)
 
 	input2 := map[string]interface{}{"name": "Second", "email": "first@test.com", "age": 25, "role": "user"}
-	_, err = testDB.Add(testLog, tbl, tbl.ID, mf, input2)
+	_, err = testDB.Add(testLog, tbl, tbl.ID, mf, input2, nil)
 	assert.Error(t, err)
 
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, 0, 100, nil, "", nil, nil, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, 0, 100, nil, "", nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 	assert.Len(t, results, 1)

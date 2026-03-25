@@ -17,13 +17,5 @@ type FeaturesActions struct {
 }
 
 type FeaturesResponse struct {
-	Locale  string                              `json:"locale"`
-	Locales []string                            `json:"locales"`
-	Modules []Features                          `json:"modules"`
-	I18n    map[string]map[string]FeaturesI18n  `json:"i18n"`
-}
-
-type FeaturesI18n struct {
-	ModuleName string            `json:"module_name"`
-	Actions    map[string]string `json:"actions"`
+	Modules []Features `json:"modules"`
 }

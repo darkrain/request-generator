@@ -7,7 +7,15 @@ type Lang string
 const (
 	EN Lang = "en"
 	RU Lang = "ru"
+	AR Lang = "ar"
 )
+
+// LangTitle returns the native display name for a language.
+var LangTitles = map[Lang]string{
+	EN: "English",
+	RU: "Русский",
+	AR: "العربية",
+}
 
 // FieldI18n holds per-field translations for the i18n response block.
 type FieldI18n struct {

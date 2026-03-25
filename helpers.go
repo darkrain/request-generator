@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/darkrain/request-generator/actions"
+	"github.com/darkrain/request-generator/db"
 	"github.com/darkrain/request-generator/fields"
 	"github.com/darkrain/request-generator/locale"
 	"github.com/gin-gonic/gin"
@@ -76,12 +77,37 @@ func (generator *Generator) checkRequest(
 
 	for _, col := range actionColumns {
 		colName := col.Name()
-		value := data[colName]
 		field := module.GetField(colName)
 		if field == nil {
 			continue
 		}
 
+		if field.Translatable {
+			// For translatable fields, look up by FieldName and validate each language
+			value := data[field.Name()]
+			rules := module.GetRules(context, *field, scenario)
+
+			if langMap, ok := value.(map[string]interface{}); ok {
+				for langKey, langVal := range langMap {
+					for _, rule := range rules {
+						err := rule.Validate(langVal, string(lang))
+						if err != nil {
+							errs[field.Name()+"."+langKey] = err.Error()
+						}
+					}
+				}
+			} else {
+				for _, rule := range rules {
+					err := rule.Validate(value, string(lang))
+					if err != nil {
+						errs[field.Name()] = err.Error()
+					}
+				}
+			}
+			continue
+		}
+
+		value := data[colName]
 		rules := module.GetRules(context, *field, scenario)
 
 		for _, rule := range rules {
@@ -110,6 +136,23 @@ func (generator *Generator) mapRequestInput(
 	output := make(map[string]interface{})
 
 	for _, field := range module.Fields {
+		if field.Translatable {
+			// For translatable fields, look up by FieldName
+			value, ok := data[field.Name()]
+			if ok && containsColumn(actionColumns, field.Column) {
+				if field.Convert != nil {
+					convertedValue, err := field.Convert(value)
+					if err != nil {
+						continue
+					}
+					output[field.Name()] = convertedValue
+				} else {
+					output[field.Name()] = value
+				}
+			}
+			continue
+		}
+
 		colName := field.ColumnName()
 		value, ok := data[colName]
 		if ok && containsColumn(actionColumns, field.Column) {
@@ -158,4 +201,46 @@ func int64QueryParam(c *gin.Context, param string, defaultValue int64) int64 {
 
 func containsColumn(columns []pg.Column, target pg.Column) bool {
 	return fields.ContainsColumn(columns, target)
+}
+
+func findViewAction(module *BaseModule) *actions.ViewModuleAction {
+	for _, a := range module.Actions {
+		if a.Action() == actions.ModuleActionNameView {
+			if va, ok := a.(actions.ViewModuleAction); ok {
+				return &va
+			}
+		}
+	}
+	return nil
+}
+
+func findUpdateAction(module *BaseModule) *actions.UpdateModuleAction {
+	for _, a := range module.Actions {
+		if a.Action() == actions.ModuleActionNameUpdate {
+			if ua, ok := a.(actions.UpdateModuleAction); ok {
+				return &ua
+			}
+		}
+	}
+	return nil
+}
+
+func (generator *Generator) buildTranslationContext(module *BaseModule) *db.TranslationContext {
+	transFields := module.TranslatableFields()
+	if len(transFields) == 0 {
+		return nil
+	}
+	langs := make([]string, len(generator.Locales))
+	for i, l := range generator.Locales {
+		langs[i] = string(l)
+	}
+	fieldInfos := make([]db.TranslatableFieldInfo, len(transFields))
+	for i, f := range transFields {
+		fieldInfos[i] = db.TranslatableFieldInfo{FieldName: f.Name()}
+	}
+	return &db.TranslationContext{
+		EntityName: module.GetEntityName(),
+		Fields:     fieldInfos,
+		Langs:      langs,
+	}
 }

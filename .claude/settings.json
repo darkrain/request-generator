@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(go version)",
+      "Bash(go mod tidy)",
+      "Bash(go get github.com/go-jet/jet/v2@v2.12.0)",
+      "Read(//Users/daniargabbasov/go/pkg/mod/github.com/go-jet/jet/v2@v2.12.0/postgres/**)",
+      "Read(//Users/daniargabbasov/go/pkg/mod/github.com/go-jet/jet/v2@v2.12.0/internal/jet/**)",
+      "Read(//Users/daniargabbasov/go/pkg/mod/github.com/go-jet/jet/v2@v2.12.0/tests/postgres/**)",
+      "Read(//Users/daniargabbasov/go/pkg/mod/github.com/go-jet/jet/v2@v2.12.0/tests/**)",
+      "Bash(go get github.com/go-jet/jet/v2/internal/jet@v2.12.0)",
+      "Bash(go get github.com/go-playground/validator/v10@v10.4.1)",
+      "Bash(go build ./...)",
+      "Bash(go vet ./...)"
+    ]
+  }
+}

@@ -9,6 +9,19 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// TranslationContext carries info the DB layer needs to handle translations.
+type TranslationContext struct {
+	EntityName string
+	Fields     []TranslatableFieldInfo
+	Langs      []string
+	EntityID   interface{}
+}
+
+// TranslatableFieldInfo describes a single translatable field.
+type TranslatableFieldInfo struct {
+	FieldName string
+}
+
 type DBExecutor interface {
 	List(
 		log *log.Entry,
@@ -23,6 +36,7 @@ type DBExecutor interface {
 		where pg.BoolExpression,
 		joins []actions.ModuleActionJoin,
 		sort *actions.SortOption,
+		tc *TranslationContext,
 	) (result []interface{}, rowsCount int64, err error)
 	View(
 		log *log.Entry,
@@ -31,9 +45,10 @@ type DBExecutor interface {
 		moduleFields []fields.ModuleField,
 		where pg.BoolExpression,
 		joins []actions.ModuleActionJoin,
+		tc *TranslationContext,
 	) (interface{}, error)
-	Add(log *log.Entry, table pg.Table, primaryKey pg.Column, moduleFields []fields.ModuleField, input map[string]interface{}) (interface{}, error)
-	Update(log *log.Entry, table pg.Table, primaryKey pg.Column, moduleFields []fields.ModuleField, input map[string]interface{}, where pg.BoolExpression) (interface{}, error)
-	Delete(log *log.Entry, table pg.Table, where pg.BoolExpression) error
+	Add(log *log.Entry, table pg.Table, primaryKey pg.Column, moduleFields []fields.ModuleField, input map[string]interface{}, tc *TranslationContext) (interface{}, error)
+	Update(log *log.Entry, table pg.Table, primaryKey pg.Column, moduleFields []fields.ModuleField, input map[string]interface{}, where pg.BoolExpression, tc *TranslationContext) (interface{}, error)
+	Delete(log *log.Entry, table pg.Table, where pg.BoolExpression, tc *TranslationContext) error
 	RawRequest(log *log.Entry, query string, params ...interface{}) (*sql.Rows, error)
 }

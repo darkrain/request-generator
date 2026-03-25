@@ -7,16 +7,17 @@ import (
 
 type UpdateModuleAction struct {
 	ModuleAction
-	BeforeAction func(c *gin.Context) error
-	AfterAction  func(c *gin.Context)
-	Label        string                           `json:"label"`
-	Labels       map[string]string                `json:"-"`
-	Columns      []pg.Column                      `json:"-"`
-	ColumnsFunc  func(c *gin.Context) []pg.Column `json:"-"`
-	Permission   []Role        `json:"permission"`
-	Auth         bool          `json:"auth"`
-	By           []pg.Column   `json:"-"`
-	Fields       []RoleContext `json:"-"`
+	BeforeAction    func(c *gin.Context) error
+	AfterAction     func(c *gin.Context)
+	Label           string                           `json:"label"`
+	Labels          map[string]string                `json:"-"`
+	Columns         []pg.Column                      `json:"-"`
+	ColumnsFunc     func(c *gin.Context) []pg.Column `json:"-"`
+	Permission      []Role                           `json:"permission"`
+	Auth            bool                             `json:"auth"`
+	By              []pg.Column                      `json:"-"`
+	Fields          []RoleContext                    `json:"-"`
+	ViewAfterUpdate *bool                            `json:"-"` // default true; if true and ViewAction exists, return view response after update
 }
 
 func (action UpdateModuleAction) Action() ModuleActionName {

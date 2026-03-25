@@ -21,12 +21,33 @@ type BaseModule struct {
 	RoleJoin       []actions.RoleJoin         `json:"-"`
 	RoleBeforeHook []actions.RoleHook         `json:"-"`
 	RoleAfterHook  []actions.RoleAfterHook    `json:"-"`
+	EntityName     string                     `json:"-"`
+}
+
+func (module BaseModule) GetEntityName() string {
+	if module.EntityName != "" {
+		return module.EntityName
+	}
+	return module.Table.TableName()
+}
+
+func (module BaseModule) TranslatableFields() []fields.ModuleField {
+	var result []fields.ModuleField
+	for _, f := range module.Fields {
+		if f.Translatable {
+			result = append(result, f)
+		}
+	}
+	return result
 }
 
 func (module BaseModule) GetField(columnName string) *fields.ModuleField {
-	for _, field := range module.Fields {
+	for i, field := range module.Fields {
 		if field.ColumnName() == columnName {
-			return &field
+			return &module.Fields[i]
+		}
+		if field.Translatable && field.FieldName == columnName {
+			return &module.Fields[i]
 		}
 	}
 	return nil

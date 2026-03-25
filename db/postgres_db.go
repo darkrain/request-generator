@@ -82,6 +82,93 @@ func buildJoinProjection(join actions.ModuleActionJoin) pg.Projection {
 	return pg.Raw(rawExpr)
 }
 
+// isTranslatableField checks if a column name matches a translatable field in the context.
+func isTranslatableField(tc *TranslationContext, colName string) bool {
+	if tc == nil {
+		return false
+	}
+	for _, f := range tc.Fields {
+		if f.FieldName == colName {
+			return true
+		}
+	}
+	return false
+}
+
+// buildTranslationSubquery builds a subquery expression for a translatable field.
+func buildTranslationSubquery(tc *TranslationContext, tableRef string, pkName string, fieldName string) pg.Projection {
+	subquery := fmt.Sprintf(
+		`(SELECT json_object_agg(t.lang, t.value) FROM translations t WHERE t.entity = '%s' AND t.entity_id = %s."%s" AND t.field = '%s')`,
+		tc.EntityName, tableRef, pkName, fieldName,
+	)
+	return pg.Raw(subquery)
+}
+
+// insertTranslations inserts translation rows within a transaction.
+func insertTranslations(tx *sql.Tx, tc *TranslationContext, entityID int64, moduleFields []fields.ModuleField, input map[string]interface{}) error {
+	for _, field := range moduleFields {
+		if !field.Translatable {
+			continue
+		}
+		fieldName := field.Name()
+		langMapRaw, ok := input[fieldName]
+		if !ok {
+			continue
+		}
+		langMap, ok := langMapRaw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for lang, val := range langMap {
+			valStr := fmt.Sprintf("%v", val)
+			_, err := tx.Exec(
+				`INSERT INTO translations (entity, entity_id, field, lang, value) VALUES ($1, $2, $3, $4, $5)`,
+				tc.EntityName, entityID, fieldName, lang, valStr,
+			)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// upsertTranslations upserts translation rows within a transaction.
+func upsertTranslations(tx *sql.Tx, tc *TranslationContext, entityID interface{}, moduleFields []fields.ModuleField, input map[string]interface{}) error {
+	for _, field := range moduleFields {
+		if !field.Translatable {
+			continue
+		}
+		fieldName := field.Name()
+		langMapRaw, ok := input[fieldName]
+		if !ok {
+			continue
+		}
+		langMap, ok := langMapRaw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for lang, val := range langMap {
+			valStr := fmt.Sprintf("%v", val)
+			_, err := tx.Exec(
+				`INSERT INTO translations (entity, entity_id, field, lang, value) VALUES ($1, $2, $3, $4, $5)
+				 ON CONFLICT (entity, entity_id, field, lang) DO UPDATE SET value = EXCLUDED.value`,
+				tc.EntityName, entityID, fieldName, lang, valStr,
+			)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// fieldMeta tracks whether a field is translatable and its result key name.
+type fieldMeta struct {
+	translatable bool
+	name         string
+}
+
 func (db *DB) List(
 	log *log.Entry,
 	table pg.Table,
@@ -95,12 +182,24 @@ func (db *DB) List(
 	where pg.BoolExpression,
 	joins []actions.ModuleActionJoin,
 	sort *actions.SortOption,
+	tc *TranslationContext,
 ) (result []interface{}, rowsCount int64, err error) {
+
+	tableRef := table.TableName()
+	pkName := primaryKey.Name()
 
 	// Build projections: primary key + field columns + join aggregations
 	projections := []pg.Projection{primaryKey}
-	for _, field := range moduleFields {
-		projections = append(projections, field.GetProjection())
+	metas := make([]fieldMeta, len(moduleFields))
+
+	for i, field := range moduleFields {
+		if field.Translatable && tc != nil {
+			projections = append(projections, buildTranslationSubquery(tc, tableRef, pkName, field.Name()))
+			metas[i] = fieldMeta{translatable: true, name: field.Name()}
+		} else {
+			projections = append(projections, field.GetProjection())
+			metas[i] = fieldMeta{translatable: false, name: field.ColumnName()}
+		}
 	}
 	for _, join := range joins {
 		if len(join.Columns) > 0 {
@@ -115,7 +214,6 @@ func (db *DB) List(
 	}
 
 	// Build WHERE conditions
-	tableRef := table.TableName()
 	var conditions []pg.BoolExpression
 	if where != nil {
 		conditions = append(conditions, where)
@@ -125,12 +223,23 @@ func (db *DB) List(
 	if len(searchText) > 0 && len(searchColumns) > 0 {
 		searchConds := make([]pg.BoolExpression, 0, len(searchColumns))
 		for _, col := range searchColumns {
-			searchConds = append(searchConds,
-				pg.RawBool(
-					fmt.Sprintf(`LOWER(%s."%s"::text) LIKE '%%' || #search || '%%'`, tableRef, col.Name()),
-					pg.RawArgs{"#search": strings.ToLower(searchText)},
-				),
-			)
+			if tc != nil && isTranslatableField(tc, col.Name()) {
+				// Search in translations table
+				searchConds = append(searchConds,
+					pg.RawBool(
+						fmt.Sprintf(`EXISTS (SELECT 1 FROM translations t WHERE t.entity = '%s' AND t.entity_id = %s."%s" AND t.field = '%s' AND LOWER(t.value) LIKE '%%' || #search || '%%')`,
+							tc.EntityName, tableRef, pkName, col.Name()),
+						pg.RawArgs{"#search": strings.ToLower(searchText)},
+					),
+				)
+			} else {
+				searchConds = append(searchConds,
+					pg.RawBool(
+						fmt.Sprintf(`LOWER(%s."%s"::text) LIKE '%%' || #search || '%%'`, tableRef, col.Name()),
+						pg.RawArgs{"#search": strings.ToLower(searchText)},
+					),
+				)
+			}
 		}
 		conditions = append(conditions, pg.OR(searchConds...))
 	}
@@ -207,8 +316,12 @@ func (db *DB) List(
 		var primaryValue interface{}
 		columnValues = append(columnValues, &primaryValue)
 
-		for i := 0; i < len(moduleFields); i++ {
-			columnValues = append(columnValues, moduleFields[i].NewScanValue())
+		for i, meta := range metas {
+			if meta.translatable {
+				columnValues = append(columnValues, &sql.NullString{})
+			} else {
+				columnValues = append(columnValues, moduleFields[i].NewScanValue())
+			}
 		}
 		for _, join := range joins {
 			if len(join.Columns) == 0 {
@@ -226,19 +339,34 @@ func (db *DB) List(
 
 		currentResult := make(map[string]interface{})
 		offset := 1
-		for index, field := range moduleFields {
-			value, ok := columnValues[index+offset].(driver.Valuer)
-			if ok {
-				if field.ResultValueConverter != nil {
-					currentResult[field.ColumnName()] = field.ResultValueConverter(value)
+		for index, meta := range metas {
+			if meta.translatable {
+				raw, ok := columnValues[index+offset].(*sql.NullString)
+				if ok && raw.Valid {
+					var langMap map[string]string
+					if jsonErr := json.Unmarshal([]byte(raw.String), &langMap); jsonErr == nil {
+						currentResult[meta.name] = langMap
+					} else {
+						currentResult[meta.name] = map[string]string{}
+					}
 				} else {
-					currentResult[field.ColumnName()], _ = value.Value()
+					currentResult[meta.name] = map[string]string{}
 				}
 			} else {
-				if field.ResultValueConverter != nil {
-					currentResult[field.ColumnName()] = field.ResultValueConverter(value)
+				field := moduleFields[index]
+				value, ok := columnValues[index+offset].(driver.Valuer)
+				if ok {
+					if field.ResultValueConverter != nil {
+						currentResult[meta.name] = field.ResultValueConverter(value)
+					} else {
+						currentResult[meta.name], _ = value.Value()
+					}
 				} else {
-					currentResult[field.ColumnName()] = value
+					if field.ResultValueConverter != nil {
+						currentResult[meta.name] = field.ResultValueConverter(value)
+					} else {
+						currentResult[meta.name] = value
+					}
 				}
 			}
 		}
@@ -351,11 +479,23 @@ func (db *DB) View(
 	moduleFields []fields.ModuleField,
 	where pg.BoolExpression,
 	joins []actions.ModuleActionJoin,
+	tc *TranslationContext,
 ) (interface{}, error) {
 
+	tableRef := table.TableName()
+	pkName := primaryKey.Name()
+
 	projections := []pg.Projection{primaryKey}
-	for _, field := range moduleFields {
-		projections = append(projections, field.GetProjection())
+	metas := make([]fieldMeta, len(moduleFields))
+
+	for i, field := range moduleFields {
+		if field.Translatable && tc != nil {
+			projections = append(projections, buildTranslationSubquery(tc, tableRef, pkName, field.Name()))
+			metas[i] = fieldMeta{translatable: true, name: field.Name()}
+		} else {
+			projections = append(projections, field.GetProjection())
+			metas[i] = fieldMeta{translatable: false, name: field.ColumnName()}
+		}
 	}
 	for _, join := range joins {
 		if len(join.Columns) > 0 {
@@ -396,8 +536,12 @@ func (db *DB) View(
 		var primaryValue interface{}
 		columnValues = append(columnValues, &primaryValue)
 
-		for i := 0; i < len(moduleFields); i++ {
-			columnValues = append(columnValues, moduleFields[i].NewScanValue())
+		for i, meta := range metas {
+			if meta.translatable {
+				columnValues = append(columnValues, &sql.NullString{})
+			} else {
+				columnValues = append(columnValues, moduleFields[i].NewScanValue())
+			}
 		}
 		for _, join := range joins {
 			if len(join.Columns) == 0 {
@@ -415,12 +559,26 @@ func (db *DB) View(
 
 		currentResult := make(map[string]interface{})
 		offset := 1
-		for index, field := range moduleFields {
-			value, ok := columnValues[index+offset].(driver.Valuer)
-			if ok {
-				currentResult[field.ColumnName()], _ = value.Value()
+		for index, meta := range metas {
+			if meta.translatable {
+				raw, ok := columnValues[index+offset].(*sql.NullString)
+				if ok && raw.Valid {
+					var langMap map[string]string
+					if jsonErr := json.Unmarshal([]byte(raw.String), &langMap); jsonErr == nil {
+						currentResult[meta.name] = langMap
+					} else {
+						currentResult[meta.name] = map[string]string{}
+					}
+				} else {
+					currentResult[meta.name] = map[string]string{}
+				}
 			} else {
-				currentResult[field.ColumnName()] = value
+				value, ok := columnValues[index+offset].(driver.Valuer)
+				if ok {
+					currentResult[meta.name], _ = value.Value()
+				} else {
+					currentResult[meta.name] = value
+				}
 			}
 		}
 
@@ -480,7 +638,7 @@ func (db *DB) View(
 	return nil, errors.New("Record not found")
 }
 
-func (db *DB) Add(log *log.Entry, table pg.Table, primaryKey pg.Column, moduleFields []fields.ModuleField, input map[string]interface{}) (interface{}, error) {
+func (db *DB) Add(log *log.Entry, table pg.Table, primaryKey pg.Column, moduleFields []fields.ModuleField, input map[string]interface{}, tc *TranslationContext) (interface{}, error) {
 	tx, err := db.sql.Begin()
 	if err != nil {
 		return nil, err
@@ -496,6 +654,9 @@ func (db *DB) Add(log *log.Entry, table pg.Table, primaryKey pg.Column, moduleFi
 	values := make([]interface{}, 0, len(input))
 
 	for _, field := range moduleFields {
+		if field.Translatable {
+			continue // translatable fields go into translations table
+		}
 		colName := field.ColumnName()
 		value, ok := input[colName]
 		if !ok {
@@ -505,11 +666,6 @@ func (db *DB) Add(log *log.Entry, table pg.Table, primaryKey pg.Column, moduleFi
 		values = append(values, value)
 	}
 
-	valueNumbers := make([]string, 0, len(values))
-	for i := range values {
-		valueNumbers = append(valueNumbers, fmt.Sprintf(`$%d`, i+1))
-	}
-
 	tableName := table.TableName()
 	schemaName := table.SchemaName()
 	fullTableName := fmt.Sprintf(`"%s"`, tableName)
@@ -517,22 +673,48 @@ func (db *DB) Add(log *log.Entry, table pg.Table, primaryKey pg.Column, moduleFi
 		fullTableName = fmt.Sprintf(`%s."%s"`, schemaName, tableName)
 	}
 
-	query := fmt.Sprintf(`INSERT INTO %s (%s) VALUES (%s) RETURNING "%s"`,
-		fullTableName,
-		strings.Join(keys, ","),
-		strings.Join(valueNumbers, ","),
-		primaryKey.Name(),
-	)
+	if len(keys) > 0 {
+		valueNumbers := make([]string, 0, len(values))
+		for i := range values {
+			valueNumbers = append(valueNumbers, fmt.Sprintf(`$%d`, i+1))
+		}
 
-	db.debugLog(log, "[DEBUG] ADD QUERY: ", interpolateQuery(query, values))
+		query := fmt.Sprintf(`INSERT INTO %s (%s) VALUES (%s) RETURNING "%s"`,
+			fullTableName,
+			strings.Join(keys, ","),
+			strings.Join(valueNumbers, ","),
+			primaryKey.Name(),
+		)
 
-	err = tx.QueryRow(query, values...).Scan(&output.Value)
-	if err != nil {
-		log.Errorln("ADD ERR: ", err)
-		return nil, err
+		db.debugLog(log, "[DEBUG] ADD QUERY: ", interpolateQuery(query, values))
+
+		err = tx.QueryRow(query, values...).Scan(&output.Value)
+		if err != nil {
+			log.Errorln("ADD ERR: ", err)
+			return nil, err
+		}
+	} else {
+		// All fields are translatable — insert default row
+		query := fmt.Sprintf(`INSERT INTO %s DEFAULT VALUES RETURNING "%s"`,
+			fullTableName, primaryKey.Name(),
+		)
+		db.debugLog(log, "[DEBUG] ADD QUERY (default): ", query)
+		err = tx.QueryRow(query).Scan(&output.Value)
+		if err != nil {
+			log.Errorln("ADD ERR: ", err)
+			return nil, err
+		}
 	}
 
 	output.PrimaryKey = primaryKey.Name()
+
+	// Insert translations
+	if tc != nil {
+		if err = insertTranslations(tx, tc, output.Value, moduleFields, input); err != nil {
+			log.Errorln("ADD TRANSLATIONS ERR: ", err)
+			return nil, err
+		}
+	}
 
 	if err = tx.Commit(); err != nil {
 		return nil, err
@@ -541,18 +723,25 @@ func (db *DB) Add(log *log.Entry, table pg.Table, primaryKey pg.Column, moduleFi
 	return output, nil
 }
 
-func (db *DB) Update(log *log.Entry, table pg.Table, primaryKey pg.Column, moduleFields []fields.ModuleField, input map[string]interface{}, where pg.BoolExpression) (interface{}, error) {
+func (db *DB) Update(log *log.Entry, table pg.Table, primaryKey pg.Column, moduleFields []fields.ModuleField, input map[string]interface{}, where pg.BoolExpression, tc *TranslationContext) (interface{}, error) {
 	tx, err := db.sql.Begin()
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
 
+	if where == nil {
+		return nil, errors.New("WHERE condition is required for UPDATE")
+	}
+
 	setClauses := make([]string, 0, len(input))
 	values := make([]interface{}, 0, len(input))
 	paramIdx := 1
 
 	for _, field := range moduleFields {
+		if field.Translatable {
+			continue // handled separately
+		}
 		colName := field.ColumnName()
 		value, ok := input[colName]
 		if !ok {
@@ -563,76 +752,94 @@ func (db *DB) Update(log *log.Entry, table pg.Table, primaryKey pg.Column, modul
 		paramIdx++
 	}
 
-	setClauses = append(setClauses, fmt.Sprintf(`"update_date" = $%d`, paramIdx))
-	values = append(values, time.Now())
-	paramIdx++
-
-	if where == nil {
-		return nil, errors.New("WHERE condition is required for UPDATE")
-	}
-
-	// Get WHERE clause SQL from a dummy select
-	whereStmt := pg.SELECT(pg.Raw("1")).FROM(table).WHERE(where)
-	whereSql, whereArgs := whereStmt.Sql()
-
-	// Extract WHERE part from the full query
-	whereIdx := strings.Index(whereSql, "WHERE")
-	if whereIdx == -1 {
-		return nil, errors.New("could not build WHERE clause")
-	}
-	whereClause := whereSql[whereIdx:]
-
-	// Re-number placeholders in WHERE clause
-	for i, arg := range whereArgs {
-		oldPlaceholder := fmt.Sprintf("$%d", i+1)
-		newPlaceholder := fmt.Sprintf("$%d", paramIdx)
-		whereClause = strings.Replace(whereClause, oldPlaceholder, newPlaceholder, 1)
-		values = append(values, arg)
+	// Only run UPDATE on entity table if there are non-translatable fields to update
+	if len(setClauses) > 0 {
+		setClauses = append(setClauses, fmt.Sprintf(`"updated_at" = $%d`, paramIdx))
+		values = append(values, time.Now())
 		paramIdx++
+
+		// Get WHERE clause SQL from a dummy select
+		whereStmt := pg.SELECT(pg.Raw("1")).FROM(table).WHERE(where)
+		whereSql, whereArgs := whereStmt.Sql()
+
+		// Extract WHERE part from the full query
+		whereIdx := strings.Index(whereSql, "WHERE")
+		if whereIdx == -1 {
+			return nil, errors.New("could not build WHERE clause")
+		}
+		whereClause := whereSql[whereIdx:]
+
+		// Re-number placeholders in WHERE clause
+		for i, arg := range whereArgs {
+			oldPlaceholder := fmt.Sprintf("$%d", i+1)
+			newPlaceholder := fmt.Sprintf("$%d", paramIdx)
+			whereClause = strings.Replace(whereClause, oldPlaceholder, newPlaceholder, 1)
+			values = append(values, arg)
+			paramIdx++
+		}
+
+		tableName := table.TableName()
+		schemaName := table.SchemaName()
+		fullTableName := fmt.Sprintf(`"%s"`, tableName)
+		if schemaName != "" {
+			fullTableName = fmt.Sprintf(`%s."%s"`, schemaName, tableName)
+		}
+
+		query := fmt.Sprintf(`UPDATE %s SET %s %s`,
+			fullTableName,
+			strings.Join(setClauses, ", "),
+			whereClause,
+		)
+
+		db.debugLog(log, "[DEBUG] UPDATE QUERY: ", interpolateQuery(query, values))
+
+		result, err := tx.Exec(query, values...)
+		if err != nil {
+			return nil, err
+		}
+
+		updatedCount, err := result.RowsAffected()
+		if err != nil {
+			return nil, err
+		}
+
+		if updatedCount == 0 {
+			return nil, errors.New("record not found")
+		}
 	}
 
-	tableName := table.TableName()
-	schemaName := table.SchemaName()
-	fullTableName := fmt.Sprintf(`"%s"`, tableName)
-	if schemaName != "" {
-		fullTableName = fmt.Sprintf(`%s."%s"`, schemaName, tableName)
-	}
-
-	query := fmt.Sprintf(`UPDATE %s SET %s %s`,
-		fullTableName,
-		strings.Join(setClauses, ", "),
-		whereClause,
-	)
-
-	db.debugLog(log, "[DEBUG] UPDATE QUERY: ", interpolateQuery(query, values))
-
-	result, err := tx.Exec(query, values...)
-	if err != nil {
-		return nil, err
-	}
-
-	updatedCount, err := result.RowsAffected()
-	if err != nil {
-		return nil, err
-	}
-
-	if updatedCount == 0 {
-		return nil, errors.New("record not found")
+	// Upsert translations
+	if tc != nil && tc.EntityID != nil {
+		if err = upsertTranslations(tx, tc, tc.EntityID, moduleFields, input); err != nil {
+			log.Errorln("UPDATE TRANSLATIONS ERR: ", err)
+			return nil, err
+		}
 	}
 
 	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
 
-	return db.View(log, table, primaryKey, moduleFields, where, nil)
+	return db.View(log, table, primaryKey, moduleFields, where, nil, tc)
 }
 
-func (db *DB) Delete(log *log.Entry, table pg.Table, where pg.BoolExpression) error {
+func (db *DB) Delete(log *log.Entry, table pg.Table, where pg.BoolExpression, tc *TranslationContext) error {
 	tx, err := db.sql.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+
+	// Delete translations first
+	if tc != nil && tc.EntityID != nil {
+		_, err = tx.Exec(
+			`DELETE FROM translations WHERE entity = $1 AND entity_id = $2`,
+			tc.EntityName, tc.EntityID,
+		)
+		if err != nil {
+			return err
+		}
+	}
 
 	stmt := table.DELETE().WHERE(where)
 	query, args := stmt.Sql()

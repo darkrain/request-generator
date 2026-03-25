@@ -96,6 +96,13 @@ type RoleOptions struct {
 	Options []ModuleFieldOptions
 }
 
+// FieldExtra holds per-context extra metadata for a field.
+type FieldExtra struct {
+	View   interface{} `json:"-"`
+	List   interface{} `json:"-"`
+	Defrec interface{} `json:"-"`
+}
+
 type ModuleField struct {
 	Column               pg.Column                                       `json:"-"`
 	SelectExpression     pg.Projection                                   `json:"-"`
@@ -104,14 +111,17 @@ type ModuleField struct {
 	Type                 ModuleFieldType                                 `json:"type"`
 	FormType             ModuleFieldFormType                             `json:"form_type,omitempty"`
 	Example              string                                          `json:"example,omitempty"`
+	Extra                *FieldExtra                                     `json:"-"`
 	Options              []ModuleFieldOptions                            `json:"options,omitempty"`
 	OptionsFunc          func(context *gin.Context) []ModuleFieldOptions `json:"-"`
 	RoleOptions          []RoleOptions                                   `json:"-"`
-	Check                []CheckRules                                    `json:"check,omitempty"`
+	Check                []CheckRules                                    `json:"-"`
 	CheckFunc            func(context *gin.Context) []CheckRules         `json:"-"`
 	RoleCheck            []RoleCheck                                     `json:"-"`
 	Convert              func(value interface{}) (interface{}, error)    `json:"-"`
 	ResultValueConverter func(value interface{}) interface{}             `json:"-"`
+	Translatable         bool                                            `json:"-"`
+	FieldName            string                                          `json:"-"`
 }
 
 // ColumnName returns the database column name from the Jet column.
@@ -120,6 +130,15 @@ func (f ModuleField) ColumnName() string {
 		return f.Column.Name()
 	}
 	return ""
+}
+
+// Name returns the logical field name. For translatable fields this is
+// FieldName (e.g. "name"); for regular fields it falls back to ColumnName().
+func (f ModuleField) Name() string {
+	if f.FieldName != "" {
+		return f.FieldName
+	}
+	return f.ColumnName()
 }
 
 // GetProjection returns the SELECT expression for this field.
@@ -177,14 +196,29 @@ type CheckRules interface {
 	GetScenarios() []Scenario
 }
 
-func RequiredRule(field string, scenarios []Scenario) requiredRule {
+// RuleInfo holds validation rule metadata for OpenAPI spec generation.
+type RuleInfo struct {
+	Type      string        // "required", "in", "length", "url", "email"
+	Field     string
+	Values    []interface{} // for "in" rules
+	Min       int           // for "length" rules
+	Max       int           // for "length" rules
+	Scenarios []Scenario
+}
+
+// CheckRuleIntrospectable exposes rule metadata for documentation generation.
+type CheckRuleIntrospectable interface {
+	RuleInfo() RuleInfo
+}
+
+func RequiredRule(field pg.Column, scenarios []Scenario) requiredRule {
 	return requiredRule{
 		Field:     field,
 		Scenarios: scenarios,
 	}
 }
 
-func InRule(field string, values []interface{}, scenarios []Scenario) inRule {
+func InRule(field pg.Column, values []interface{}, scenarios []Scenario) inRule {
 	return inRule{
 		Field:     field,
 		Values:    values,
@@ -192,7 +226,7 @@ func InRule(field string, values []interface{}, scenarios []Scenario) inRule {
 	}
 }
 
-func InDBRule(field string, values func() []interface{}, scenarios []Scenario) inRule {
+func InDBRule(field pg.Column, values func() []interface{}, scenarios []Scenario) inRule {
 	return inRule{
 		Field:     field,
 		Values:    values(),
@@ -200,7 +234,7 @@ func InDBRule(field string, values func() []interface{}, scenarios []Scenario) i
 	}
 }
 
-func LenRule(field string, min int, max int, scenarios []Scenario) lengthRule {
+func LenRule(field pg.Column, min int, max int, scenarios []Scenario) lengthRule {
 	return lengthRule{
 		Min:       min,
 		Max:       max,
@@ -209,7 +243,7 @@ func LenRule(field string, min int, max int, scenarios []Scenario) lengthRule {
 	}
 }
 
-func UrlRule(field string, scenarios []Scenario) urlRule {
+func UrlRule(field pg.Column, scenarios []Scenario) urlRule {
 	return urlRule{
 		Field:     field,
 		Scenarios: scenarios,
@@ -218,12 +252,12 @@ func UrlRule(field string, scenarios []Scenario) urlRule {
 
 type requiredRule struct {
 	CheckRules `json:"-"`
-	Field      string     `json:"field"`
+	Field      pg.Column  `json:"-"`
 	Scenarios  []Scenario `json:"scenarios"`
 }
 
 type inRule struct {
-	Field     string        `json:"field"`
+	Field     pg.Column     `json:"-"`
 	Values    []interface{} `json:"values"`
 	Scenarios []Scenario    `json:"scenarios"`
 }
@@ -231,14 +265,14 @@ type inRule struct {
 type emailRule struct {
 	CheckRules `json:"-"`
 	Type       string     `json:"type"`
-	Field      string     `json:"field"`
+	Field      pg.Column  `json:"-"`
 	Scenarios  []Scenario `json:"scenarios"`
 }
 
 type urlRule struct {
 	CheckRules `json:"-"`
 	Type       string     `json:"type"`
-	Field      string     `json:"field"`
+	Field      pg.Column  `json:"-"`
 	Scenarios  []Scenario `json:"scenarios"`
 }
 
@@ -247,7 +281,7 @@ type lengthRule struct {
 	Type       string     `json:"type"`
 	Min        int        `json:"min"`
 	Max        int        `json:"max"`
-	Field      string     `json:"field"`
+	Field      pg.Column  `json:"-"`
 	Scenarios  []Scenario `json:"scenarios"`
 }
 
@@ -271,8 +305,16 @@ func (rule lengthRule) GetScenarios() []Scenario {
 	return rule.Scenarios
 }
 
+func (rule requiredRule) RuleInfo() RuleInfo {
+	return RuleInfo{Type: "required", Field: rule.Field.Name(), Scenarios: rule.Scenarios}
+}
+
 func (rule requiredRule) Validate(obj interface{}, lang string) error {
-	return validation.Required.Error(fmt.Sprintf(locale.Message(locale.Lang(lang), "required"), rule.Field)).Validate(obj)
+	return validation.Required.Error(fmt.Sprintf(locale.Message(locale.Lang(lang), "required"), rule.Field.Name())).Validate(obj)
+}
+
+func (rule inRule) RuleInfo() RuleInfo {
+	return RuleInfo{Type: "in", Field: rule.Field.Name(), Values: rule.Values, Scenarios: rule.Scenarios}
 }
 
 func (rule inRule) Validate(obj interface{}, lang string) error {
@@ -283,15 +325,27 @@ func (rule inRule) Validate(obj interface{}, lang string) error {
 	for _, validationVal := range rule.Values {
 		stringValues = append(stringValues, fmt.Sprintf("%v", validationVal))
 	}
-	return validation.In(stringValues...).Error(fmt.Sprintf(locale.Message(locale.Lang(lang), "in"), rule.Field, rule.Values)).Validate(fmt.Sprintf("%v", obj))
+	return validation.In(stringValues...).Error(fmt.Sprintf(locale.Message(locale.Lang(lang), "in"), rule.Field.Name(), rule.Values)).Validate(fmt.Sprintf("%v", obj))
+}
+
+func (rule emailRule) RuleInfo() RuleInfo {
+	return RuleInfo{Type: "email", Field: rule.Field.Name(), Scenarios: rule.Scenarios}
 }
 
 func (rule emailRule) Validate(obj interface{}, lang string) error {
-	return is.Email.Error(fmt.Sprintf(locale.Message(locale.Lang(lang), "email"), rule.Field)).Validate(obj)
+	return is.Email.Error(fmt.Sprintf(locale.Message(locale.Lang(lang), "email"), rule.Field.Name())).Validate(obj)
+}
+
+func (rule urlRule) RuleInfo() RuleInfo {
+	return RuleInfo{Type: "url", Field: rule.Field.Name(), Scenarios: rule.Scenarios}
 }
 
 func (rule urlRule) Validate(obj interface{}, lang string) error {
-	return is.URL.Error(fmt.Sprintf(locale.Message(locale.Lang(lang), "url"), rule.Field)).Validate(obj)
+	return is.URL.Error(fmt.Sprintf(locale.Message(locale.Lang(lang), "url"), rule.Field.Name())).Validate(obj)
+}
+
+func (rule lengthRule) RuleInfo() RuleInfo {
+	return RuleInfo{Type: "length", Field: rule.Field.Name(), Min: rule.Min, Max: rule.Max, Scenarios: rule.Scenarios}
 }
 
 func (rule lengthRule) Validate(obj interface{}, lang string) error {
@@ -299,7 +353,7 @@ func (rule lengthRule) Validate(obj interface{}, lang string) error {
 		rule.Min,
 		rule.Max,
 	).Error(
-		fmt.Sprintf(locale.Message(locale.Lang(lang), "length"), rule.Field, rule.Min, rule.Max),
+		fmt.Sprintf(locale.Message(locale.Lang(lang), "length"), rule.Field.Name(), rule.Min, rule.Max),
 	).Validate(obj)
 }
 
