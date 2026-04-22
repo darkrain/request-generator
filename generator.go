@@ -38,6 +38,9 @@ type Generator struct {
 	DefaultLocale        locale.Lang
 	translations         map[locale.Lang]map[string]string
 	EnableOpenAPI        bool
+	GroupTitles          map[string]string
+	ViewAdapters         map[string]string
+	IconMap              map[string]string
 }
 
 func NewGenerator(

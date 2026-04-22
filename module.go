@@ -7,6 +7,18 @@ import (
 	pg "github.com/go-jet/jet/v2/postgres"
 )
 
+type MenuEntry struct {
+	ActionName  string                 `json:"action"`
+	Title       string                 `json:"title"`
+	Icon        string                 `json:"icon,omitempty"`
+	Show        bool                   `json:"show"`
+	Order       int                    `json:"order"`
+	Group       string                 `json:"group"`
+	CustomLink  string                 `json:"custom_link,omitempty"`
+	CustomQuery map[string]interface{} `json:"custom_query,omitempty"`
+	CustomData  map[string]interface{} `json:"custom_data,omitempty"`
+}
+
 type BaseModule struct {
 	Name           string                     `json:"name"`
 	Label          string                     `json:"label"`
@@ -22,6 +34,7 @@ type BaseModule struct {
 	RoleBeforeHook []actions.RoleHook         `json:"-"`
 	RoleAfterHook  []actions.RoleAfterHook    `json:"-"`
 	EntityName     string                     `json:"-"`
+	MenuEntries    []MenuEntry                `json:"menu_entries,omitempty"`
 }
 
 func (module BaseModule) GetEntityName() string {
