@@ -259,6 +259,18 @@ func (generator *Generator) Run() {
 	featuresGroup.GET("/lang", generator.handleLangList())
 	featuresGroup.GET("/lang/:key", generator.handleLangTranslations())
 
+	// Config endpoint (protected by AuthMiddleware)
+	if generator.AuthMiddleware != nil {
+		configGroup := featuresGroup.Group("")
+		// Dummy action for auth middleware (config doesn't map to a specific module action)
+		dummyAction := actions.ListModuleAction{
+			Permission: []actions.Role{},
+			Auth:       true,
+		}
+		configGroup.Use(generator.AuthMiddleware(dummyAction))
+		configGroup.GET("/config", generator.actionConfigEndpoint())
+	}
+
 	// Build and serve OpenAPI 3.0 spec (only when enabled)
 	if generator.EnableOpenAPI {
 		spec := generator.buildOpenAPISpec("Muta Alim API", "1.0.0")
