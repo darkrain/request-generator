@@ -449,6 +449,8 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 						Options:  options,
 						Check:    realField.Check,
 						Convert:  realField.Convert,
+						Group:    realField.Group,
+						Order:    realField.Order,
 					}
 					filter[realField.ColumnName()] = filterField
 				}

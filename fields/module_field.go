@@ -121,6 +121,8 @@ type ModuleField struct {
 	Convert              func(value interface{}) (interface{}, error)    `json:"-"`
 	ResultValueConverter func(value interface{}) interface{}             `json:"-"`
 	Translatable         bool                                            `json:"-"`
+	Group                string                                          `json:"-"`
+	Order                int                                             `json:"-"`
 	FieldName            string                                          `json:"-"`
 }
 
@@ -176,6 +178,8 @@ type ModuleFilterField struct {
 	Options  []ModuleFieldOptions                         `json:"options,omitempty"`
 	Check    []CheckRules                                 `json:"-"`
 	Convert  func(value interface{}) (interface{}, error) `json:"-"`
+	Group   string  `json:"group,omitempty"`
+	Order   int     `json:"order,omitempty"`
 }
 
 func (f ModuleFilterField) ColumnName() string {
