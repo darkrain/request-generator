@@ -28,6 +28,7 @@ type DBExecutor interface {
 		table pg.Table,
 		primaryKey pg.Column,
 		moduleFields []fields.ModuleField,
+		allFields []fields.ModuleField,
 		page int64,
 		size int64,
 		searchColumns []pg.Column,

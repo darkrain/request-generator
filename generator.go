@@ -379,6 +379,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			module.Table,
 			module.PrimaryKey,
 			realFields,
+			module.Fields,
 			page,
 			size,
 			action.Search,

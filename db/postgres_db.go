@@ -188,6 +188,7 @@ func (db *DB) List(
 	table pg.Table,
 	primaryKey pg.Column,
 	moduleFields []fields.ModuleField,
+	allFields []fields.ModuleField,
 	page int64,
 	size int64,
 	searchColumns []pg.Column,
@@ -260,10 +261,10 @@ func (db *DB) List(
 
 	// Filters
 	if len(filter) > 0 {
-		// Build lookup maps from moduleFields
+		// Build lookup maps from allFields (all module fields, not just SELECT columns)
 		fieldTypeMap := make(map[string]fields.ModuleFieldType)
 		formTypeMap := make(map[string]fields.ModuleFieldFormType)
-		for _, f := range moduleFields {
+		for _, f := range allFields {
 			fieldTypeMap[f.ColumnName()] = f.Type
 			formTypeMap[f.ColumnName()] = f.FormType
 		}
