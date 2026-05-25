@@ -9,11 +9,12 @@ type DeleteModuleAction struct {
 	ModuleAction
 	BeforeAction func(c *gin.Context) error
 	AfterAction  func(c *gin.Context)
-	Label        string            `json:"label"`
-	Labels       map[string]string `json:"-"`
-	Permission   []Role      `json:"permission"`
-	Auth         bool        `json:"auth"`
-	By           []pg.Column `json:"-"`
+	Label        string                                 `json:"label"`
+	Labels       map[string]string                      `json:"-"`
+	Permission   []Role                                 `json:"permission"`
+	Auth         bool                                   `json:"auth"`
+	By           []pg.Column                            `json:"-"`
+	Where        func(c *gin.Context) pg.BoolExpression `json:"-"`
 }
 
 func (action DeleteModuleAction) Action() ModuleActionName {

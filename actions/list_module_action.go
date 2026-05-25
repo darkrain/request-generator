@@ -20,8 +20,10 @@ type ListModuleAction struct {
 	Join         []ModuleActionJoin                           `json:"join"`
 	Where        func(c *gin.Context) pg.BoolExpression       `json:"-"`
 	Extra        interface{}                                  `json:"extra"`
+	ExtraFunc    func(c *gin.Context) interface{}             `json:"-"`
 	Search       []pg.Column                                  `json:"-"`
 	Filter       []pg.Column                                  `json:"-"`
+	FilterFunc   func(c *gin.Context) []pg.Column             `json:"-"`
 	Sort         []pg.Column                                  `json:"-"`
 	SortDefault  pg.Column                                   `json:"-"`
 	Fields       []RoleContext                                `json:"-"`

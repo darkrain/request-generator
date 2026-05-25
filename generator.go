@@ -415,8 +415,15 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 		var filter map[string]fields.ModuleFilterField
 		if addFilters == "true" {
 			filter = make(map[string]fields.ModuleFilterField)
+			filterCols := action.Filter
+			if action.FilterFunc != nil {
+				filterCols = action.FilterFunc(c)
+			}
 			for _, realField := range module.Fields {
-				if containsColumn(action.Filter, realField.Column) {
+				if realField.FilterCondition != nil && !realField.FilterCondition(c) {
+					continue
+				}
+				if containsColumn(filterCols, realField.Column) {
 					options := make([]fields.ModuleFieldOptions, 0, 10)
 					if realField.Options != nil {
 						for _, item := range realField.Options {
@@ -440,6 +447,10 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 						options[i].Label = generator.Translate(lang, opt.Label)
 					}
 
+					var filterExtra interface{}
+					if realField.Extra != nil && realField.Extra.List != nil {
+						filterExtra = realField.Extra.List
+					}
 					filterField := fields.ModuleFilterField{
 						Column:   realField.Column,
 						Title:    generator.Translate(lang, realField.Title),
@@ -451,6 +462,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 						Convert:  realField.Convert,
 						Group:    realField.Group,
 						Order:    realField.Order,
+						Extra:   filterExtra,
 					}
 					filter[realField.ColumnName()] = filterField
 				}
@@ -493,7 +505,12 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			Count:   count,
 			Size:    size,
 			Page:    page,
-			Extra:   action.Extra,
+			Extra: func() interface{} {
+				if action.ExtraFunc != nil {
+					return action.ExtraFunc(c)
+				}
+				return action.Extra
+			}(),
 			Rows:    results,
 			Heads:   heads,
 			Filters: filter,
@@ -744,15 +761,22 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			}
 		}
 
-		where := pg.RawBool(
+		pkWhere := pg.RawBool(
 			fmt.Sprintf(`%s."%s" = #val`, module.Table.Alias(), whereKey),
 			pg.RawArgs{"#val": whereValue},
 		)
 		if module.Table.Alias() == "" {
-			where = pg.RawBool(
+			pkWhere = pg.RawBool(
 				fmt.Sprintf(`"%s"."%s" = #val`, module.Table.TableName(), whereKey),
 				pg.RawArgs{"#val": whereValue},
 			)
+		}
+
+		var where pg.BoolExpression = pkWhere
+		if whereFn := actions.ResolveRoleWhere(module.RoleWhere, role); whereFn != nil {
+			if roleWhere := whereFn(c); roleWhere != nil {
+				where = pg.AND(pkWhere, roleWhere)
+			}
 		}
 
 		joins := action.Join
@@ -918,11 +942,21 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 
 		mapInput := generator.mapRequestInput(input, module, columns)
 
-		// Build WHERE condition
-		where := pg.RawBool(
+		// Build WHERE condition: primary key + optional role/action filters
+		where := pg.BoolExpression(pg.RawBool(
 			fmt.Sprintf(`"%s" = #val`, whereKey),
 			pg.RawArgs{"#val": whereValue},
-		)
+		))
+		if whereFn := actions.ResolveRoleWhere(module.RoleWhere, role); whereFn != nil {
+			if roleWhere := whereFn(c); roleWhere != nil {
+				where = pg.AND(where, roleWhere)
+			}
+		}
+		if action.Where != nil {
+			if actionWhere := action.Where(c); actionWhere != nil {
+				where = pg.AND(where, actionWhere)
+			}
+		}
 
 		_, err = generator.db(module).Update(l, module.Table, module.PrimaryKey, realFields, mapInput, where, tc)
 		if err != nil {
@@ -1017,11 +1051,21 @@ func (generator *Generator) actionDelete(module *BaseModule, action actions.Dele
 			tc.EntityID = whereValue
 		}
 
-		// Build WHERE condition
-		where := pg.RawBool(
+		// Build WHERE condition: primary key + optional role/action filters
+		where := pg.BoolExpression(pg.RawBool(
 			fmt.Sprintf(`"%s" = #val`, whereKey),
 			pg.RawArgs{"#val": whereValue},
-		)
+		))
+		if whereFn := actions.ResolveRoleWhere(module.RoleWhere, role); whereFn != nil {
+			if roleWhere := whereFn(c); roleWhere != nil {
+				where = pg.AND(where, roleWhere)
+			}
+		}
+		if action.Where != nil {
+			if actionWhere := action.Where(c); actionWhere != nil {
+				where = pg.AND(where, actionWhere)
+			}
+		}
 
 		err = generator.db(module).Delete(l, module.Table, where, tc)
 		if err != nil {

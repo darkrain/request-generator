@@ -14,6 +14,7 @@ type MenuEntry struct {
 	Show        bool                   `json:"show"`
 	Order       int                    `json:"order"`
 	Group       string                 `json:"group"`
+	Roles       []actions.Role         `json:"roles,omitempty"`
 	CustomLink  string                 `json:"custom_link,omitempty"`
 	CustomQuery map[string]interface{} `json:"custom_query,omitempty"`
 	CustomData  map[string]interface{} `json:"custom_data,omitempty"`

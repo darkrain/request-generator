@@ -113,6 +113,7 @@ type ModuleField struct {
 	Example              string                                          `json:"example,omitempty"`
 	Extra                *FieldExtra                                     `json:"-"`
 	Options              []ModuleFieldOptions                            `json:"options,omitempty"`
+	OptionsURL           string                                          `json:"options_url,omitempty"`
 	OptionsFunc          func(context *gin.Context) []ModuleFieldOptions `json:"-"`
 	RoleOptions          []RoleOptions                                   `json:"-"`
 	Check                []CheckRules                                    `json:"-"`
@@ -124,6 +125,7 @@ type ModuleField struct {
 	Group                string                                          `json:"-"`
 	Order                int                                             `json:"-"`
 	FieldName            string                                          `json:"-"`
+	FilterCondition      func(c *gin.Context) bool                       `json:"-"`
 }
 
 // ColumnName returns the database column name from the Jet column.
@@ -178,8 +180,9 @@ type ModuleFilterField struct {
 	Options  []ModuleFieldOptions                         `json:"options,omitempty"`
 	Check    []CheckRules                                 `json:"-"`
 	Convert  func(value interface{}) (interface{}, error) `json:"-"`
-	Group   string  `json:"group,omitempty"`
-	Order   int     `json:"order,omitempty"`
+	Group   string       `json:"group,omitempty"`
+	Order   int          `json:"order,omitempty"`
+	Extra   interface{}  `json:"extra,omitempty"`
 }
 
 func (f ModuleFilterField) ColumnName() string {

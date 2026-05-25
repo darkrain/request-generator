@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"strconv"
 	"time"
 
 	"github.com/darkrain/request-generator/actions"
@@ -169,6 +170,19 @@ type fieldMeta struct {
 	name         string
 }
 
+
+// arrayElementType determines whether an array literal contains integers or text.
+// "{1,2,3}" → "integer", "{en,ru,fr}" → "text"
+func arrayElementType(value string) string {
+	stripped := strings.Trim(value, "{}")
+	for _, part := range strings.Split(stripped, ",") {
+		if _, err := strconv.Atoi(strings.TrimSpace(part)); err != nil {
+			return "text"
+		}
+	}
+	return "integer"
+}
+
 func (db *DB) List(
 	log *log.Entry,
 	table pg.Table,
@@ -246,20 +260,91 @@ func (db *DB) List(
 
 	// Filters
 	if len(filter) > 0 {
+		// Build lookup maps from moduleFields
+		fieldTypeMap := make(map[string]fields.ModuleFieldType)
+		formTypeMap := make(map[string]fields.ModuleFieldFormType)
+		for _, f := range moduleFields {
+			fieldTypeMap[f.ColumnName()] = f.Type
+			formTypeMap[f.ColumnName()] = f.FormType
+		}
+
 		for key, value := range filter {
 			parts := strings.Split(key, ".")
+			colName := key
+			tblRef := tableRef
 			if len(parts) > 1 {
+				colName = parts[1]
+				tblRef = parts[0]
+			}
+
+			ft := fieldTypeMap[colName]
+			fmt2 := formTypeMap[colName]
+
+			// 1. Array-type columns → overlap operator (&&)
+			if ft == fields.ModuleFieldTypeArray {
+				castType := arrayElementType(value)
 				conditions = append(conditions,
 					pg.RawBool(
-						fmt.Sprintf(`%s."%s" = #val`, parts[0], parts[1]),
-						pg.RawArgs{"#val": value},
+						fmt.Sprintf(`%s."%s" && #%s_val::%s[]`, tblRef, colName, colName, castType),
+						pg.RawArgs{fmt.Sprintf("#%s_val", colName): value},
 					),
 				)
+			} else if fmt2 == fields.ModuleFieldFormTypeMultiselect {
+				// 2. Multiselect on non-array column → IN clause
+				// Value is in PG array literal: {french,german}
+				stripped := strings.Trim(value, "{}")
+				items := strings.Split(stripped, ",")
+				if len(items) == 1 {
+					conditions = append(conditions,
+						pg.RawBool(
+							fmt.Sprintf(`%s."%s" = #%s_val`, tblRef, colName, colName),
+							pg.RawArgs{fmt.Sprintf("#%s_val", colName): items[0]},
+						),
+					)
+				} else {
+					placeholders := make([]string, len(items))
+					args := pg.RawArgs{}
+					for i, item := range items {
+						ph := fmt.Sprintf("#%s_val_%d", colName, i)
+						placeholders[i] = ph
+						args[ph] = item
+					}
+					conditions = append(conditions,
+						pg.RawBool(
+							fmt.Sprintf(`%s."%s" IN (%s)`, tblRef, colName, strings.Join(placeholders, ", ")),
+							args,
+						),
+					)
+				}
+			} else if fmt2 == fields.ModuleFieldFormTypeNumber && strings.Contains(value, "-") {
+				// 3. Number range: "18-20" → >= 18 AND <= 20
+				rangeParts := strings.SplitN(value, "-", 2)
+				minVal := strings.TrimSpace(rangeParts[0])
+				maxVal := strings.TrimSpace(rangeParts[1])
+				var rangeConds []pg.BoolExpression
+				if minVal != "" {
+					ph := fmt.Sprintf("#%s_min", colName)
+					rangeConds = append(rangeConds, pg.RawBool(
+						fmt.Sprintf(`%s."%s" >= %s`, tblRef, colName, ph),
+						pg.RawArgs{ph: minVal},
+					))
+				}
+				if maxVal != "" {
+					ph := fmt.Sprintf("#%s_max", colName)
+					rangeConds = append(rangeConds, pg.RawBool(
+						fmt.Sprintf(`%s."%s" <= %s`, tblRef, colName, ph),
+						pg.RawArgs{ph: maxVal},
+					))
+				}
+				if len(rangeConds) > 0 {
+					conditions = append(conditions, pg.AND(rangeConds...))
+				}
 			} else {
+				// 4. Default: equality
 				conditions = append(conditions,
 					pg.RawBool(
-						fmt.Sprintf(`%s."%s" = #val`, tableRef, key),
-						pg.RawArgs{"#val": value},
+						fmt.Sprintf(`%s."%s" = #%s_val`, tblRef, colName, colName),
+						pg.RawArgs{fmt.Sprintf("#%s_val", colName): value},
 					),
 				)
 			}

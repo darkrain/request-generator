@@ -6,30 +6,40 @@ import (
 
 	"github.com/darkrain/request-generator/actions"
 	"github.com/darkrain/request-generator/icontext"
+	"github.com/darkrain/request-generator/locale"
 	"github.com/darkrain/request-generator/response"
 	"github.com/gin-gonic/gin"
 )
 
-// ConfigResponse структурырует ответ эндпоинта /api/config
+// ConfigResponse структурирует ответ эндпоинта /api/config
 type ConfigResponse struct {
-	LeftMenu []LeftMenuBlock            `json:"left_menu"`
-	Routes   map[string]RouteConfig     `json:"routes"`
-	Role     string                     `json:"role"`
+	LeftMenu []LeftMenuBlock        `json:"left_menu"`
+	Routes   map[string]RouteConfig `json:"routes"`
+	Role     string                 `json:"role"`
+}
+
+// LeftMenuItem представляет один пункт меню
+type LeftMenuItem struct {
+	URL   string                 `json:"url"`
+	Title string                 `json:"title"`
+	Icon  string                 `json:"icon,omitempty"`
+	Query map[string]interface{} `json:"query,omitempty"`
+	Data  map[string]interface{} `json:"data,omitempty"`
 }
 
 // LeftMenuBlock представляет блок левого меню
 type LeftMenuBlock struct {
-	BlockTitle string   `json:"blockTitle"`
-	Elements   []string `json:"elements"`
+	BlockTitle string         `json:"blockTitle"`
+	Elements   []LeftMenuItem `json:"elements"`
 }
 
 // RouteConfig конфигурирует маршрут
 type RouteConfig struct {
-	Title        string                 `json:"title"`
-	MenuTitle    string                 `json:"menuTitle,omitempty"`
-	Query        *RouteQuery            `json:"query,omitempty"`
-	Data         map[string]interface{} `json:"data,omitempty"`
-	Children     map[string]RouteConfig `json:"children,omitempty"`
+	Title     string                 `json:"title"`
+	MenuTitle string                 `json:"menuTitle,omitempty"`
+	Query     *RouteQuery            `json:"query,omitempty"`
+	Data      map[string]interface{} `json:"data,omitempty"`
+	Children  map[string]RouteConfig `json:"children,omitempty"`
 }
 
 // RouteQuery описывает параметры запроса для маршрута
@@ -44,7 +54,6 @@ func (generator *Generator) actionConfigEndpoint() gin.HandlerFunc {
 		ctx := c.Request.Context()
 		l, _ := icontext.GetLogger(ctx)
 
-		// Получаем пользователя из контекста (AuthMiddleware уже проверил токен)
 		user, ok := icontext.GetUser(ctx)
 		if !ok {
 			response.ErrorResponse(l, c, http.StatusUnauthorized, "Unauthorized", nil)
@@ -52,8 +61,8 @@ func (generator *Generator) actionConfigEndpoint() gin.HandlerFunc {
 		}
 
 		role := user.Role
+		lang := generator.getLang(c)
 
-		// Собираем доступные модули
 		availableModules := make(map[string]*BaseModule)
 		moduleActions := make(map[string][]actions.ModuleAction)
 
@@ -62,10 +71,11 @@ func (generator *Generator) actionConfigEndpoint() gin.HandlerFunc {
 			var accessibleActions []actions.ModuleAction
 
 			for _, menuEntry := range module.MenuEntries {
-				// Находим соответствующее действие по ActionName
+				if !menuEntry.Show {
+					continue
+				}
 				for _, action := range module.Actions {
 					if string(action.Action()) == menuEntry.ActionName {
-						// Проверяем permission
 						if hasPermission(action, role) {
 							moduleAvailable = true
 							accessibleActions = append(accessibleActions, action)
@@ -81,10 +91,7 @@ func (generator *Generator) actionConfigEndpoint() gin.HandlerFunc {
 			}
 		}
 
-		// Формируем left_menu
-		leftMenu := generator.buildLeftMenu(availableModules, moduleActions, role)
-
-		// Формируем routes
+		leftMenu := generator.buildLeftMenu(availableModules, moduleActions, role, lang)
 		routes := generator.buildRoutes(availableModules, moduleActions, role)
 
 		config := ConfigResponse{
@@ -99,30 +106,27 @@ func (generator *Generator) actionConfigEndpoint() gin.HandlerFunc {
 
 // hasPermission проверяет, есть ли у роли доступ к действию
 func hasPermission(action actions.ModuleAction, role string) bool {
-	// Получаем permission из action
 	var permissions []actions.Role
 
 	switch a := action.(type) {
-	case *actions.ListModuleAction:
+	case actions.ListModuleAction:
 		permissions = a.Permission
-	case *actions.AddModuleAction:
+	case actions.AddModuleAction:
 		permissions = a.Permission
-	case *actions.ViewModuleAction:
+	case actions.ViewModuleAction:
 		permissions = a.Permission
-	case *actions.UpdateModuleAction:
+	case actions.UpdateModuleAction:
 		permissions = a.Permission
-	case *actions.DeleteModuleAction:
+	case actions.DeleteModuleAction:
 		permissions = a.Permission
 	default:
 		return false
 	}
 
-	// Если permissions пустой, доступ открыт всем
 	if len(permissions) == 0 {
 		return true
 	}
 
-	// Проверяем наличие роли
 	for _, perm := range permissions {
 		if string(perm) == role || perm == actions.RoleAll {
 			return true
@@ -137,8 +141,8 @@ func (generator *Generator) buildLeftMenu(
 	availableModules map[string]*BaseModule,
 	moduleActions map[string][]actions.ModuleAction,
 	role string,
+	lang locale.Lang,
 ) []LeftMenuBlock {
-	// Группируем MenuEntries по Group
 	type menuEntryWithModule struct {
 		entry  MenuEntry
 		module *BaseModule
@@ -148,16 +152,31 @@ func (generator *Generator) buildLeftMenu(
 	groupOrder := make(map[string]int)
 
 	for _, module := range availableModules {
-		actionList := moduleActions[module.Name]
 		actionMap := make(map[string]bool)
-		for _, action := range actionList {
+		for _, action := range moduleActions[module.Name] {
 			actionMap[string(action.Action())] = true
 		}
 
 		for _, entry := range module.MenuEntries {
-			// Проверяем, что действие доступно
+			if !entry.Show {
+				continue
+			}
 			if !actionMap[entry.ActionName] {
 				continue
+			}
+
+			// Role-specific visibility
+			if len(entry.Roles) > 0 {
+				allowed := false
+				for _, r := range entry.Roles {
+					if string(r) == role || r == actions.RoleAll {
+						allowed = true
+						break
+					}
+				}
+				if !allowed {
+					continue
+				}
 			}
 
 			group := entry.Group
@@ -170,7 +189,6 @@ func (generator *Generator) buildLeftMenu(
 				module: module,
 			})
 
-			// Запоминаем минимальный Order для группы
 			if _, exists := groupOrder[group]; !exists {
 				groupOrder[group] = entry.Order
 			} else if entry.Order < groupOrder[group] {
@@ -179,47 +197,52 @@ func (generator *Generator) buildLeftMenu(
 		}
 	}
 
-	// Сортируем группы по Order
 	type groupInfo struct {
 		name  string
 		order int
 	}
-
 	var groups []groupInfo
 	for name, order := range groupOrder {
 		groups = append(groups, groupInfo{name: name, order: order})
 	}
-
 	sort.Slice(groups, func(i, j int) bool {
 		return groups[i].order < groups[j].order
 	})
 
-	// Формируем LeftMenuBlock
 	var result []LeftMenuBlock
 	for _, group := range groups {
 		entries := grouped[group.name]
 
-		// Сортируем entries по Order
 		sort.Slice(entries, func(i, j int) bool {
 			return entries[i].entry.Order < entries[j].entry.Order
 		})
 
-		// Получаем название группы из GroupTitles
 		blockTitle := group.name
 		if title, exists := generator.GroupTitles[group.name]; exists {
-			blockTitle = title // Это i18n ключ
+			blockTitle = title
 		}
 
-		// Формируем элементы (ссылки)
-		var elements []string
+		var elements []LeftMenuItem
 		for _, item := range entries {
 			entry := item.entry
-			if entry.CustomLink != "" {
-				elements = append(elements, entry.CustomLink)
-			} else {
-				// Генерируем ссылку на основе модуля
-				elements = append(elements, item.module.Path+"/"+item.module.Name)
+			menuItem := LeftMenuItem{
+				Title: generator.Translate(lang, entry.Title),
+				Icon:  entry.Icon,
 			}
+
+			if entry.CustomLink != "" {
+				menuItem.URL = entry.CustomLink
+			} else {
+				menuItem.URL = item.module.Path + "/" + item.module.Name
+			}
+			if entry.CustomQuery != nil {
+				menuItem.Query = entry.CustomQuery
+			}
+			if entry.CustomData != nil {
+				menuItem.Data = entry.CustomData
+			}
+
+			elements = append(elements, menuItem)
 		}
 
 		if len(elements) > 0 {
@@ -246,10 +269,8 @@ func (generator *Generator) buildRoutes(
 
 		for _, action := range actionList {
 			switch a := action.(type) {
-			case *actions.ListModuleAction:
-				// Генерируем route для списка
+			case actions.ListModuleAction:
 				routePath := module.Path + "/" + module.Name
-				routeTitle := a.Label // i18n ключ
 
 				viewAdapter := "list_table"
 				if adapter, exists := generator.ViewAdapters["list"]; exists {
@@ -257,8 +278,8 @@ func (generator *Generator) buildRoutes(
 				}
 
 				route := RouteConfig{
-					Title:     routeTitle,
-					MenuTitle: routeTitle,
+					Title:     a.Label,
+					MenuTitle: a.Label,
 					Query: &RouteQuery{
 						Url:    "/api" + routePath,
 						Method: "GET",
@@ -268,16 +289,12 @@ func (generator *Generator) buildRoutes(
 					},
 				}
 
-				// Добавляем actions для маршрута
 				route.Data["actions"] = generator.buildRouteActions(module, role)
-
-				// Добавляем children (view, edit, add)
 				route.Children = generator.buildRouteChildren(module, role)
 
 				routes[routePath] = route
 
-			case *actions.ViewModuleAction:
-				// View обычно является children, но если отдельное действие
+			case actions.ViewModuleAction:
 				routePath := module.Path + "/" + module.Name + "/:id"
 
 				viewAdapter := "view"
@@ -285,7 +302,7 @@ func (generator *Generator) buildRoutes(
 					viewAdapter = adapter
 				}
 
-				route := RouteConfig{
+				routes[routePath] = RouteConfig{
 					Title: a.Label,
 					Query: &RouteQuery{
 						Url:    "/api" + module.Path + "/" + module.Name + "/view/:bykey/:value",
@@ -296,9 +313,7 @@ func (generator *Generator) buildRoutes(
 					},
 				}
 
-				routes[routePath] = route
-
-			case *actions.AddModuleAction:
+			case actions.AddModuleAction:
 				routePath := module.Path + "/" + module.Name + "/add"
 
 				viewAdapter := "add"
@@ -306,7 +321,7 @@ func (generator *Generator) buildRoutes(
 					viewAdapter = adapter
 				}
 
-				route := RouteConfig{
+				routes[routePath] = RouteConfig{
 					Title: a.Label,
 					Query: &RouteQuery{
 						Url:    "/api" + module.Path + "/" + module.Name,
@@ -316,8 +331,6 @@ func (generator *Generator) buildRoutes(
 						"view_adapter": viewAdapter,
 					},
 				}
-
-				routes[routePath] = route
 			}
 		}
 	}
@@ -330,7 +343,6 @@ func (generator *Generator) buildRouteActions(module *BaseModule, role string) [
 	var result []map[string]interface{}
 
 	for _, entry := range module.MenuEntries {
-		// Находим соответствующее действие
 		for _, action := range module.Actions {
 			if string(action.Action()) != entry.ActionName {
 				continue
@@ -340,7 +352,7 @@ func (generator *Generator) buildRouteActions(module *BaseModule, role string) [
 			}
 
 			actionMap := map[string]interface{}{
-				"title": entry.Title, // i18n ключ
+				"title": entry.Title,
 				"type":  entry.ActionName,
 				"icon":  entry.Icon,
 				"show":  entry.Show,
@@ -349,7 +361,6 @@ func (generator *Generator) buildRouteActions(module *BaseModule, role string) [
 			if entry.CustomQuery != nil {
 				actionMap["query"] = entry.CustomQuery
 			}
-
 			if entry.CustomData != nil {
 				actionMap["data"] = entry.CustomData
 			}
@@ -368,7 +379,7 @@ func (generator *Generator) buildRouteChildren(module *BaseModule, role string) 
 
 	for _, action := range module.Actions {
 		switch a := action.(type) {
-		case *actions.ViewModuleAction:
+		case actions.ViewModuleAction:
 			if !hasPermission(a, role) {
 				continue
 			}
@@ -389,7 +400,7 @@ func (generator *Generator) buildRouteChildren(module *BaseModule, role string) 
 				},
 			}
 
-		case *actions.UpdateModuleAction:
+		case actions.UpdateModuleAction:
 			if !hasPermission(a, role) {
 				continue
 			}
@@ -410,7 +421,7 @@ func (generator *Generator) buildRouteChildren(module *BaseModule, role string) 
 				},
 			}
 
-		case *actions.AddModuleAction:
+		case actions.AddModuleAction:
 			if !hasPermission(a, role) {
 				continue
 			}
