@@ -132,11 +132,11 @@ func NewCoursesModule() *module.BaseModule {
 | `RoleJoin`       | `[]actions.RoleJoin`       | JOIN-ы по ролям                             |
 | `RoleBeforeHook` | `[]actions.RoleHook`       | Хуки до обработки по ролям                  |
 | `RoleAfterHook`  | `[]actions.RoleAfterHook`  | Хуки после обработки по ролям               |
-| `MenuEntries`    | `[]module.MenuEntry`       | Пункты левого меню для `/api/config`        |
+| `MenuEntries`    | `[]module.MenuEntry`       | Пункты левого меню для config endpoint      |
 
 #### MenuEntry
 
-`MenuEntry` описывает пункт левого меню, который возвращается эндпоинтом `/api/config`. Меню строится из `MenuEntries` всех модулей, фильтруется по `Roles` текущего пользователя и группируется по `Group`.
+`MenuEntry` описывает пункт левого меню, возвращаемого config endpoint. Меню строится из `MenuEntries` всех модулей, фильтруется по `Roles` текущего пользователя и группируется по `Group`.
 
 ```go
 MenuEntries: []module.MenuEntry{
@@ -315,7 +315,7 @@ actions.UpdateModuleAction{
     Auth:    true,
     Columns: []pg.Column{...},
     By:      []pg.Column{table.Courses.ID},
-    Where:   func(c *gin.Context) pg.BoolExpression { ... }, // row-level авторизация
+    Where:   func(c *gin.Context) pg.BoolExpression { ... }, // дополнительное WHERE-условие
 }
 ```
 
@@ -323,15 +323,11 @@ actions.UpdateModuleAction{
 
 Опция `ViewAfterUpdate *bool` (по умолч. `true`) — после обновления возвращает полный View-ответ, если у модуля есть ViewAction.
 
-**`Where`** — row-level авторизация: условие добавляется к UPDATE. Если ни одна строка не совпала — возвращается 404. Возврат `nil` отключает ограничение (удобно для admin):
+**`Where`** — дополнительное WHERE-условие для UPDATE. Если ни одна строка не совпала — возвращается 404. Возврат `nil` снимает ограничение:
 
 ```go
 Where: func(c *gin.Context) pg.BoolExpression {
-    user, _ := icontext.GetUser(c.Request.Context())
-    if user.Role == "admin" {
-        return nil
-    }
-    return table.Courses.UserID.EQ(pg.Int(user.ID))
+    // вернуть условие или nil
 },
 ```
 
@@ -342,13 +338,13 @@ actions.DeleteModuleAction{
     Label: "courses.delete",
     Auth:  true,
     By:    []pg.Column{table.Courses.ID},
-    Where: func(c *gin.Context) pg.BoolExpression { ... }, // row-level авторизация
+    Where: func(c *gin.Context) pg.BoolExpression { ... }, // дополнительное WHERE-условие
 }
 ```
 
 **Обязательные поля:** `Label`, `By`.
 
-**`Where`** — аналогично UpdateModuleAction: если условие не выполнено — запись не удаляется, возвращается 404.
+**`Where`** — дополнительное WHERE-условие для DELETE. Если ни одна строка не совпала — возвращается 404.
 
 #### DefrecModuleAction
 
@@ -840,11 +836,11 @@ type TranslationContext struct {
 | `GET` | `/admin/api/lang`         | Список поддерживаемых языков          |
 | `GET` | `/admin/api/lang/:key`    | Все переводы для языка                |
 | `GET` | `/admin/api/openapi.json` | OpenAPI 3.0 спецификация              |
-| `GET` | `/api/config`             | Клиентский конфиг: role-based левое меню |
+| `GET` | `<path>/config`           | Клиентский конфиг: левое меню по ролям   |
 
-### /api/config
+### Config endpoint
 
-Возвращает конфигурацию для клиентского приложения. Требует авторизации (Bearer token). Фильтрует меню по роли текущего пользователя.
+Возвращает конфигурацию для клиентского приложения. Меню фильтруется по роли текущего пользователя.
 
 **Query-параметры:** `lang` — код языка для перевода заголовков блоков меню.
 
@@ -866,4 +862,4 @@ type TranslationContext struct {
 }
 ```
 
-Меню строится из `MenuEntries` каждого `BaseModule`. Пункты группируются по `Group`, сортируются по `Order`. `blockTitle` — это переведённый `Title` первого пункта в группе (ключ i18n).
+Меню строится из `MenuEntries` каждого `BaseModule`. Пункты группируются по `Group`, сортируются по `Order`. `blockTitle` — переведённый `Title` первого пункта группы (ключ i18n).
