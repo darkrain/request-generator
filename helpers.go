@@ -28,12 +28,18 @@ func (generator *Generator) getPagination(page int64, size int64) (int64, int64,
 	return limit, offset, page
 }
 
-func (generator *Generator) normalizeFilters(data map[string]string, module *BaseModule, listAction actions.ListModuleAction, lang locale.Lang) map[string]string {
+func (generator *Generator) normalizeFilters(c *gin.Context, data map[string]string, module *BaseModule, listAction actions.ListModuleAction, lang locale.Lang) map[string]string {
 	resultFilterMap := make(map[string]string)
+
+	// Resolve allowed filter columns: static Filter + dynamic FilterFunc
+	allowedCols := listAction.Filter
+	if listAction.FilterFunc != nil {
+		allowedCols = append(allowedCols, listAction.FilterFunc(c)...)
+	}
 
 	filters := make(map[string]fields.ModuleField)
 	for _, realField := range module.Fields {
-		if containsColumn(listAction.Filter, realField.Column) {
+		if containsColumn(allowedCols, realField.Column) {
 			filters[realField.ColumnName()] = realField
 		}
 	}

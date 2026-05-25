@@ -322,7 +322,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			size = action.Maxsize
 		}
 		isCSV := int64QueryParam(c, "csv", 0)
-		filters := generator.normalizeFilters(c.QueryMap("filter"), module, action, lang)
+		filters := generator.normalizeFilters(c, c.QueryMap("filter"), module, action, lang)
 		searchText := c.Query("search")
 		addFilters := c.Query("addFilters")
 		addHeads := c.Query("addHeads")
