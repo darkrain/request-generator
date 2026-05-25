@@ -132,6 +132,39 @@ func NewCoursesModule() *module.BaseModule {
 | `RoleJoin`       | `[]actions.RoleJoin`       | JOIN-ы по ролям                             |
 | `RoleBeforeHook` | `[]actions.RoleHook`       | Хуки до обработки по ролям                  |
 | `RoleAfterHook`  | `[]actions.RoleAfterHook`  | Хуки после обработки по ролям               |
+| `MenuEntries`    | `[]module.MenuEntry`       | Пункты левого меню для `/api/config`        |
+
+#### MenuEntry
+
+`MenuEntry` описывает пункт левого меню, который возвращается эндпоинтом `/api/config`. Меню строится из `MenuEntries` всех модулей, фильтруется по `Roles` текущего пользователя и группируется по `Group`.
+
+```go
+MenuEntries: []module.MenuEntry{
+    {
+        ActionName: "list",         // имя действия модуля (list/view/…)
+        Title:      "menu.models", // ключ i18n для заголовка пункта
+        Icon:       "users",       // иконка (передаётся клиенту as-is)
+        Show:       true,
+        Order:      1,
+        Group:      "main",        // группа блока в левом меню
+        Roles:      []actions.Role{"admin", "agency"},
+        CustomLink: "/models",     // переопределяет URL (вместо API-пути)
+    },
+},
+```
+
+| Поле          | Тип                        | Описание                                              |
+|---------------|----------------------------|-------------------------------------------------------|
+| `ActionName`  | `string`                   | Имя действия (`list`, `view`, …)                      |
+| `Title`       | `string`                   | Ключ i18n для отображаемого заголовка                 |
+| `Icon`        | `string`                   | Имя иконки (передаётся клиенту)                       |
+| `Show`        | `bool`                     | Показывать пункт (`false` — скрыт, но в features есть) |
+| `Order`       | `int`                      | Порядок внутри группы                                 |
+| `Group`       | `string`                   | Ключ группы (становится `blockTitle` в ответе)        |
+| `Roles`       | `[]actions.Role`           | Роли, которым доступен пункт (пустой = все)           |
+| `CustomLink`  | `string`                   | Переопределяет URL (напр. SPA-маршрут `/models`)      |
+| `CustomQuery` | `map[string]interface{}`   | Доп. query-параметры для клиента                      |
+| `CustomData`  | `map[string]interface{}`   | Произвольные данные для клиента                       |
 
 ### Этап 5. Описание полей (ModuleField)
 
@@ -205,22 +238,49 @@ func NewCoursesModule() *module.BaseModule {
 
 ```go
 actions.ListModuleAction{
-    Label:   "courses.list",
-    Auth:    true,                                        // требуется авторизация
-    Permission: []actions.Role{"admin", "moderator"},     // допустимые роли (опционально)
-    Columns: []pg.Column{table.Courses.ID, ...},          // отображаемые колонки
-    Filter:  []pg.Column{table.Courses.Status},           // фильтруемые колонки
-    Search:  []pg.Column{coursesTitle},                   // поиск по колонкам
-    Sort:    []pg.Column{table.Courses.ID, table.Courses.Price}, // сортируемые колонки
-    SortDefault: table.Courses.ID,                        // сортировка по умолчанию
-    Size:    50,                                          // размер страницы по умолчанию
-    Maxsize: 1000,                                        // макс. размер страницы
-    Join:    []actions.ModuleActionJoin{...},              // JOIN-ы
-    Where:   func(c *gin.Context) pg.BoolExpression {...}, // доп. WHERE
+    Label:       "courses.list",
+    Auth:        true,
+    Permission:  []actions.Role{"admin", "moderator"},
+    Columns:     []pg.Column{table.Courses.ID, ...},
+    Filter:      []pg.Column{table.Courses.Status},
+    FilterFunc:  func(c *gin.Context) []pg.Column { ... }, // динамические фильтры по ролям
+    Search:      []pg.Column{coursesTitle},
+    Sort:        []pg.Column{table.Courses.ID, table.Courses.Price},
+    SortDefault: table.Courses.ID,
+    Size:        50,
+    Maxsize:     1000,
+    Join:        []actions.ModuleActionJoin{...},
+    Where:       func(c *gin.Context) pg.BoolExpression { ... },
+    ExtraFunc:   func(c *gin.Context) interface{} { ... }, // динамические extra-данные
 }
 ```
 
 **Обязательные поля:** `Label`, `Columns`.
+
+**`ExtraFunc`** вызывается при каждом запросе; результат включается в ответ как поле `extra`. Используется для динамических pills, счётчиков и других данных, зависящих от роли или параметров запроса:
+
+```go
+ExtraFunc: func(c *gin.Context) interface{} {
+    return map[string]interface{}{
+        "pills": []map[string]interface{}{
+            {"label": "All"},
+            {"label": "Verified", "key": "verify_status", "val": "verified"},
+        },
+    }
+},
+```
+
+**`FilterFunc`** заменяет/дополняет статический `Filter` — используется когда набор доступных фильтров зависит от роли:
+
+```go
+FilterFunc: func(c *gin.Context) []pg.Column {
+    user, _ := icontext.GetUser(c.Request.Context())
+    if user.Role == "admin" {
+        return []pg.Column{table.Courses.Status, table.Courses.UserID}
+    }
+    return []pg.Column{table.Courses.Status}
+},
+```
 
 #### AddModuleAction
 
@@ -253,8 +313,9 @@ actions.ViewModuleAction{
 actions.UpdateModuleAction{
     Label:   "courses.update",
     Auth:    true,
-    Columns: []pg.Column{...},               // редактируемые колонки
-    By:      []pg.Column{table.Courses.ID},  // по каким ключам обновлять
+    Columns: []pg.Column{...},
+    By:      []pg.Column{table.Courses.ID},
+    Where:   func(c *gin.Context) pg.BoolExpression { ... }, // row-level авторизация
 }
 ```
 
@@ -262,17 +323,32 @@ actions.UpdateModuleAction{
 
 Опция `ViewAfterUpdate *bool` (по умолч. `true`) — после обновления возвращает полный View-ответ, если у модуля есть ViewAction.
 
+**`Where`** — row-level авторизация: условие добавляется к UPDATE. Если ни одна строка не совпала — возвращается 404. Возврат `nil` отключает ограничение (удобно для admin):
+
+```go
+Where: func(c *gin.Context) pg.BoolExpression {
+    user, _ := icontext.GetUser(c.Request.Context())
+    if user.Role == "admin" {
+        return nil
+    }
+    return table.Courses.UserID.EQ(pg.Int(user.ID))
+},
+```
+
 #### DeleteModuleAction
 
 ```go
 actions.DeleteModuleAction{
     Label: "courses.delete",
     Auth:  true,
-    By:    []pg.Column{table.Courses.ID},  // по каким ключам удалять
+    By:    []pg.Column{table.Courses.ID},
+    Where: func(c *gin.Context) pg.BoolExpression { ... }, // row-level авторизация
 }
 ```
 
 **Обязательные поля:** `Label`, `By`.
+
+**`Where`** — аналогично UpdateModuleAction: если условие не выполнено — запись не удаляется, возвращается 404.
 
 #### DefrecModuleAction
 
@@ -438,12 +514,17 @@ WHERE s.token = $1 AND s.expires_at > NOW()
 
 ### При создании ModuleField
 
-| Поле       | Обязательное | Описание                                      |
-|------------|-------------|------------------------------------------------|
-| `Column`   | да          | Jet-колонка (реальная или sentinel)            |
-| `Title`    | да          | Ключ перевода заголовка                        |
-| `Type`     | да          | Тип данных (string/int/float/array/object)     |
-| `FormType` | да          | Тип формы (text/number/select/map/...)         |
+| Поле              | Обязательное | Описание                                          |
+|-------------------|-------------|---------------------------------------------------|
+| `Column`          | да          | Jet-колонка (реальная или sentinel)               |
+| `Title`           | да          | Ключ перевода заголовка                           |
+| `Type`            | да          | Тип данных (string/int/float/array/object)        |
+| `FormType`        | да          | Тип формы (text/number/select/map/...)            |
+| `Group`           | нет         | Ключ группы фильтров (напр. `"breast"`, `"options"`) |
+| `Order`           | нет         | Порядок внутри группы фильтров                    |
+| `FilterCondition` | нет         | `func(c *gin.Context) bool` — показывать ли поле в фильтрах |
+
+`Group` и `Order` экспортируются в JSON при `addFilters=true`. `FilterCondition` позволяет скрывать поля из фильтров в зависимости от роли или контекста запроса.
 
 **Дополнительно для переводимых полей:**
 
@@ -759,3 +840,30 @@ type TranslationContext struct {
 | `GET` | `/admin/api/lang`         | Список поддерживаемых языков          |
 | `GET` | `/admin/api/lang/:key`    | Все переводы для языка                |
 | `GET` | `/admin/api/openapi.json` | OpenAPI 3.0 спецификация              |
+| `GET` | `/api/config`             | Клиентский конфиг: role-based левое меню |
+
+### /api/config
+
+Возвращает конфигурацию для клиентского приложения. Требует авторизации (Bearer token). Фильтрует меню по роли текущего пользователя.
+
+**Query-параметры:** `lang` — код языка для перевода заголовков блоков меню.
+
+**Пример ответа:**
+```json
+{
+  "left_menu": [
+    {
+      "blockTitle": "Profiles",
+      "elements": [
+        {
+          "url": "/models",
+          "title": "Models",
+          "icon": "users"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Меню строится из `MenuEntries` каждого `BaseModule`. Пункты группируются по `Group`, сортируются по `Order`. `blockTitle` — это переведённый `Title` первого пункта в группе (ключ i18n).
