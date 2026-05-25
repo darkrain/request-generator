@@ -468,6 +468,25 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 					filter[realField.ColumnName()] = filterField
 				}
 			}
+			for _, ef := range action.ExtraFilters {
+				key := ef.FieldName
+				if key == "" && ef.Column != nil {
+					key = ef.Column.Name()
+				}
+				if key == "" {
+					continue
+				}
+				translatedOpts := make([]fields.ModuleFieldOptions, len(ef.Options))
+				for i, opt := range ef.Options {
+					translatedOpts[i] = fields.ModuleFieldOptions{
+						Value: opt.Value,
+						Label: generator.Translate(lang, opt.Label),
+					}
+				}
+				ef.Title = generator.Translate(lang, ef.Title)
+				ef.Options = translatedOpts
+				filter[key] = ef
+			}
 		}
 
 		if len(results) == 0 {

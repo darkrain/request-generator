@@ -1,6 +1,7 @@
 package actions
 
 import (
+	"github.com/darkrain/request-generator/fields"
 	"github.com/gin-gonic/gin"
 	pg "github.com/go-jet/jet/v2/postgres"
 )
@@ -24,6 +25,7 @@ type ListModuleAction struct {
 	Search       []pg.Column                                  `json:"-"`
 	Filter       []pg.Column                                  `json:"-"`
 	FilterFunc   func(c *gin.Context) []pg.Column             `json:"-"`
+	ExtraFilters []fields.ModuleFilterField                   `json:"-"`
 	Sort         []pg.Column                                  `json:"-"`
 	SortDefault  pg.Column                                   `json:"-"`
 	Fields       []RoleContext                                `json:"-"`
