@@ -171,19 +171,20 @@ func (f ModuleField) NewScanValue() interface{} {
 }
 
 type ModuleFilterField struct {
-	Column    pg.Column                                    `json:"-"`
-	FieldName string                                       `json:"-"`
-	Title     string                                       `json:"title"`
-	Titles    map[string]string                            `json:"-"`
-	Type      ModuleFieldType                              `json:"type"`
-	FormType  ModuleFieldFormType                          `json:"form_type,omitempty"`
-	Example   string                                       `json:"example,omitempty"`
-	Options   []ModuleFieldOptions                         `json:"options,omitempty"`
-	Check     []CheckRules                                 `json:"-"`
-	Convert   func(value interface{}) (interface{}, error) `json:"-"`
-	Group     string                                       `json:"group,omitempty"`
-	Order     int                                          `json:"order,omitempty"`
-	Extra     interface{}                                  `json:"extra,omitempty"`
+	Column          pg.Column                                    `json:"-"`
+	FieldName       string                                       `json:"-"`
+	Title           string                                       `json:"title"`
+	Titles          map[string]string                            `json:"-"`
+	Type            ModuleFieldType                              `json:"type"`
+	FormType        ModuleFieldFormType                          `json:"form_type,omitempty"`
+	Example         string                                       `json:"example,omitempty"`
+	Options         []ModuleFieldOptions                         `json:"options,omitempty"`
+	Check           []CheckRules                                 `json:"-"`
+	Convert         func(value interface{}) (interface{}, error) `json:"-"`
+	Group           string                                       `json:"group,omitempty"`
+	Order           int                                          `json:"order,omitempty"`
+	Extra           interface{}                                  `json:"extra,omitempty"`
+	FilterCondition func(c *gin.Context) bool                    `json:"-"`
 }
 
 func (f ModuleFilterField) ColumnName() string {

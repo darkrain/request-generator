@@ -469,6 +469,9 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 				}
 			}
 			for _, ef := range action.ExtraFilters {
+				if ef.FilterCondition != nil && !ef.FilterCondition(c) {
+					continue
+				}
 				key := ef.FieldName
 				if key == "" && ef.Column != nil {
 					key = ef.Column.Name()
