@@ -126,6 +126,10 @@ type ModuleField struct {
 	Order                int                                             `json:"-"`
 	FieldName            string                                          `json:"-"`
 	FilterCondition      func(c *gin.Context) bool                       `json:"-"`
+	Roles                []string                                        `json:"roles,omitempty"`
+	Section              string                                          `json:"section,omitempty"`
+	RoleSection          map[string]string                               `json:"-"`
+	RoleFormType         map[string]ModuleFieldFormType                  `json:"-"`
 }
 
 // ColumnName returns the database column name from the Jet column.
