@@ -840,7 +840,7 @@ func (db *DB) Update(log *log.Entry, table pg.Table, primaryKey pg.Column, modul
 
 	// Only run UPDATE on entity table if there are non-translatable fields to update
 	if len(setClauses) > 0 {
-		setClauses = append(setClauses, fmt.Sprintf(`"updated_at" = $%d`, paramIdx))
+		setClauses = append(setClauses, fmt.Sprintf(`"update_date" = $%d`, paramIdx))
 		values = append(values, time.Now())
 		paramIdx++
 

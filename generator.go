@@ -176,6 +176,9 @@ func (generator *Generator) Run() {
 				addGrpup.PUT(module.Name, generator.actionAdd(module, addAction))
 
 				defrecGroup := generator.group.Group(fmt.Sprintf("%s/%s/defrec", module.Path, module.Name))
+				if addAction.Auth && generator.AuthMiddleware != nil {
+					defrecGroup.Use(generator.AuthMiddleware(addAction))
+				}
 				defrecGroup.GET("/", generator.actionDefrec(module))
 
 			case actions.ModuleActionNameView:
@@ -675,6 +678,20 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 		role := string(actions.GetRoleFromContext(c))
 
 		for _, field := range module.Fields {
+			// Skip fields that have role restrictions and current role is not in the list
+			if len(field.Roles) > 0 {
+				roleAllowed := false
+				for _, r := range field.Roles {
+					if r == role {
+						roleAllowed = true
+						break
+					}
+				}
+				if !roleAllowed {
+					continue
+				}
+			}
+
 			checkItems := make([]fields.CheckRules, 0, 10)
 			optionItems := make([]fields.ModuleFieldOptions, 0, 10)
 
@@ -720,10 +737,25 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 			field.Options = optionItems
 			field.Check = checkItems
 
+			if field.RoleSection != nil {
+				if s, ok := field.RoleSection[role]; ok {
+					field.Section = s
+				}
+			}
+			if field.RoleFormType != nil {
+				if ft, ok := field.RoleFormType[role]; ok {
+					field.FormType = ft
+				}
+			}
+
 			output = append(output, field)
 		}
 
-		response.Response(l, c, response.NewDefrecResponse(nil, output))
+		var extra interface{}
+		if module.Defrec.ExtraFunc != nil {
+			extra = module.Defrec.ExtraFunc(c)
+		}
+		response.Response(l, c, response.NewDefrecResponse(extra, output))
 
 		module.Defrec.AfterRequest(c)
 	}
