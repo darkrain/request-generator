@@ -646,17 +646,6 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 			return
 		}
 
-		if action.ValidateFunc != nil {
-			if valErrs := action.ValidateFunc(c, input); len(valErrs) > 0 {
-				errList := make([]string, 0, len(valErrs))
-				for k, v := range valErrs {
-					errList = append(errList, k+": "+v)
-				}
-				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, errList)
-				return
-			}
-		}
-
 		columns := action.GetColumns(c)
 
 		realFields := make([]fields.ModuleField, 0, 10)
@@ -670,7 +659,7 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 
 		tc := generator.buildTranslationContext(module)
 
-		mapInput := generator.mapRequestInput(input, module, columns)
+		mapInput := generator.mapRequestInput(c, input, module, columns)
 		// Include DefaultFunc fields that are not in the action columns,
 		// always using the server-side DefaultFunc value to prevent client spoofing.
 		for _, realField := range realFields {
@@ -1026,7 +1015,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 			tc.EntityID = whereValue
 		}
 
-		mapInput := generator.mapRequestInput(input, module, columns)
+		mapInput := generator.mapRequestInput(c, input, module, columns)
 
 		// Build WHERE condition: primary key + optional role/action filters
 		where := pg.BoolExpression(pg.RawBool(

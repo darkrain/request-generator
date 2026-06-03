@@ -117,6 +117,12 @@ func (generator *Generator) checkRequest(
 		rules := module.GetRules(context, *field, scenario)
 
 		for _, rule := range rules {
+			if dr, ok := rule.(fields.DataCheckRule); ok {
+				if err := dr.ValidateData(context, data, string(lang)); err != nil {
+					errs[colName] = err.Error()
+				}
+				continue
+			}
 			err := rule.Validate(value, string(lang))
 			if err != nil {
 				errs[colName] = err.Error()
@@ -124,7 +130,7 @@ func (generator *Generator) checkRequest(
 		}
 
 		if field.Convert != nil && value != nil {
-			_, err := field.Convert(value)
+			_, err := field.Convert(context, value)
 			if err != nil {
 				errs[colName] = err.Error()
 			}
@@ -135,6 +141,7 @@ func (generator *Generator) checkRequest(
 }
 
 func (generator *Generator) mapRequestInput(
+	c *gin.Context,
 	data map[string]interface{},
 	module *BaseModule,
 	actionColumns []pg.Column,
@@ -143,11 +150,10 @@ func (generator *Generator) mapRequestInput(
 
 	for _, field := range module.Fields {
 		if field.Translatable {
-			// For translatable fields, look up by FieldName
 			value, ok := data[field.Name()]
 			if ok && containsColumn(actionColumns, field.Column) {
 				if field.Convert != nil {
-					convertedValue, err := field.Convert(value)
+					convertedValue, err := field.Convert(c, value)
 					if err != nil {
 						continue
 					}
@@ -163,7 +169,7 @@ func (generator *Generator) mapRequestInput(
 		value, ok := data[colName]
 		if ok && containsColumn(actionColumns, field.Column) {
 			if field.Convert != nil {
-				convertedValue, err := field.Convert(value)
+				convertedValue, err := field.Convert(c, value)
 				if err != nil {
 					continue
 				}
