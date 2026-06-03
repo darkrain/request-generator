@@ -9,9 +9,6 @@ type AddModuleAction struct {
 	ModuleAction
 	BeforeAction func(c *gin.Context) error
 	AfterAction  func(c *gin.Context)
-	// ValidateFunc runs after field-level checks with the full input map.
-	// Return a map of fieldName → error message; non-empty map aborts the add.
-	ValidateFunc func(c *gin.Context, data map[string]interface{}) map[string]string
 	Label        string                           `json:"label"`
 	Labels       map[string]string                `json:"-"`
 	Columns      []pg.Column                      `json:"-"`

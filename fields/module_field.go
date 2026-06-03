@@ -122,7 +122,7 @@ type ModuleField struct {
 	// DefaultFunc is called during Add when the field is absent from the request body.
 	// The returned value is injected into the input before validation and DB insert.
 	DefaultFunc          func(c *gin.Context) interface{}               `json:"-"`
-	Convert              func(value interface{}) (interface{}, error)    `json:"-"`
+	Convert              func(c *gin.Context, value interface{}) (interface{}, error) `json:"-"`
 	ResultValueConverter func(value interface{}) interface{}             `json:"-"`
 	Translatable         bool                                            `json:"-"`
 	Group                string                                          `json:"-"`
@@ -187,8 +187,8 @@ type ModuleFilterField struct {
 	Example         string                                       `json:"example,omitempty"`
 	Options         []ModuleFieldOptions                         `json:"options,omitempty"`
 	Check           []CheckRules                                 `json:"-"`
-	Convert         func(value interface{}) (interface{}, error) `json:"-"`
-	Group           string                                       `json:"group,omitempty"`
+	Convert         func(c *gin.Context, value interface{}) (interface{}, error) `json:"-"`
+	Group           string                                                       `json:"group,omitempty"`
 	Order           int                                          `json:"order,omitempty"`
 	Extra           interface{}                                  `json:"extra,omitempty"`
 	FilterCondition func(c *gin.Context) bool                    `json:"-"`
@@ -210,6 +210,35 @@ type ModuleFieldOptions struct {
 type CheckRules interface {
 	Validate(obj interface{}, lang string) error
 	GetScenarios() []Scenario
+}
+
+// DataCheckRule is a CheckRules variant that has access to the full input map
+// and gin.Context. Use it for composite validation spanning multiple fields
+// (e.g. uniqueness across (who_add, whom_add, tag)).
+// Implementors must also satisfy CheckRules to be stored in a Check slice;
+// the Validate method can be a no-op since the generator calls ValidateData instead.
+type DataCheckRule interface {
+	CheckRules
+	ValidateData(c *gin.Context, data map[string]interface{}, lang string) error
+}
+
+// dataRule is a function-based DataCheckRule for inline use.
+type dataRule struct {
+	fn        func(c *gin.Context, data map[string]interface{}, lang string) error
+	scenarios []Scenario
+}
+
+func (r dataRule) Validate(_ interface{}, _ string) error { return nil }
+func (r dataRule) GetScenarios() []Scenario               { return r.scenarios }
+func (r dataRule) ValidateData(c *gin.Context, data map[string]interface{}, lang string) error {
+	return r.fn(c, data, lang)
+}
+
+// DataRule creates a CheckRules entry for composite, context-aware validation.
+// The fn receives the full input map and gin.Context, making it suitable for
+// multi-field uniqueness checks or any validation that needs DB/session access.
+func DataRule(fn func(c *gin.Context, data map[string]interface{}, lang string) error, scenarios []Scenario) CheckRules {
+	return dataRule{fn: fn, scenarios: scenarios}
 }
 
 // RuleInfo holds validation rule metadata for OpenAPI spec generation.
