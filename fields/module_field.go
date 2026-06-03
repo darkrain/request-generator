@@ -119,13 +119,20 @@ type ModuleField struct {
 	Check                []CheckRules                                    `json:"-"`
 	CheckFunc            func(context *gin.Context) []CheckRules         `json:"-"`
 	RoleCheck            []RoleCheck                                     `json:"-"`
-	Convert              func(value interface{}) (interface{}, error)    `json:"-"`
+	// DefaultFunc is called during Add when the field is absent from the request body.
+	// The returned value is injected into the input before validation and DB insert.
+	DefaultFunc          func(c *gin.Context) interface{}               `json:"-"`
+	Convert              func(c *gin.Context, value interface{}) (interface{}, error) `json:"-"`
 	ResultValueConverter func(value interface{}) interface{}             `json:"-"`
 	Translatable         bool                                            `json:"-"`
 	Group                string                                          `json:"-"`
 	Order                int                                             `json:"-"`
 	FieldName            string                                          `json:"-"`
 	FilterCondition      func(c *gin.Context) bool                       `json:"-"`
+	Roles                []string                                        `json:"roles,omitempty"`
+	Section              string                                          `json:"section,omitempty"`
+	RoleSection          map[string]string                               `json:"-"`
+	RoleFormType         map[string]ModuleFieldFormType                  `json:"-"`
 }
 
 // ColumnName returns the database column name from the Jet column.
@@ -180,8 +187,8 @@ type ModuleFilterField struct {
 	Example         string                                       `json:"example,omitempty"`
 	Options         []ModuleFieldOptions                         `json:"options,omitempty"`
 	Check           []CheckRules                                 `json:"-"`
-	Convert         func(value interface{}) (interface{}, error) `json:"-"`
-	Group           string                                       `json:"group,omitempty"`
+	Convert         func(c *gin.Context, value interface{}) (interface{}, error) `json:"-"`
+	Group           string                                                       `json:"group,omitempty"`
 	Order           int                                          `json:"order,omitempty"`
 	Extra           interface{}                                  `json:"extra,omitempty"`
 	FilterCondition func(c *gin.Context) bool                    `json:"-"`
@@ -203,6 +210,35 @@ type ModuleFieldOptions struct {
 type CheckRules interface {
 	Validate(obj interface{}, lang string) error
 	GetScenarios() []Scenario
+}
+
+// DataCheckRule is a CheckRules variant that has access to the full input map,
+// gin.Context, and the raw *sql.DB. Use it for composite validation spanning
+// multiple fields (e.g. uniqueness across (who_add, whom_add, tag)).
+// Implementors must also satisfy CheckRules to be stored in a Check slice;
+// the Validate method can be a no-op since the generator calls ValidateData instead.
+type DataCheckRule interface {
+	CheckRules
+	ValidateData(c *gin.Context, db *sql.DB, data map[string]interface{}, lang string) error
+}
+
+// dataRule is a function-based DataCheckRule for inline use.
+type dataRule struct {
+	fn        func(c *gin.Context, db *sql.DB, data map[string]interface{}, lang string) error
+	scenarios []Scenario
+}
+
+func (r dataRule) Validate(_ interface{}, _ string) error { return nil }
+func (r dataRule) GetScenarios() []Scenario               { return r.scenarios }
+func (r dataRule) ValidateData(c *gin.Context, db *sql.DB, data map[string]interface{}, lang string) error {
+	return r.fn(c, db, data, lang)
+}
+
+// DataRule creates a CheckRules entry for composite, context-aware validation.
+// The fn receives gin.Context, *sql.DB, and the full input map — suitable for
+// multi-field uniqueness checks or any validation that needs DB access.
+func DataRule(fn func(c *gin.Context, db *sql.DB, data map[string]interface{}, lang string) error, scenarios []Scenario) CheckRules {
+	return dataRule{fn: fn, scenarios: scenarios}
 }
 
 // RuleInfo holds validation rule metadata for OpenAPI spec generation.

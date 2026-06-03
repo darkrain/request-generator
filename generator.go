@@ -176,6 +176,9 @@ func (generator *Generator) Run() {
 				addGrpup.PUT(module.Name, generator.actionAdd(module, addAction))
 
 				defrecGroup := generator.group.Group(fmt.Sprintf("%s/%s/defrec", module.Path, module.Name))
+				if addAction.Auth && generator.AuthMiddleware != nil {
+					defrecGroup.Use(generator.AuthMiddleware(addAction))
+				}
 				defrecGroup.GET("/", generator.actionDefrec(module))
 
 			case actions.ModuleActionNameView:
@@ -626,6 +629,17 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 			return
 		}
 
+		// Apply DefaultFunc for fields absent from the request body.
+		for _, field := range module.Fields {
+			if field.DefaultFunc == nil {
+				continue
+			}
+			colName := field.ColumnName()
+			if _, exists := input[colName]; !exists {
+				input[colName] = field.DefaultFunc(c)
+			}
+		}
+
 		errs := generator.checkRequest(c, input, module, action, fields.ScenarioAdd, lang)
 		if len(errs) > 0 {
 			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, errs)
@@ -636,14 +650,23 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 
 		realFields := make([]fields.ModuleField, 0, 10)
 		for _, realField := range module.Fields {
-			if containsColumn(columns, realField.Column) {
+			inColumns := containsColumn(columns, realField.Column)
+			hasDefault := realField.DefaultFunc != nil && input[realField.ColumnName()] != nil
+			if inColumns || hasDefault {
 				realFields = append(realFields, realField)
 			}
 		}
 
 		tc := generator.buildTranslationContext(module)
 
-		mapInput := generator.mapRequestInput(input, module, columns)
+		mapInput := generator.mapRequestInput(c, input, module, columns)
+		// Include DefaultFunc fields that are not in the action columns,
+		// always using the server-side DefaultFunc value to prevent client spoofing.
+		for _, realField := range realFields {
+			if !containsColumn(columns, realField.Column) && realField.DefaultFunc != nil {
+				mapInput[realField.ColumnName()] = realField.DefaultFunc(c)
+			}
+		}
 		output, err := generator.db(module).Add(l, module.Table, module.PrimaryKey, realFields, mapInput, tc)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{
@@ -675,6 +698,20 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 		role := string(actions.GetRoleFromContext(c))
 
 		for _, field := range module.Fields {
+			// Skip fields that have role restrictions and current role is not in the list
+			if len(field.Roles) > 0 {
+				roleAllowed := false
+				for _, r := range field.Roles {
+					if r == role {
+						roleAllowed = true
+						break
+					}
+				}
+				if !roleAllowed {
+					continue
+				}
+			}
+
 			checkItems := make([]fields.CheckRules, 0, 10)
 			optionItems := make([]fields.ModuleFieldOptions, 0, 10)
 
@@ -720,10 +757,25 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 			field.Options = optionItems
 			field.Check = checkItems
 
+			if field.RoleSection != nil {
+				if s, ok := field.RoleSection[role]; ok {
+					field.Section = s
+				}
+			}
+			if field.RoleFormType != nil {
+				if ft, ok := field.RoleFormType[role]; ok {
+					field.FormType = ft
+				}
+			}
+
 			output = append(output, field)
 		}
 
-		response.Response(l, c, response.NewDefrecResponse(nil, output))
+		var extra interface{}
+		if module.Defrec.ExtraFunc != nil {
+			extra = module.Defrec.ExtraFunc(c)
+		}
+		response.Response(l, c, response.NewDefrecResponse(extra, output))
 
 		module.Defrec.AfterRequest(c)
 	}
@@ -963,7 +1015,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 			tc.EntityID = whereValue
 		}
 
-		mapInput := generator.mapRequestInput(input, module, columns)
+		mapInput := generator.mapRequestInput(c, input, module, columns)
 
 		// Build WHERE condition: primary key + optional role/action filters
 		where := pg.BoolExpression(pg.RawBool(

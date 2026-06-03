@@ -2,6 +2,7 @@ package icontext
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/rs/xid"
 	log "github.com/sirupsen/logrus"
@@ -13,6 +14,7 @@ const (
 	UserContext         = key("userContext")
 	LoggerContextKey    = key("loggerContextKey")
 	RequestIDContextKey = key("requestIDContextKey")
+	DBContextKey        = key("dbContext")
 )
 
 func GetContext() context.Context {
@@ -48,4 +50,13 @@ func SetUser(ctx context.Context, user *UserInfo) context.Context {
 func GetUser(ctx context.Context) (*UserInfo, bool) {
 	u, ok := ctx.Value(UserContext).(*UserInfo)
 	return u, ok
+}
+
+func SetDB(ctx context.Context, db *sql.DB) context.Context {
+	return context.WithValue(ctx, DBContextKey, db)
+}
+
+func GetDB(ctx context.Context) (*sql.DB, bool) {
+	db, ok := ctx.Value(DBContextKey).(*sql.DB)
+	return db, ok
 }

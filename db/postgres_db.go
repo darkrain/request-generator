@@ -840,7 +840,7 @@ func (db *DB) Update(log *log.Entry, table pg.Table, primaryKey pg.Column, modul
 
 	// Only run UPDATE on entity table if there are non-translatable fields to update
 	if len(setClauses) > 0 {
-		setClauses = append(setClauses, fmt.Sprintf(`"updated_at" = $%d`, paramIdx))
+		setClauses = append(setClauses, fmt.Sprintf(`"update_date" = $%d`, paramIdx))
 		values = append(values, time.Now())
 		paramIdx++
 
@@ -952,6 +952,10 @@ func (db *DB) Delete(log *log.Entry, table pg.Table, where pg.BoolExpression, tc
 
 func (db *DB) RawRequest(log *log.Entry, query string, params ...interface{}) (*sql.Rows, error) {
 	return db.sql.Query(query, params...)
+}
+
+func (db *DB) RawDB() *sql.DB {
+	return db.sql
 }
 
 func removeDuplicate(sliceList []string) []string {

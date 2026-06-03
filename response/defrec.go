@@ -26,6 +26,12 @@ func NewDefrecResponse(extra interface{}, fields []f.ModuleField) DefrecResponse
 		if field.Extra != nil && field.Extra.Defrec != nil {
 			item["extra"] = field.Extra.Defrec
 		}
+		if field.Section != "" {
+			item["section"] = field.Section
+		}
+		if len(field.Roles) > 0 {
+			item["roles"] = field.Roles
+		}
 		key := field.ColumnName()
 		if field.Translatable {
 			key = field.Name()
