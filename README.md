@@ -230,6 +230,62 @@ MenuEntries: []module.MenuEntry{
 
 Сценарии: `fields.ScenarioAdd`, `fields.ScenarioUpdate`.
 
+#### Кросс-полевая и DB-валидация (DataCheckRule)
+
+Когда правилу нужен доступ к другим полям запроса или к базе данных, используйте `DataCheckRule`.
+Генератор автоматически обнаруживает реализацию интерфейса и вызывает `ValidateData` вместо `Validate`,
+передавая контекст запроса, `*sql.DB` и полный набор входящих данных.
+
+```go
+type DataCheckRule interface {
+    CheckRules                      // обратная совместимость
+    ValidateData(c *gin.Context, db *sql.DB, data map[string]interface{}, lang string) error
+}
+```
+
+**Быстрый вариант через `DataRule()`:**
+
+```go
+{
+    Column: table.Lists.WhomAdd,
+    Check: []fields.CheckRules{
+        fields.RequiredRule(table.Lists.WhomAdd, []fields.Scenario{fields.ScenarioAdd}),
+        fields.DataRule(func(c *gin.Context, db *sql.DB, data map[string]interface{}, lang string) error {
+            whoID, _ := data["who_add"].(float64)
+            whomID, _ := data["whom_add"].(float64)
+            tag, _ := data["tag"].(string)
+            var exists int
+            _ = db.QueryRowContext(c.Request.Context(),
+                `SELECT 1 FROM lists WHERE who_add=$1 AND whom_add=$2 AND tag=$3 LIMIT 1`,
+                int64(whoID), int64(whomID), tag,
+            ).Scan(&exists)
+            if exists == 1 {
+                return fmt.Errorf("already_exists")
+            }
+            return nil
+        }, []fields.Scenario{fields.ScenarioAdd}),
+    },
+}
+```
+
+**Собственный тип** (когда нужна структура с полями или переиспользование):
+
+```go
+type uniqueListRule struct {
+    scenarios []fields.Scenario
+}
+
+func (r uniqueListRule) Validate(_ interface{}, _ string) error { return nil }
+func (r uniqueListRule) GetScenarios() []fields.Scenario       { return r.scenarios }
+func (r uniqueListRule) ValidateData(c *gin.Context, db *sql.DB, data map[string]interface{}, lang string) error {
+    // ... логика с доступом к c, db, data
+    return nil
+}
+```
+
+> **Важно:** В типе, реализующем `DataCheckRule`, метод `Validate` должен возвращать `nil` —
+> генератор вызывает только `ValidateData`. Метод нужен лишь для удовлетворения интерфейса `CheckRules`.
+
 ### Этап 6. Описание действий (Actions)
 
 Каждый модуль должен содержать массив `Actions` с нужными CRUD-операциями.
@@ -519,8 +575,39 @@ WHERE s.token = $1 AND s.expires_at > NOW()
 | `Group`           | нет         | Ключ группы фильтров (напр. `"breast"`, `"options"`) |
 | `Order`           | нет         | Порядок внутри группы фильтров                    |
 | `FilterCondition` | нет         | `func(c *gin.Context) bool` — показывать ли поле в фильтрах |
+| `Convert`         | нет         | `func(c *gin.Context, value interface{}) (interface{}, error)` — преобразование входящего значения |
+| `DefaultFunc`     | нет         | `func(c *gin.Context) interface{}` — значение по умолчанию; для полей вне `action.Columns` вызывается всегда (защита от spoofing) |
 
 `Group` и `Order` экспортируются в JSON при `addFilters=true`. `FilterCondition` позволяет скрывать поля из фильтров в зависимости от роли или контекста запроса.
+
+#### Convert и DefaultFunc
+
+**`Convert`** — преобразование входящего (и/или исходящего) значения. Принимает `*gin.Context`, поэтому может учитывать роль пользователя:
+
+```go
+{
+    Column:  table.Profiles.Status,
+    Convert: func(c *gin.Context, value interface{}) (interface{}, error) {
+        // например, нормализация строки перед сохранением
+        if s, ok := value.(string); ok {
+            return strings.ToLower(s), nil
+        }
+        return value, nil
+    },
+}
+```
+
+**`DefaultFunc`** — серверное значение по умолчанию. Критичное отличие от просто дефолта в БД: если поле не входит в `action.Columns`, генератор **всегда** вызывает `DefaultFunc(c)` и подставляет его значение, даже если клиент передал это поле в теле запроса. Это предотвращает подмену системных полей:
+
+```go
+{
+    Column:      table.Lists.WhoAdd,
+    DefaultFunc: func(c *gin.Context) interface{} {
+        user, _ := icontext.GetUser(c.Request.Context())
+        return user.ID  // клиент не может переопределить
+    },
+}
+```
 
 **Дополнительно для переводимых полей:**
 
@@ -783,6 +870,7 @@ type DBExecutor interface {
     Update(...) (interface{}, error)
     Delete(...) error
     RawRequest(log, query, params...) (*sql.Rows, error)
+    RawDB() *sql.DB  // доступ к raw *sql.DB — используется в DataCheckRule.ValidateData
 }
 ```
 
