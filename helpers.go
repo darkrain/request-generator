@@ -118,7 +118,7 @@ func (generator *Generator) checkRequest(
 
 		for _, rule := range rules {
 			if dr, ok := rule.(fields.DataCheckRule); ok {
-				if err := dr.ValidateData(context, data, string(lang)); err != nil {
+				if err := dr.ValidateData(context, generator.db(module).RawDB(), data, string(lang)); err != nil {
 					errs[colName] = err.Error()
 				}
 				continue

@@ -52,4 +52,5 @@ type DBExecutor interface {
 	Update(log *log.Entry, table pg.Table, primaryKey pg.Column, moduleFields []fields.ModuleField, input map[string]interface{}, where pg.BoolExpression, tc *TranslationContext) (interface{}, error)
 	Delete(log *log.Entry, table pg.Table, where pg.BoolExpression, tc *TranslationContext) error
 	RawRequest(log *log.Entry, query string, params ...interface{}) (*sql.Rows, error)
+	RawDB() *sql.DB
 }
