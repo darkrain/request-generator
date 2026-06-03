@@ -629,17 +629,41 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 			return
 		}
 
+		// Apply DefaultFunc for fields absent from the request body.
+		for _, field := range module.Fields {
+			if field.DefaultFunc == nil {
+				continue
+			}
+			colName := field.ColumnName()
+			if _, exists := input[colName]; !exists {
+				input[colName] = field.DefaultFunc(c)
+			}
+		}
+
 		errs := generator.checkRequest(c, input, module, action, fields.ScenarioAdd, lang)
 		if len(errs) > 0 {
 			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, errs)
 			return
 		}
 
+		if action.ValidateFunc != nil {
+			if valErrs := action.ValidateFunc(c, input); len(valErrs) > 0 {
+				errList := make([]string, 0, len(valErrs))
+				for k, v := range valErrs {
+					errList = append(errList, k+": "+v)
+				}
+				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, errList)
+				return
+			}
+		}
+
 		columns := action.GetColumns(c)
 
 		realFields := make([]fields.ModuleField, 0, 10)
 		for _, realField := range module.Fields {
-			if containsColumn(columns, realField.Column) {
+			inColumns := containsColumn(columns, realField.Column)
+			hasDefault := realField.DefaultFunc != nil && input[realField.ColumnName()] != nil
+			if inColumns || hasDefault {
 				realFields = append(realFields, realField)
 			}
 		}
@@ -647,6 +671,13 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 		tc := generator.buildTranslationContext(module)
 
 		mapInput := generator.mapRequestInput(input, module, columns)
+		// Include DefaultFunc fields that are not in the action columns,
+		// always using the server-side DefaultFunc value to prevent client spoofing.
+		for _, realField := range realFields {
+			if !containsColumn(columns, realField.Column) && realField.DefaultFunc != nil {
+				mapInput[realField.ColumnName()] = realField.DefaultFunc(c)
+			}
+		}
 		output, err := generator.db(module).Add(l, module.Table, module.PrimaryKey, realFields, mapInput, tc)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{

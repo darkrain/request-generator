@@ -119,6 +119,9 @@ type ModuleField struct {
 	Check                []CheckRules                                    `json:"-"`
 	CheckFunc            func(context *gin.Context) []CheckRules         `json:"-"`
 	RoleCheck            []RoleCheck                                     `json:"-"`
+	// DefaultFunc is called during Add when the field is absent from the request body.
+	// The returned value is injected into the input before validation and DB insert.
+	DefaultFunc          func(c *gin.Context) interface{}               `json:"-"`
 	Convert              func(value interface{}) (interface{}, error)    `json:"-"`
 	ResultValueConverter func(value interface{}) interface{}             `json:"-"`
 	Translatable         bool                                            `json:"-"`
