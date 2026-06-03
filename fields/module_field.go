@@ -212,32 +212,32 @@ type CheckRules interface {
 	GetScenarios() []Scenario
 }
 
-// DataCheckRule is a CheckRules variant that has access to the full input map
-// and gin.Context. Use it for composite validation spanning multiple fields
-// (e.g. uniqueness across (who_add, whom_add, tag)).
+// DataCheckRule is a CheckRules variant that has access to the full input map,
+// gin.Context, and the raw *sql.DB. Use it for composite validation spanning
+// multiple fields (e.g. uniqueness across (who_add, whom_add, tag)).
 // Implementors must also satisfy CheckRules to be stored in a Check slice;
 // the Validate method can be a no-op since the generator calls ValidateData instead.
 type DataCheckRule interface {
 	CheckRules
-	ValidateData(c *gin.Context, data map[string]interface{}, lang string) error
+	ValidateData(c *gin.Context, db *sql.DB, data map[string]interface{}, lang string) error
 }
 
 // dataRule is a function-based DataCheckRule for inline use.
 type dataRule struct {
-	fn        func(c *gin.Context, data map[string]interface{}, lang string) error
+	fn        func(c *gin.Context, db *sql.DB, data map[string]interface{}, lang string) error
 	scenarios []Scenario
 }
 
 func (r dataRule) Validate(_ interface{}, _ string) error { return nil }
 func (r dataRule) GetScenarios() []Scenario               { return r.scenarios }
-func (r dataRule) ValidateData(c *gin.Context, data map[string]interface{}, lang string) error {
-	return r.fn(c, data, lang)
+func (r dataRule) ValidateData(c *gin.Context, db *sql.DB, data map[string]interface{}, lang string) error {
+	return r.fn(c, db, data, lang)
 }
 
 // DataRule creates a CheckRules entry for composite, context-aware validation.
-// The fn receives the full input map and gin.Context, making it suitable for
-// multi-field uniqueness checks or any validation that needs DB/session access.
-func DataRule(fn func(c *gin.Context, data map[string]interface{}, lang string) error, scenarios []Scenario) CheckRules {
+// The fn receives gin.Context, *sql.DB, and the full input map — suitable for
+// multi-field uniqueness checks or any validation that needs DB access.
+func DataRule(fn func(c *gin.Context, db *sql.DB, data map[string]interface{}, lang string) error, scenarios []Scenario) CheckRules {
 	return dataRule{fn: fn, scenarios: scenarios}
 }
 

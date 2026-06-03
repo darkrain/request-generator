@@ -954,6 +954,10 @@ func (db *DB) RawRequest(log *log.Entry, query string, params ...interface{}) (*
 	return db.sql.Query(query, params...)
 }
 
+func (db *DB) RawDB() *sql.DB {
+	return db.sql
+}
+
 func removeDuplicate(sliceList []string) []string {
 	allKeys := make(map[string]bool)
 	var list []string
