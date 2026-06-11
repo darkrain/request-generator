@@ -422,6 +422,21 @@ Defrec: actions.DefrecModuleAction{Label: "courses.label"}
 | `Permission`   | `[]actions.Role`                          | Допустимые роли (пустой = все авторизованные) |
 | `BeforeAction` | `func(c *gin.Context) error`              | Хук перед обработкой                       |
 | `AfterAction`  | `func(c *gin.Context)`                    | Хук после обработки                        |
+
+#### BeforeAction — собственный ответ
+
+Если `BeforeAction` записывает ответ самостоятельно (например, возвращает 400 с деталями ошибки), генератор проверяет `c.Writer.Written()` и **не пишет второй ответ**. Это предотвращает `superfluous response.WriteHeader call` панику:
+
+```go
+BeforeAction: func(c *gin.Context) error {
+    if !isValid(c) {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "custom validation failed"})
+        return fmt.Errorf("invalid")  // возвращаем ошибку — генератор остановится,
+                                       // но не перезапишет уже отправленный ответ
+    }
+    return nil
+},
+```
 | `Columns`      | `[]pg.Column`                             | Статический список колонок                 |
 | `ColumnsFunc`  | `func(c *gin.Context) []pg.Column`        | Динамический список колонок                |
 | `Fields`       | `[]actions.RoleContext`                    | Колонки по ролям (приоритет над Columns)   |
