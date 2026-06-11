@@ -853,7 +853,7 @@ func (db *DB) Update(log *log.Entry, table pg.Table, primaryKey pg.Column, modul
 		if whereIdx == -1 {
 			return nil, errors.New("could not build WHERE clause")
 		}
-		whereClause := whereSql[whereIdx:]
+		whereClause := strings.TrimRight(whereSql[whereIdx:], ";\n\r\t ")
 
 		// Re-number placeholders in WHERE clause
 		for i, arg := range whereArgs {

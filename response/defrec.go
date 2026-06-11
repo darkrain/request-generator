@@ -32,6 +32,22 @@ func NewDefrecResponse(extra interface{}, fields []f.ModuleField) DefrecResponse
 		if len(field.Roles) > 0 {
 			item["roles"] = field.Roles
 		}
+		for _, rule := range field.Check {
+			if intr, ok := rule.(f.CheckRuleIntrospectable); ok {
+				info := intr.RuleInfo()
+				if info.Type == "required" {
+					for _, s := range info.Scenarios {
+						if s == f.ScenarioAdd {
+							item["required"] = true
+							break
+						}
+					}
+				}
+			}
+			if _, set := item["required"]; set {
+				break
+			}
+		}
 		key := field.ColumnName()
 		if field.Translatable {
 			key = field.Name()

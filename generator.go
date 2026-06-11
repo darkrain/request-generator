@@ -614,9 +614,11 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 
 		err := action.BeforeRequest(c)
 		if err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{
-				err.Error(),
-			})
+			if !c.Writer.Written() {
+				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{
+					err.Error(),
+				})
+			}
 			return
 		}
 
@@ -963,7 +965,9 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 
 		err := action.BeforeRequest(c)
 		if err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, nil)
+			if !c.Writer.Written() {
+				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, nil)
+			}
 			return
 		}
 
