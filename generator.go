@@ -624,6 +624,9 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 			}
 			return
 		}
+		if c.Writer.Written() {
+			return
+		}
 
 		var input map[string]interface{}
 		err = utils.ParseJson(c.Request, &input)
