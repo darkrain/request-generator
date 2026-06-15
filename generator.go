@@ -41,6 +41,8 @@ type Generator struct {
 	GroupTitles          map[string]string
 	ViewAdapters         map[string]string
 	IconMap              map[string]string
+	Realtime             RealtimeConfig
+	realtimeHub          *realtimeHub
 }
 
 func NewGenerator(
@@ -109,6 +111,7 @@ func (generator *Generator) Run() {
 
 	featuresGroup := generator.group.Group("/api")
 	featuresGroup.GET("/features", generator.FeaturesMiddleware())
+	generator.initRealtime()
 
 	for _, module := range generator.Modules {
 		featuresModule := Features{
@@ -466,7 +469,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 						Convert:  realField.Convert,
 						Group:    realField.Group,
 						Order:    realField.Order,
-						Extra:   filterExtra,
+						Extra:    filterExtra,
 					}
 					filter[realField.ColumnName()] = filterField
 				}
@@ -524,13 +527,13 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			Page    int64                               `json:"page"`
 			Extra   interface{}                         `json:"extra"`
 			Rows    []interface{}                       `json:"rows"`
-			Heads   map[string]interface{}               `json:"heads"`
+			Heads   map[string]interface{}              `json:"heads"`
 			Filters map[string]fields.ModuleFilterField `json:"filters,omitempty"`
 			Sort    []actions.SortResponseItem          `json:"sort,omitempty"`
 		}{
-			Count:   count,
-			Size:    size,
-			Page:    page,
+			Count: count,
+			Size:  size,
+			Page:  page,
 			Extra: func() interface{} {
 				if action.ExtraFunc != nil {
 					return action.ExtraFunc(c)
@@ -540,7 +543,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			Rows:    results,
 			Heads:   heads,
 			Filters: filter,
-			Sort:      sortOptions,
+			Sort:    sortOptions,
 		}
 
 		if isCSV == 0 {
@@ -680,6 +683,7 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 		response.Response(l, c, output)
 
 		action.AfterRequest(c)
+		generator.publishRealtime(c, module, actions.ModuleActionNameAdd, output)
 	}
 }
 
@@ -1064,6 +1068,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 				if viewErr == nil {
 					response.Response(l, c, viewResult)
 					action.AfterRequest(c)
+					generator.publishRealtime(c, module, actions.ModuleActionNameUpdate, viewResult)
 					return
 				}
 			}
@@ -1079,6 +1084,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 		response.Response(l, c, fallbackResult)
 
 		action.AfterRequest(c)
+		generator.publishRealtime(c, module, actions.ModuleActionNameUpdate, fallbackResult)
 	}
 }
 
@@ -1162,5 +1168,6 @@ func (generator *Generator) actionDelete(module *BaseModule, action actions.Dele
 		response.Response(l, c, output)
 
 		action.AfterRequest(c)
+		generator.publishRealtime(c, module, actions.ModuleActionNameDelete, output)
 	}
 }
