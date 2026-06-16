@@ -182,6 +182,7 @@ func TestConfigEndpoint_RoleFiltering(t *testing.T) {
 				Title:      "Restricted Module",
 				Group:      "Admin",
 				Order:      1,
+				Show:       true,
 			},
 		},
 		Actions: []actions.ModuleAction{

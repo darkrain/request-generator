@@ -1046,7 +1046,8 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 
 		_, err = generator.db(module).Update(l, module.Table, module.PrimaryKey, realFields, mapInput, where, tc)
 		if err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, nil)
+			l.Errorln("UPDATE ERR: ", err)
+			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, []string{err.Error()})
 			return
 		}
 

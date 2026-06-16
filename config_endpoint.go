@@ -111,13 +111,23 @@ func hasPermission(action actions.ModuleAction, role string) bool {
 	switch a := action.(type) {
 	case actions.ListModuleAction:
 		permissions = a.Permission
+	case *actions.ListModuleAction:
+		permissions = a.Permission
 	case actions.AddModuleAction:
+		permissions = a.Permission
+	case *actions.AddModuleAction:
 		permissions = a.Permission
 	case actions.ViewModuleAction:
 		permissions = a.Permission
+	case *actions.ViewModuleAction:
+		permissions = a.Permission
 	case actions.UpdateModuleAction:
 		permissions = a.Permission
+	case *actions.UpdateModuleAction:
+		permissions = a.Permission
 	case actions.DeleteModuleAction:
+		permissions = a.Permission
+	case *actions.DeleteModuleAction:
 		permissions = a.Permission
 	default:
 		return false
@@ -270,72 +280,84 @@ func (generator *Generator) buildRoutes(
 		for _, action := range actionList {
 			switch a := action.(type) {
 			case actions.ListModuleAction:
-				routePath := module.Path + "/" + module.Name
-
-				viewAdapter := "list_table"
-				if adapter, exists := generator.ViewAdapters["list"]; exists {
-					viewAdapter = adapter
-				}
-
-				route := RouteConfig{
-					Title:     a.Label,
-					MenuTitle: a.Label,
-					Query: &RouteQuery{
-						Url:    "/api" + routePath,
-						Method: "GET",
-					},
-					Data: map[string]interface{}{
-						"view_adapter": viewAdapter,
-					},
-				}
-
-				route.Data["actions"] = generator.buildRouteActions(module, role)
-				route.Children = generator.buildRouteChildren(module, role)
-
-				routes[routePath] = route
-
+				routes[module.Path+"/"+module.Name] = generator.buildListRoute(module, a, role)
+			case *actions.ListModuleAction:
+				routes[module.Path+"/"+module.Name] = generator.buildListRoute(module, *a, role)
 			case actions.ViewModuleAction:
-				routePath := module.Path + "/" + module.Name + "/:id"
-
-				viewAdapter := "view"
-				if adapter, exists := generator.ViewAdapters["view"]; exists {
-					viewAdapter = adapter
-				}
-
-				routes[routePath] = RouteConfig{
-					Title: a.Label,
-					Query: &RouteQuery{
-						Url:    "/api" + module.Path + "/" + module.Name + "/view/:bykey/:value",
-						Method: "GET",
-					},
-					Data: map[string]interface{}{
-						"view_adapter": viewAdapter,
-					},
-				}
-
+				routes[module.Path+"/"+module.Name+"/:id"] = generator.buildViewRoute(module, a)
+			case *actions.ViewModuleAction:
+				routes[module.Path+"/"+module.Name+"/:id"] = generator.buildViewRoute(module, *a)
 			case actions.AddModuleAction:
-				routePath := module.Path + "/" + module.Name + "/add"
-
-				viewAdapter := "add"
-				if adapter, exists := generator.ViewAdapters["add"]; exists {
-					viewAdapter = adapter
-				}
-
-				routes[routePath] = RouteConfig{
-					Title: a.Label,
-					Query: &RouteQuery{
-						Url:    "/api" + module.Path + "/" + module.Name,
-						Method: "PUT",
-					},
-					Data: map[string]interface{}{
-						"view_adapter": viewAdapter,
-					},
-				}
+				routes[module.Path+"/"+module.Name+"/add"] = generator.buildAddRoute(module, a)
+			case *actions.AddModuleAction:
+				routes[module.Path+"/"+module.Name+"/add"] = generator.buildAddRoute(module, *a)
 			}
 		}
 	}
 
 	return routes
+}
+
+func (generator *Generator) buildListRoute(module *BaseModule, action actions.ListModuleAction, role string) RouteConfig {
+	routePath := module.Path + "/" + module.Name
+
+	viewAdapter := "list_table"
+	if adapter, exists := generator.ViewAdapters["list"]; exists {
+		viewAdapter = adapter
+	}
+
+	route := RouteConfig{
+		Title:     action.Label,
+		MenuTitle: action.Label,
+		Query: &RouteQuery{
+			Url:    "/api" + routePath,
+			Method: "GET",
+		},
+		Data: map[string]interface{}{
+			"view_adapter": viewAdapter,
+		},
+	}
+
+	route.Data["actions"] = generator.buildRouteActions(module, role)
+	route.Children = generator.buildRouteChildren(module, role)
+
+	return route
+}
+
+func (generator *Generator) buildViewRoute(module *BaseModule, action actions.ViewModuleAction) RouteConfig {
+	viewAdapter := "view"
+	if adapter, exists := generator.ViewAdapters["view"]; exists {
+		viewAdapter = adapter
+	}
+
+	return RouteConfig{
+		Title: action.Label,
+		Query: &RouteQuery{
+			Url:    "/api" + module.Path + "/" + module.Name + "/view/:bykey/:value",
+			Method: "GET",
+		},
+		Data: map[string]interface{}{
+			"view_adapter": viewAdapter,
+		},
+	}
+}
+
+func (generator *Generator) buildAddRoute(module *BaseModule, action actions.AddModuleAction) RouteConfig {
+	viewAdapter := "add"
+	if adapter, exists := generator.ViewAdapters["add"]; exists {
+		viewAdapter = adapter
+	}
+
+	return RouteConfig{
+		Title: action.Label,
+		Query: &RouteQuery{
+			Url:    "/api" + module.Path + "/" + module.Name,
+			Method: "PUT",
+		},
+		Data: map[string]interface{}{
+			"view_adapter": viewAdapter,
+		},
+	}
 }
 
 // buildRouteActions формирует actions для маршрута
@@ -380,69 +402,99 @@ func (generator *Generator) buildRouteChildren(module *BaseModule, role string) 
 	for _, action := range module.Actions {
 		switch a := action.(type) {
 		case actions.ViewModuleAction:
-			if !hasPermission(a, role) {
-				continue
+			if child, ok := generator.buildViewChild(module, a, role); ok {
+				children[":id"] = child
 			}
-
-			viewAdapter := "view"
-			if adapter, exists := generator.ViewAdapters["view"]; exists {
-				viewAdapter = adapter
+		case *actions.ViewModuleAction:
+			if child, ok := generator.buildViewChild(module, *a, role); ok {
+				children[":id"] = child
 			}
-
-			children[":id"] = RouteConfig{
-				Title: a.Label,
-				Query: &RouteQuery{
-					Url:    "/api" + module.Path + "/" + module.Name + "/view/:bykey/:value",
-					Method: "GET",
-				},
-				Data: map[string]interface{}{
-					"view_adapter": viewAdapter,
-				},
-			}
-
 		case actions.UpdateModuleAction:
-			if !hasPermission(a, role) {
-				continue
+			if child, ok := generator.buildUpdateChild(module, a, role); ok {
+				children[":id/edit"] = child
 			}
-
-			editAdapter := "edit"
-			if adapter, exists := generator.ViewAdapters["edit"]; exists {
-				editAdapter = adapter
+		case *actions.UpdateModuleAction:
+			if child, ok := generator.buildUpdateChild(module, *a, role); ok {
+				children[":id/edit"] = child
 			}
-
-			children[":id/edit"] = RouteConfig{
-				Title: a.Label,
-				Query: &RouteQuery{
-					Url:    "/api" + module.Path + "/" + module.Name + "/:bykey/:value",
-					Method: "POST",
-				},
-				Data: map[string]interface{}{
-					"view_adapter": editAdapter,
-				},
-			}
-
 		case actions.AddModuleAction:
-			if !hasPermission(a, role) {
-				continue
+			if child, ok := generator.buildAddChild(module, a, role); ok {
+				children["add"] = child
 			}
-
-			addAdapter := "add"
-			if adapter, exists := generator.ViewAdapters["add"]; exists {
-				addAdapter = adapter
-			}
-
-			children["add"] = RouteConfig{
-				Title: a.Label,
-				Query: &RouteQuery{
-					Url:    "/api" + module.Path + "/" + module.Name,
-					Method: "PUT",
-				},
-				Data: map[string]interface{}{
-					"view_adapter": addAdapter,
-				},
+		case *actions.AddModuleAction:
+			if child, ok := generator.buildAddChild(module, *a, role); ok {
+				children["add"] = child
 			}
 		}
 	}
 
 	return children
+}
+
+func (generator *Generator) buildViewChild(module *BaseModule, a actions.ViewModuleAction, role string) (RouteConfig, bool) {
+	if !hasPermission(a, role) {
+		return RouteConfig{}, false
+	}
+
+	viewAdapter := "view"
+	if adapter, exists := generator.ViewAdapters["view"]; exists {
+		viewAdapter = adapter
+	}
+
+	return RouteConfig{
+		Title: a.Label,
+		Query: &RouteQuery{
+			Url:    "/api" + module.Path + "/" + module.Name + "/view/:bykey/:value",
+			Method: "GET",
+		},
+		Data: map[string]interface{}{
+			"view_adapter": viewAdapter,
+		},
+	}, true
+}
+
+func (generator *Generator) buildUpdateChild(module *BaseModule, a actions.UpdateModuleAction, role string) (RouteConfig, bool) {
+	if !hasPermission(a, role) {
+		return RouteConfig{}, false
+	}
+
+	editAdapter := "edit"
+	if adapter, exists := generator.ViewAdapters["edit"]; exists {
+		editAdapter = adapter
+	}
+
+	return RouteConfig{
+			Title: a.Label,
+			Query: &RouteQuery{
+				Url:    "/api" + module.Path + "/" + module.Name + "/:bykey/:value",
+				Method: "POST",
+			},
+			Data: map[string]interface{}{
+				"view_adapter": editAdapter,
+			},
+		},
+		true
+}
+
+func (generator *Generator) buildAddChild(module *BaseModule, a actions.AddModuleAction, role string) (RouteConfig, bool) {
+	if !hasPermission(a, role) {
+		return RouteConfig{}, false
+	}
+
+	addAdapter := "add"
+	if adapter, exists := generator.ViewAdapters["add"]; exists {
+		addAdapter = adapter
+	}
+
+	return RouteConfig{
+			Title: a.Label,
+			Query: &RouteQuery{
+				Url:    "/api" + module.Path + "/" + module.Name,
+				Method: "PUT",
+			},
+			Data: map[string]interface{}{
+				"view_adapter": addAdapter,
+			},
+		},
+		true
 }
