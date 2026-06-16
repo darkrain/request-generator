@@ -6,8 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/darkrain/request-generator/actions"
@@ -169,7 +170,6 @@ type fieldMeta struct {
 	translatable bool
 	name         string
 }
-
 
 // arrayElementType determines whether an array literal contains integers or text.
 // "{1,2,3}" → "integer", "{en,ru,fr}" → "text"
@@ -840,9 +840,11 @@ func (db *DB) Update(log *log.Entry, table pg.Table, primaryKey pg.Column, modul
 
 	// Only run UPDATE on entity table if there are non-translatable fields to update
 	if len(setClauses) > 0 {
-		setClauses = append(setClauses, fmt.Sprintf(`"update_date" = $%d`, paramIdx))
-		values = append(values, time.Now())
-		paramIdx++
+		if hasModuleField(moduleFields, "update_date") {
+			setClauses = append(setClauses, fmt.Sprintf(`"update_date" = $%d`, paramIdx))
+			values = append(values, time.Now())
+			paramIdx++
+		}
 
 		// Get WHERE clause SQL from a dummy select
 		whereStmt := pg.SELECT(pg.Raw("1")).FROM(table).WHERE(where)
@@ -855,14 +857,9 @@ func (db *DB) Update(log *log.Entry, table pg.Table, primaryKey pg.Column, modul
 		}
 		whereClause := strings.TrimRight(whereSql[whereIdx:], ";\n\r\t ")
 
-		// Re-number placeholders in WHERE clause
-		for i, arg := range whereArgs {
-			oldPlaceholder := fmt.Sprintf("$%d", i+1)
-			newPlaceholder := fmt.Sprintf("$%d", paramIdx)
-			whereClause = strings.Replace(whereClause, oldPlaceholder, newPlaceholder, 1)
-			values = append(values, arg)
-			paramIdx++
-		}
+		whereClause = renumberPlaceholders(whereClause, paramIdx)
+		values = append(values, whereArgs...)
+		paramIdx += len(whereArgs)
 
 		tableName := table.TableName()
 		schemaName := table.SchemaName()
@@ -907,6 +904,27 @@ func (db *DB) Update(log *log.Entry, table pg.Table, primaryKey pg.Column, modul
 	}
 
 	return db.View(log, table, primaryKey, moduleFields, where, nil, tc)
+}
+
+func hasModuleField(moduleFields []fields.ModuleField, columnName string) bool {
+	for _, field := range moduleFields {
+		if field.ColumnName() == columnName {
+			return true
+		}
+	}
+	return false
+}
+
+var placeholderPattern = regexp.MustCompile(`\$(\d+)`)
+
+func renumberPlaceholders(query string, start int) string {
+	return placeholderPattern.ReplaceAllStringFunc(query, func(match string) string {
+		index, err := strconv.Atoi(strings.TrimPrefix(match, "$"))
+		if err != nil || index <= 0 {
+			return match
+		}
+		return fmt.Sprintf("$%d", start+index-1)
+	})
 }
 
 func (db *DB) Delete(log *log.Entry, table pg.Table, where pg.BoolExpression, tc *TranslationContext) error {
