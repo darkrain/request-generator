@@ -23,6 +23,7 @@ type RealtimeConfig struct {
 	Enabled bool
 	Broker  RealtimeBroker
 	Path    string
+	SSEPath string
 }
 
 type RealtimeBroker interface {
@@ -117,8 +118,9 @@ func (b *MemoryBroker) Replay(ctx context.Context, afterID string, limit int) ([
 }
 
 type realtimeHub struct {
-	mu          sync.RWMutex
-	connections map[*realtimeConnection]struct{}
+	mu             sync.RWMutex
+	connections    map[*realtimeConnection]struct{}
+	sseConnections map[*sseConnection]struct{}
 }
 
 type realtimeConnection struct {
@@ -131,8 +133,19 @@ type realtimeConnection struct {
 	role   string
 }
 
+type sseConnection struct {
+	hub    *realtimeHub
+	send   chan RealtimeEvent
+	topics map[string]struct{}
+	userID int64
+	role   string
+}
+
 func newRealtimeHub() *realtimeHub {
-	return &realtimeHub{connections: make(map[*realtimeConnection]struct{})}
+	return &realtimeHub{
+		connections:    make(map[*realtimeConnection]struct{}),
+		sseConnections: make(map[*sseConnection]struct{}),
+	}
 }
 
 func (h *realtimeHub) add(c *realtimeConnection) {
@@ -144,6 +157,19 @@ func (h *realtimeHub) add(c *realtimeConnection) {
 func (h *realtimeHub) remove(c *realtimeConnection) {
 	h.mu.Lock()
 	delete(h.connections, c)
+	h.mu.Unlock()
+	close(c.send)
+}
+
+func (h *realtimeHub) addSSE(c *sseConnection) {
+	h.mu.Lock()
+	h.sseConnections[c] = struct{}{}
+	h.mu.Unlock()
+}
+
+func (h *realtimeHub) removeSSE(c *sseConnection) {
+	h.mu.Lock()
+	delete(h.sseConnections, c)
 	h.mu.Unlock()
 	close(c.send)
 }
@@ -160,9 +186,30 @@ func (h *realtimeHub) publish(event RealtimeEvent) {
 		default:
 		}
 	}
+	for c := range h.sseConnections {
+		if !c.matches(event.Topics) {
+			continue
+		}
+		select {
+		case c.send <- event:
+		default:
+		}
+	}
 }
 
 func (c *realtimeConnection) matches(topics []string) bool {
+	if len(c.topics) == 0 {
+		return false
+	}
+	for _, topic := range topics {
+		if _, ok := c.topics[topic]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *sseConnection) matches(topics []string) bool {
 	if len(c.topics) == 0 {
 		return false
 	}
@@ -199,6 +246,21 @@ func (generator *Generator) initRealtime() {
 		})
 	}
 	group.GET("", generator.handleRealtimeWebSocket())
+
+	ssePath := generator.Realtime.SSEPath
+	if ssePath == "" {
+		ssePath = "/api/sse"
+	}
+	sseGroup := generator.group.Group(ssePath)
+	if generator.AuthMiddleware != nil {
+		sseGroup.Use(func(c *gin.Context) {
+			if token := c.Query("token"); token != "" && c.GetHeader("Authorization") == "" {
+				c.Request.Header.Set("Authorization", "Bearer "+token)
+			}
+			generator.AuthMiddleware(dummyAction)(c)
+		})
+	}
+	sseGroup.GET("", generator.handleRealtimeSSE())
 }
 
 func (generator *Generator) handleRealtimeWebSocket() gin.HandlerFunc {
@@ -232,6 +294,86 @@ func (generator *Generator) handleRealtimeWebSocket() gin.HandlerFunc {
 		go rc.writeLoop()
 		rc.readLoop(generator)
 	}
+}
+
+func (generator *Generator) handleRealtimeSSE() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user, ok := icontext.GetUser(c.Request.Context())
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"message": "unauthorized"})
+			return
+		}
+		flusher, ok := c.Writer.(http.Flusher)
+		if !ok {
+			c.JSON(http.StatusInternalServerError, gin.H{"message": "streaming unsupported"})
+			return
+		}
+
+		c.Header("Content-Type", "text/event-stream")
+		c.Header("Cache-Control", "no-cache")
+		c.Header("Connection", "keep-alive")
+		c.Header("X-Accel-Buffering", "no")
+
+		sc := &sseConnection{
+			hub:    generator.realtimeHub,
+			send:   make(chan RealtimeEvent, 64),
+			topics: map[string]struct{}{fmt.Sprintf("user:%d", user.ID): {}},
+			userID: user.ID,
+			role:   user.Role,
+		}
+		generator.realtimeHub.addSSE(sc)
+		defer generator.realtimeHub.removeSSE(sc)
+
+		lastEventID := c.GetHeader("Last-Event-ID")
+		if queryLastEventID := c.Query("last_event_id"); queryLastEventID != "" {
+			lastEventID = queryLastEventID
+		}
+		replay := "ok"
+		if lastEventID != "" {
+			events, resync, err := generator.Realtime.Broker.Replay(c.Request.Context(), lastEventID, 500)
+			if err != nil || resync {
+				replay = "resync_required"
+			} else {
+				for _, event := range events {
+					if sc.matches(event.Topics) {
+						writeSSE(c.Writer, event.EventID, "message", event)
+					}
+				}
+			}
+		}
+		writeSSE(c.Writer, "", "ready", gin.H{"type": "ready", "replay": replay})
+		flusher.Flush()
+
+		ticker := time.NewTicker(25 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-c.Request.Context().Done():
+				return
+			case <-ticker.C:
+				_, _ = fmt.Fprint(c.Writer, ": ping\n\n")
+				flusher.Flush()
+			case event := <-sc.send:
+				writeSSE(c.Writer, event.EventID, "message", event)
+				flusher.Flush()
+			}
+		}
+	}
+}
+
+func writeSSE(w gin.ResponseWriter, id, eventName string, data interface{}) {
+	if id != "" {
+		_, _ = fmt.Fprintf(w, "id: %s\n", id)
+	}
+	if eventName != "" {
+		_, _ = fmt.Fprintf(w, "event: %s\n", eventName)
+	}
+	body, err := json.Marshal(data)
+	if err != nil {
+		body = []byte(`{"type":"error"}`)
+	}
+	_, _ = fmt.Fprintf(w, "data: %s\n\n", body)
 }
 
 type realtimeClientMessage struct {
