@@ -42,6 +42,8 @@ type RealtimeEvent struct {
 }
 
 type RealtimePublish struct {
+	Module   string
+	Action   string
 	Topics   []string
 	RecordID interface{}
 	Payload  map[string]interface{}
@@ -342,6 +344,12 @@ func (generator *Generator) publishRealtime(c *gin.Context, module *BaseModule, 
 		Topics:    pub.Topics,
 		CreatedAt: time.Now().UTC(),
 		Payload:   pub.Payload,
+	}
+	if pub.Module != "" {
+		event.Module = pub.Module
+	}
+	if pub.Action != "" {
+		event.Action = pub.Action
 	}
 	if event.Payload == nil {
 		event.Payload = map[string]interface{}{}
