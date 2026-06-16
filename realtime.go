@@ -321,7 +321,22 @@ func (c *realtimeConnection) canSubscribe(topic string) bool {
 }
 
 func SetRealtimePublish(c *gin.Context, event RealtimePublish) {
-	c.Set(realtimeContextKey, event)
+	if len(event.Topics) == 0 {
+		return
+	}
+	raw, ok := c.Get(realtimeContextKey)
+	if !ok {
+		c.Set(realtimeContextKey, []RealtimePublish{event})
+		return
+	}
+	switch existing := raw.(type) {
+	case []RealtimePublish:
+		c.Set(realtimeContextKey, append(existing, event))
+	case RealtimePublish:
+		c.Set(realtimeContextKey, []RealtimePublish{existing, event})
+	default:
+		c.Set(realtimeContextKey, []RealtimePublish{event})
+	}
 }
 
 func (generator *Generator) publishRealtime(c *gin.Context, module *BaseModule, action actions.ModuleActionName, output interface{}) {
@@ -332,8 +347,22 @@ func (generator *Generator) publishRealtime(c *gin.Context, module *BaseModule, 
 	if !ok {
 		return
 	}
-	pub, ok := raw.(RealtimePublish)
-	if !ok || len(pub.Topics) == 0 {
+	pubs := []RealtimePublish{}
+	switch value := raw.(type) {
+	case RealtimePublish:
+		pubs = append(pubs, value)
+	case []RealtimePublish:
+		pubs = value
+	default:
+		return
+	}
+	for _, pub := range pubs {
+		generator.publishRealtimeEvent(c, module, action, output, pub)
+	}
+}
+
+func (generator *Generator) publishRealtimeEvent(c *gin.Context, module *BaseModule, action actions.ModuleActionName, output interface{}, pub RealtimePublish) {
+	if len(pub.Topics) == 0 {
 		return
 	}
 	event := RealtimeEvent{
