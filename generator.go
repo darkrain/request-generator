@@ -930,11 +930,18 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			item[fieldKey] = fieldItem
 		}
 
+		var extra interface{}
+		if action.ExtraFunc != nil {
+			extra = action.ExtraFunc(c)
+		} else {
+			extra = action.Extra
+		}
+
 		output := struct {
 			Extra interface{}            `json:"extra"`
 			Item  map[string]interface{} `json:"item"`
 		}{
-			Extra: action.Extra,
+			Extra: extra,
 			Item:  item,
 		}
 

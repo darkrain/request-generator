@@ -13,12 +13,13 @@ type ViewModuleAction struct {
 	Labels       map[string]string                `json:"-"`
 	Columns      []pg.Column                      `json:"-"`
 	ColumnsFunc  func(c *gin.Context) []pg.Column `json:"-"`
-	Permission   []Role             `json:"permission"`
-	Auth         bool               `json:"auth"`
-	Join         []ModuleActionJoin `json:"join"`
-	By           []pg.Column        `json:"-"`
-	Extra        interface{}        `json:"extra"`
-	Fields       []RoleContext      `json:"-"`
+	Permission   []Role                           `json:"permission"`
+	Auth         bool                             `json:"auth"`
+	Join         []ModuleActionJoin               `json:"join"`
+	By           []pg.Column                      `json:"-"`
+	Extra        interface{}                      `json:"extra"`
+	ExtraFunc    func(c *gin.Context) interface{} `json:"-"`
+	Fields       []RoleContext                    `json:"-"`
 }
 
 func (action ViewModuleAction) Action() ModuleActionName {
