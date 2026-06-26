@@ -14,7 +14,7 @@ import (
 	"github.com/darkrain/request-generator/actions"
 	"github.com/darkrain/request-generator/fields"
 	pg "github.com/go-jet/jet/v2/postgres"
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -749,7 +749,7 @@ func (db *DB) Add(log *log.Entry, table pg.Table, primaryKey pg.Column, moduleFi
 			continue
 		}
 		keys = append(keys, fmt.Sprintf(`"%s"`, colName))
-		values = append(values, value)
+		values = append(values, dbValue(field, value))
 	}
 
 	tableName := table.TableName()
@@ -834,7 +834,7 @@ func (db *DB) Update(log *log.Entry, table pg.Table, primaryKey pg.Column, modul
 			continue
 		}
 		setClauses = append(setClauses, fmt.Sprintf(`"%s" = $%d`, colName, paramIdx))
-		values = append(values, value)
+		values = append(values, dbValue(field, value))
 		paramIdx++
 	}
 
@@ -913,6 +913,25 @@ func hasModuleField(moduleFields []fields.ModuleField, columnName string) bool {
 		}
 	}
 	return false
+}
+
+func dbValue(field fields.ModuleField, value interface{}) interface{} {
+	if field.Type != fields.ModuleFieldTypeArray {
+		return value
+	}
+
+	switch typed := value.(type) {
+	case []interface{}:
+		result := make([]string, 0, len(typed))
+		for _, item := range typed {
+			result = append(result, fmt.Sprint(item))
+		}
+		return pq.Array(result)
+	case []string:
+		return pq.Array(typed)
+	default:
+		return value
+	}
 }
 
 var placeholderPattern = regexp.MustCompile(`\$(\d+)`)
