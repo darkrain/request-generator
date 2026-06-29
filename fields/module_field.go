@@ -192,7 +192,6 @@ type ModuleFilterField struct {
 	Order           int                                                          `json:"order,omitempty"`
 	Extra           interface{}                                                  `json:"extra,omitempty"`
 	FilterCondition func(c *gin.Context) bool                                    `json:"-"`
-	ConditionFunc   func(value string) pg.BoolExpression                         `json:"-"`
 }
 
 func (f ModuleFilterField) ColumnName() string {

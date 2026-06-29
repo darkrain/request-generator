@@ -194,7 +194,6 @@ func (db *DB) List(
 	searchColumns []pg.Column,
 	searchText string,
 	filter map[string]string,
-	extraFilters map[string]fields.ModuleFilterField,
 	where pg.BoolExpression,
 	joins []actions.ModuleActionJoin,
 	sort *actions.SortOption,
@@ -249,9 +248,10 @@ func (db *DB) List(
 					),
 				)
 			} else {
+				searchTableRef := columnTableRef(col, tableRef)
 				searchConds = append(searchConds,
 					pg.RawBool(
-						fmt.Sprintf(`LOWER(%s."%s"::text) LIKE '%%' || #search || '%%'`, tableRef, col.Name()),
+						fmt.Sprintf(`LOWER(%s."%s"::text) LIKE '%%' || #search || '%%'`, searchTableRef, col.Name()),
 						pg.RawArgs{"#search": strings.ToLower(searchText)},
 					),
 				)
@@ -271,13 +271,6 @@ func (db *DB) List(
 		}
 
 		for key, value := range filter {
-			if extraFilter, ok := extraFilters[key]; ok && extraFilter.ConditionFunc != nil {
-				if condition := extraFilter.ConditionFunc(value); condition != nil {
-					conditions = append(conditions, condition)
-				}
-				continue
-			}
-
 			parts := strings.Split(key, ".")
 			colName := key
 			tblRef := tableRef
@@ -377,12 +370,13 @@ func (db *DB) List(
 	stmt = stmt.LIMIT(size).OFFSET(size * page)
 
 	// Build COUNT statement
-	countStmt := pg.SELECT(pg.COUNT(pg.STAR)).FROM(from)
+	countProjection := pg.COUNT(pg.STAR)
+	if len(joins) > 0 {
+		countProjection = pg.COUNT(pg.DISTINCT(primaryKey))
+	}
+	countStmt := pg.SELECT(countProjection).FROM(from)
 	if len(conditions) > 0 {
 		countStmt = countStmt.WHERE(pg.AND(conditions...))
-	}
-	if len(joins) > 0 {
-		countStmt = countStmt.GROUP_BY(primaryKey)
 	}
 
 	query, args := stmt.Sql()
@@ -469,8 +463,13 @@ func (db *DB) List(
 			offset = offset + len(moduleFields)
 		}
 
-		for index, join := range joins {
-			joinValue := columnValues[index+offset]
+		joinOffset := offset
+		for _, join := range joins {
+			if len(join.Columns) == 0 {
+				continue
+			}
+			joinValue := columnValues[joinOffset]
+			joinOffset++
 			converted, ok := joinValue.(*json.RawMessage)
 			if !ok {
 				continue
@@ -549,21 +548,22 @@ func (db *DB) List(
 	defer countResult.Close()
 
 	var count int64
-	if len(joins) > 0 {
-		for countResult.Next() {
-			count++
-		}
-	} else {
-		for countResult.Next() {
-			var currentCount int64
-			err = countResult.Scan(&currentCount)
-			if err == nil {
-				count += currentCount
-			}
+	for countResult.Next() {
+		var currentCount int64
+		err = countResult.Scan(&currentCount)
+		if err == nil {
+			count += currentCount
 		}
 	}
 
 	return result, count, nil
+}
+
+func columnTableRef(col pg.Column, fallback string) string {
+	if tableName := col.TableName(); tableName != "" {
+		return tableName
+	}
+	return fallback
 }
 
 func (db *DB) View(
@@ -680,8 +680,13 @@ func (db *DB) View(
 			offset = offset + len(moduleFields)
 		}
 
-		for index, join := range joins {
-			joinValue := columnValues[index+offset]
+		joinOffset := offset
+		for _, join := range joins {
+			if len(join.Columns) == 0 {
+				continue
+			}
+			joinValue := columnValues[joinOffset]
+			joinOffset++
 			converted, ok := joinValue.(*json.RawMessage)
 			if !ok {
 				continue

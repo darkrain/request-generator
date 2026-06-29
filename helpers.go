@@ -67,24 +67,6 @@ parentLoop:
 		}
 	}
 
-	for _, filter := range listAction.ExtraFilters {
-		if filter.FilterCondition != nil && !filter.FilterCondition(c) {
-			continue
-		}
-		key := filter.FieldName
-		if key == "" && filter.Column != nil {
-			key = filter.Column.Name()
-		}
-		if key == "" {
-			continue
-		}
-		filterValue, ok := data[key]
-		if !ok || len(filterValue) == 0 {
-			continue
-		}
-		resultFilterMap[key] = filterValue
-	}
-
 	return resultFilterMap
 }
 
