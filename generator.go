@@ -375,7 +375,11 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 				}
 			}
 		} else if action.SortDefault != nil {
-			activeSort = &actions.SortOption{Column: action.SortDefault, Direction: actions.SortASC}
+			dir := action.SortDefaultDirection
+			if dir == "" {
+				dir = actions.SortASC
+			}
+			activeSort = &actions.SortOption{Column: action.SortDefault, Direction: dir}
 		}
 
 		tc := generator.buildTranslationContext(module)
