@@ -111,6 +111,7 @@ type ModuleField struct {
 	Type             ModuleFieldType                                 `json:"type"`
 	FormType         ModuleFieldFormType                             `json:"form_type,omitempty"`
 	Example          string                                          `json:"example,omitempty"`
+	AllLabel         string                                          `json:"all_label,omitempty"`
 	Extra            *FieldExtra                                     `json:"-"`
 	Options          []ModuleFieldOptions                            `json:"options,omitempty"`
 	OptionsURL       string                                          `json:"options_url,omitempty"`
@@ -185,6 +186,7 @@ type ModuleFilterField struct {
 	Type            ModuleFieldType                                              `json:"type"`
 	FormType        ModuleFieldFormType                                          `json:"form_type,omitempty"`
 	Example         string                                                       `json:"example,omitempty"`
+	AllLabel        string                                                       `json:"all_label,omitempty"`
 	Options         []ModuleFieldOptions                                         `json:"options,omitempty"`
 	Check           []CheckRules                                                 `json:"-"`
 	Convert         func(c *gin.Context, value interface{}) (interface{}, error) `json:"-"`

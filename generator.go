@@ -468,6 +468,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 						Type:     realField.Type,
 						FormType: realField.FormType,
 						Example:  realField.Example,
+						AllLabel: generator.Translate(lang, realField.AllLabel),
 						Options:  options,
 						Check:    realField.Check,
 						Convert:  realField.Convert,
@@ -497,6 +498,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 					}
 				}
 				ef.Title = generator.Translate(lang, ef.Title)
+				ef.AllLabel = generator.Translate(lang, ef.AllLabel)
 				ef.Options = translatedOpts
 				filter[key] = ef
 			}
