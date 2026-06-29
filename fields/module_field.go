@@ -104,35 +104,35 @@ type FieldExtra struct {
 }
 
 type ModuleField struct {
-	Column               pg.Column                                       `json:"-"`
-	SelectExpression     pg.Projection                                   `json:"-"`
-	Title                string                                          `json:"title"`
-	Titles               map[string]string                               `json:"-"`
-	Type                 ModuleFieldType                                 `json:"type"`
-	FormType             ModuleFieldFormType                             `json:"form_type,omitempty"`
-	Example              string                                          `json:"example,omitempty"`
-	Extra                *FieldExtra                                     `json:"-"`
-	Options              []ModuleFieldOptions                            `json:"options,omitempty"`
-	OptionsURL           string                                          `json:"options_url,omitempty"`
-	OptionsFunc          func(context *gin.Context) []ModuleFieldOptions `json:"-"`
-	RoleOptions          []RoleOptions                                   `json:"-"`
-	Check                []CheckRules                                    `json:"-"`
-	CheckFunc            func(context *gin.Context) []CheckRules         `json:"-"`
-	RoleCheck            []RoleCheck                                     `json:"-"`
+	Column           pg.Column                                       `json:"-"`
+	SelectExpression pg.Projection                                   `json:"-"`
+	Title            string                                          `json:"title"`
+	Titles           map[string]string                               `json:"-"`
+	Type             ModuleFieldType                                 `json:"type"`
+	FormType         ModuleFieldFormType                             `json:"form_type,omitempty"`
+	Example          string                                          `json:"example,omitempty"`
+	Extra            *FieldExtra                                     `json:"-"`
+	Options          []ModuleFieldOptions                            `json:"options,omitempty"`
+	OptionsURL       string                                          `json:"options_url,omitempty"`
+	OptionsFunc      func(context *gin.Context) []ModuleFieldOptions `json:"-"`
+	RoleOptions      []RoleOptions                                   `json:"-"`
+	Check            []CheckRules                                    `json:"-"`
+	CheckFunc        func(context *gin.Context) []CheckRules         `json:"-"`
+	RoleCheck        []RoleCheck                                     `json:"-"`
 	// DefaultFunc is called during Add when the field is absent from the request body.
 	// The returned value is injected into the input before validation and DB insert.
-	DefaultFunc          func(c *gin.Context) interface{}               `json:"-"`
+	DefaultFunc          func(c *gin.Context) interface{}                             `json:"-"`
 	Convert              func(c *gin.Context, value interface{}) (interface{}, error) `json:"-"`
-	ResultValueConverter func(value interface{}) interface{}             `json:"-"`
-	Translatable         bool                                            `json:"-"`
-	Group                string                                          `json:"-"`
-	Order                int                                             `json:"-"`
-	FieldName            string                                          `json:"-"`
-	FilterCondition      func(c *gin.Context) bool                       `json:"-"`
-	Roles                []string                                        `json:"roles,omitempty"`
-	Section              string                                          `json:"section,omitempty"`
-	RoleSection          map[string]string                               `json:"-"`
-	RoleFormType         map[string]ModuleFieldFormType                  `json:"-"`
+	ResultValueConverter func(value interface{}) interface{}                          `json:"-"`
+	Translatable         bool                                                         `json:"-"`
+	Group                string                                                       `json:"-"`
+	Order                int                                                          `json:"-"`
+	FieldName            string                                                       `json:"-"`
+	FilterCondition      func(c *gin.Context) bool                                    `json:"-"`
+	Roles                []string                                                     `json:"roles,omitempty"`
+	Section              string                                                       `json:"section,omitempty"`
+	RoleSection          map[string]string                                            `json:"-"`
+	RoleFormType         map[string]ModuleFieldFormType                               `json:"-"`
 }
 
 // ColumnName returns the database column name from the Jet column.
@@ -178,20 +178,21 @@ func (f ModuleField) NewScanValue() interface{} {
 }
 
 type ModuleFilterField struct {
-	Column          pg.Column                                    `json:"-"`
-	FieldName       string                                       `json:"-"`
-	Title           string                                       `json:"title"`
-	Titles          map[string]string                            `json:"-"`
-	Type            ModuleFieldType                              `json:"type"`
-	FormType        ModuleFieldFormType                          `json:"form_type,omitempty"`
-	Example         string                                       `json:"example,omitempty"`
-	Options         []ModuleFieldOptions                         `json:"options,omitempty"`
-	Check           []CheckRules                                 `json:"-"`
+	Column          pg.Column                                                    `json:"-"`
+	FieldName       string                                                       `json:"-"`
+	Title           string                                                       `json:"title"`
+	Titles          map[string]string                                            `json:"-"`
+	Type            ModuleFieldType                                              `json:"type"`
+	FormType        ModuleFieldFormType                                          `json:"form_type,omitempty"`
+	Example         string                                                       `json:"example,omitempty"`
+	Options         []ModuleFieldOptions                                         `json:"options,omitempty"`
+	Check           []CheckRules                                                 `json:"-"`
 	Convert         func(c *gin.Context, value interface{}) (interface{}, error) `json:"-"`
 	Group           string                                                       `json:"group,omitempty"`
-	Order           int                                          `json:"order,omitempty"`
-	Extra           interface{}                                  `json:"extra,omitempty"`
-	FilterCondition func(c *gin.Context) bool                    `json:"-"`
+	Order           int                                                          `json:"order,omitempty"`
+	Extra           interface{}                                                  `json:"extra,omitempty"`
+	FilterCondition func(c *gin.Context) bool                                    `json:"-"`
+	ConditionFunc   func(value string) pg.BoolExpression                         `json:"-"`
 }
 
 func (f ModuleFilterField) ColumnName() string {
@@ -243,7 +244,7 @@ func DataRule(fn func(c *gin.Context, db *sql.DB, data map[string]interface{}, l
 
 // RuleInfo holds validation rule metadata for OpenAPI spec generation.
 type RuleInfo struct {
-	Type      string        // "required", "in", "length", "url", "email"
+	Type      string // "required", "in", "length", "url", "email"
 	Field     string
 	Values    []interface{} // for "in" rules
 	Min       int           // for "length" rules

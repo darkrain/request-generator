@@ -194,6 +194,7 @@ func (db *DB) List(
 	searchColumns []pg.Column,
 	searchText string,
 	filter map[string]string,
+	extraFilters map[string]fields.ModuleFilterField,
 	where pg.BoolExpression,
 	joins []actions.ModuleActionJoin,
 	sort *actions.SortOption,
@@ -270,6 +271,13 @@ func (db *DB) List(
 		}
 
 		for key, value := range filter {
+			if extraFilter, ok := extraFilters[key]; ok && extraFilter.ConditionFunc != nil {
+				if condition := extraFilter.ConditionFunc(value); condition != nil {
+					conditions = append(conditions, condition)
+				}
+				continue
+			}
+
 			parts := strings.Split(key, ".")
 			colName := key
 			tblRef := tableRef

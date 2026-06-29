@@ -34,6 +34,7 @@ type DBExecutor interface {
 		searchColumns []pg.Column,
 		searchText string,
 		filter map[string]string,
+		extraFilters map[string]fields.ModuleFilterField,
 		where pg.BoolExpression,
 		joins []actions.ModuleActionJoin,
 		sort *actions.SortOption,

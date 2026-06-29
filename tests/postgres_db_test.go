@@ -232,7 +232,7 @@ func TestListEmpty(t *testing.T) {
 	cleanTable(t)
 
 	mf := testModuleFields()
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, nil, "", nil, nil, nil, nil, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, nil, "", nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), count)
 	assert.Empty(t, results)
@@ -245,7 +245,7 @@ func TestListMultipleItems(t *testing.T) {
 	seedItem(t, "Charlie", "charlie@test.com", 35, "user")
 
 	mf := testModuleFields()
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, nil, "", nil, nil, nil, nil, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, nil, "", nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), count)
 	assert.Len(t, results, 3)
@@ -259,11 +259,11 @@ func TestListPagination(t *testing.T) {
 
 	mf := testModuleFields()
 
-	results, _, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 2, nil, "", nil, nil, nil, nil, nil)
+	results, _, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 2, nil, "", nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Len(t, results, 2)
 
-	results, _, err = testDB.List(testLog, tbl, tbl.ID, mf, mf, 1, 2, nil, "", nil, nil, nil, nil, nil)
+	results, _, err = testDB.List(testLog, tbl, tbl.ID, mf, mf, 1, 2, nil, "", nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 }
@@ -276,7 +276,7 @@ func TestListSearch(t *testing.T) {
 	mf := testModuleFields()
 	searchColumns := []postgres.Column{tbl.Email}
 
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, searchColumns, "alice", nil, nil, nil, nil, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, searchColumns, "alice", nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 	assert.Len(t, results, 1)
@@ -291,10 +291,36 @@ func TestListFilter(t *testing.T) {
 	mf := testModuleFields()
 	filter := map[string]string{"role": "user"}
 
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, nil, "", filter, nil, nil, nil, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, nil, "", filter, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), count)
 	assert.Len(t, results, 2)
+}
+
+func TestListExtraFilterCondition(t *testing.T) {
+	cleanTable(t)
+	seedItem(t, "Alice", "alice@test.com", 25, "admin")
+	seedItem(t, "Bob", "bob@test.com", 30, "user")
+
+	mf := testModuleFields()
+	filter := map[string]string{"name_or_email": "alice"}
+	extraFilters := map[string]fields.ModuleFilterField{
+		"name_or_email": {
+			FieldName: "name_or_email",
+			ConditionFunc: func(value string) postgres.BoolExpression {
+				return postgres.RawBool(
+					`LOWER(test_items."name") LIKE '%' || #value || '%' OR LOWER(test_items."email") LIKE '%' || #value || '%'`,
+					postgres.RawArgs{"#value": value},
+				)
+			},
+		},
+	}
+
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, nil, "", filter, extraFilters, nil, nil, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+	assert.Len(t, results, 1)
+	assert.Equal(t, "alice@test.com", results[0].(map[string]interface{})["email"])
 }
 
 func TestListWhere(t *testing.T) {
@@ -305,7 +331,7 @@ func TestListWhere(t *testing.T) {
 	mf := testModuleFields()
 	where := postgres.RawBool(`test_items."age" > #age`, postgres.RawArgs{"#age": 26})
 
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, nil, "", nil, where, nil, nil, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, nil, "", nil, nil, where, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 	assert.Len(t, results, 1)
@@ -367,7 +393,7 @@ func TestDelete(t *testing.T) {
 	require.NoError(t, err)
 
 	mf := testModuleFields()
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, nil, "", nil, nil, nil, nil, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, nil, "", nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), count)
 	assert.Empty(t, results)
@@ -406,7 +432,7 @@ func TestListWithJoin(t *testing.T) {
 	}
 
 	mf := testModuleFields()
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, nil, "", nil, nil, []actions.ModuleActionJoin{join}, nil, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, nil, "", nil, nil, nil, []actions.ModuleActionJoin{join}, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 	assert.Len(t, results, 1)
@@ -431,7 +457,7 @@ func TestAddRollbackOnError(t *testing.T) {
 	_, err = testDB.Add(testLog, tbl, tbl.ID, mf, input2, nil)
 	assert.Error(t, err)
 
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, nil, "", nil, nil, nil, nil, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, nil, "", nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 	assert.Len(t, results, 1)

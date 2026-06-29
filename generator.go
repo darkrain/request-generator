@@ -384,6 +384,17 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 
 		tc := generator.buildTranslationContext(module)
 
+		extraFilters := make(map[string]fields.ModuleFilterField)
+		for _, filter := range action.ExtraFilters {
+			key := filter.FieldName
+			if key == "" && filter.Column != nil {
+				key = filter.Column.Name()
+			}
+			if key != "" {
+				extraFilters[key] = filter
+			}
+		}
+
 		results, count, err := generator.db(module).List(
 			l,
 			module.Table,
@@ -395,6 +406,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			action.Search,
 			searchText,
 			filters,
+			extraFilters,
 			where,
 			joins,
 			activeSort,
