@@ -183,6 +183,48 @@ func arrayElementType(value string) string {
 	return "integer"
 }
 
+func dateRangeBounds(value string) (time.Time, time.Time, bool, bool, bool) {
+	parts := strings.SplitN(value, "..", 2)
+	if len(parts) != 2 {
+		return time.Time{}, time.Time{}, false, false, false
+	}
+
+	fromRaw := strings.TrimSpace(parts[0])
+	toRaw := strings.TrimSpace(parts[1])
+	var from, to time.Time
+	var hasFrom, hasTo bool
+	if fromRaw != "" {
+		parsed, ok := parseDateRangeBound(fromRaw, false)
+		if !ok {
+			return time.Time{}, time.Time{}, false, false, false
+		}
+		from = parsed
+		hasFrom = true
+	}
+	if toRaw != "" {
+		parsed, ok := parseDateRangeBound(toRaw, true)
+		if !ok {
+			return time.Time{}, time.Time{}, false, false, false
+		}
+		to = parsed
+		hasTo = true
+	}
+	return from, to, hasFrom, hasTo, hasFrom || hasTo
+}
+
+func parseDateRangeBound(value string, endOfDay bool) (time.Time, bool) {
+	if parsed, err := time.Parse("2006-01-02", value); err == nil {
+		if endOfDay {
+			return parsed.AddDate(0, 0, 1), true
+		}
+		return parsed, true
+	}
+	if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+		return parsed, true
+	}
+	return time.Time{}, false
+}
+
 func (db *DB) List(
 	log *log.Entry,
 	table pg.Table,
@@ -318,8 +360,32 @@ func (db *DB) List(
 						),
 					)
 				}
+			} else if strings.Contains(value, "..") {
+				// 3. Date/datetime range: "2026-06-01..2026-06-29" → >= start AND < next day
+				from, to, hasFrom, hasTo, ok := dateRangeBounds(value)
+				if !ok {
+					continue
+				}
+				var rangeConds []pg.BoolExpression
+				if hasFrom {
+					ph := fmt.Sprintf("#%s_from", colName)
+					rangeConds = append(rangeConds, pg.RawBool(
+						fmt.Sprintf(`%s."%s" >= %s`, tblRef, colName, ph),
+						pg.RawArgs{ph: from},
+					))
+				}
+				if hasTo {
+					ph := fmt.Sprintf("#%s_to", colName)
+					rangeConds = append(rangeConds, pg.RawBool(
+						fmt.Sprintf(`%s."%s" < %s`, tblRef, colName, ph),
+						pg.RawArgs{ph: to},
+					))
+				}
+				if len(rangeConds) > 0 {
+					conditions = append(conditions, pg.AND(rangeConds...))
+				}
 			} else if fmt2 == fields.ModuleFieldFormTypeNumber && strings.Contains(value, "-") {
-				// 3. Number range: "18-20" → >= 18 AND <= 20
+				// 4. Number range: "18-20" → >= 18 AND <= 20
 				rangeParts := strings.SplitN(value, "-", 2)
 				minVal := strings.TrimSpace(rangeParts[0])
 				maxVal := strings.TrimSpace(rangeParts[1])
@@ -342,7 +408,7 @@ func (db *DB) List(
 					conditions = append(conditions, pg.AND(rangeConds...))
 				}
 			} else {
-				// 4. Default: equality
+				// 5. Default: equality
 				conditions = append(conditions,
 					pg.RawBool(
 						fmt.Sprintf(`%s."%s" = #%s_val`, tblRef, colName, colName),
