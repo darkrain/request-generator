@@ -29,6 +29,7 @@ type ListModuleAction struct {
 	Sort                 []pg.Column                            `json:"-"`
 	SortDefault          pg.Column                              `json:"-"`
 	SortDefaultDirection SortDirection                          `json:"-"`
+	SortDefaultFunc      func(c *gin.Context) *SortOption       `json:"-"`
 	Fields               []RoleContext                          `json:"-"`
 }
 

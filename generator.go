@@ -374,6 +374,8 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 					break
 				}
 			}
+		} else if action.SortDefaultFunc != nil {
+			activeSort = action.SortDefaultFunc(c)
 		} else if action.SortDefault != nil {
 			dir := action.SortDefaultDirection
 			if dir == "" {
