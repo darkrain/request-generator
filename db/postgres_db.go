@@ -733,11 +733,20 @@ func (db *DB) View(
 					currentResult[meta.name] = map[string]string{}
 				}
 			} else {
+				field := moduleFields[index]
 				value, ok := columnValues[index+offset].(driver.Valuer)
 				if ok {
-					currentResult[meta.name], _ = value.Value()
+					if field.ResultValueConverter != nil {
+						currentResult[meta.name] = field.ResultValueConverter(value)
+					} else {
+						currentResult[meta.name], _ = value.Value()
+					}
 				} else {
-					currentResult[meta.name] = value
+					if field.ResultValueConverter != nil {
+						currentResult[meta.name] = field.ResultValueConverter(value)
+					} else {
+						currentResult[meta.name] = value
+					}
 				}
 			}
 		}
