@@ -35,28 +35,31 @@ func execSQLFile(db *sql.DB, filename string) error {
 type testTable struct {
 	postgres.Table
 
-	ID    postgres.ColumnInteger
-	Name  postgres.ColumnString
-	Email postgres.ColumnString
-	Age   postgres.ColumnInteger
-	Role  postgres.ColumnString
+	ID           postgres.ColumnInteger
+	CreationDate postgres.ColumnTimestampz
+	Name         postgres.ColumnString
+	Email        postgres.ColumnString
+	Age          postgres.ColumnInteger
+	Role         postgres.ColumnString
 }
 
 func newTestTable() testTable {
 	id := postgres.IntegerColumn("id")
+	creationDate := postgres.TimestampzColumn("creation_date")
 	name := postgres.StringColumn("name")
 	email := postgres.StringColumn("email")
 	age := postgres.IntegerColumn("age")
 	role := postgres.StringColumn("role")
-	all := postgres.ColumnList{id, name, email, age, role}
+	all := postgres.ColumnList{id, creationDate, name, email, age, role}
 
 	return testTable{
-		Table: postgres.NewTable("public", "test_items", "", all...),
-		ID:    id,
-		Name:  name,
-		Email: email,
-		Age:   age,
-		Role:  role,
+		Table:        postgres.NewTable("public", "test_items", "", all...),
+		ID:           id,
+		CreationDate: creationDate,
+		Name:         name,
+		Email:        email,
+		Age:          age,
+		Role:         role,
 	}
 }
 
@@ -118,6 +121,7 @@ func testModuleFields() []fields.ModuleField {
 		{Column: t.Email, Title: "Email", Type: fields.ModuleFieldTypeString},
 		{Column: t.Age, Title: "Age", Type: fields.ModuleFieldTypeInt},
 		{Column: t.Role, Title: "Role", Type: fields.ModuleFieldTypeString},
+		{Column: t.CreationDate, Title: "Creation date", Type: fields.ModuleFieldTypeString},
 	}
 }
 
@@ -297,6 +301,28 @@ func TestListFilter(t *testing.T) {
 	assert.Len(t, results, 2)
 }
 
+func TestListDateRangeFilter(t *testing.T) {
+	cleanTable(t)
+	aliceID := seedItem(t, "Alice", "alice@test.com", 25, "admin")
+	bobID := seedItem(t, "Bob", "bob@test.com", 30, "user")
+	charlieID := seedItem(t, "Charlie", "charlie@test.com", 35, "user")
+
+	_, err := sqlDB.Exec(`UPDATE test_items SET creation_date = $1 WHERE id = $2`, "2026-06-01T10:00:00Z", aliceID)
+	require.NoError(t, err)
+	_, err = sqlDB.Exec(`UPDATE test_items SET creation_date = $1 WHERE id = $2`, "2026-06-15T10:00:00Z", bobID)
+	require.NoError(t, err)
+	_, err = sqlDB.Exec(`UPDATE test_items SET creation_date = $1 WHERE id = $2`, "2026-07-01T10:00:00Z", charlieID)
+	require.NoError(t, err)
+
+	mf := testModuleFields()
+	filter := map[string]string{"creation_date": "2026-06-01..2026-06-30"}
+
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, nil, "", filter, nil, nil, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), count)
+	assert.Len(t, results, 2)
+}
+
 func TestListWhere(t *testing.T) {
 	cleanTable(t)
 	seedItem(t, "Alice", "alice@test.com", 25, "admin")
@@ -415,6 +441,36 @@ func TestListWithJoin(t *testing.T) {
 	tags, ok := row["tags"]
 	assert.True(t, ok)
 	assert.NotNil(t, tags)
+}
+
+func TestListSearchJoinedColumn(t *testing.T) {
+	cleanTable(t)
+	seedItem(t, "Alice", "alice@test.com", 25, "admin")
+	seedItem(t, "Bob", "bob@test.com", 30, "user")
+
+	_, err := sqlDB.Exec(`INSERT INTO test_tags (item_id, tag) VALUES (1, 'go'), (2, 'rust')`)
+	require.NoError(t, err)
+
+	tagID := postgres.IntegerColumn("id")
+	tagItemID := postgres.IntegerColumn("item_id")
+	tagCol := postgres.StringColumn("tag")
+	tagCols := postgres.ColumnList{tagID, tagItemID, tagCol}
+	tagsTable := postgres.NewTable("public", "test_tags", "tags", tagCols...)
+
+	join := actions.ModuleActionJoin{
+		Table:           tagsTable,
+		Type:            actions.JoinTypeLeft,
+		OnCondition:     postgres.RawBool(`test_items."id" = tags."item_id"`, nil),
+		Columns:         []postgres.Column{tagCol},
+		ResultArrayName: "tags",
+	}
+
+	mf := testModuleFields()
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, []postgres.Column{tagCol}, "rust", nil, nil, []actions.ModuleActionJoin{join}, nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+	assert.Len(t, results, 1)
+	assert.Equal(t, "bob@test.com", results[0].(map[string]interface{})["email"])
 }
 
 // --- Transaction rollback ---

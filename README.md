@@ -203,6 +203,8 @@ MenuEntries: []module.MenuEntry{
 | `ModuleFieldTypeInt`       | `"int"`    | Целое число                |
 | `ModuleFieldTypeFloat`     | `"float"`  | Дробное число              |
 | `ModuleFieldTypeArray`     | `"array"`  | Массив                     |
+
+For `ModuleFieldTypeArray` fields, add/update accepts JSON arrays and converts them to PostgreSQL arrays before executing SQL. List filters for array columns use PostgreSQL overlap syntax with array literals, for example `filter[tags]={global,model}`.
 | `ModuleFieldTypeObject`    | `"object"` | Объект (используется для translatable) |
 
 #### Типы форм (ModuleFieldFormType)

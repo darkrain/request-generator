@@ -374,8 +374,14 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 					break
 				}
 			}
+		} else if action.SortDefaultFunc != nil {
+			activeSort = action.SortDefaultFunc(c)
 		} else if action.SortDefault != nil {
-			activeSort = &actions.SortOption{Column: action.SortDefault, Direction: actions.SortASC}
+			dir := action.SortDefaultDirection
+			if dir == "" {
+				dir = actions.SortASC
+			}
+			activeSort = &actions.SortOption{Column: action.SortDefault, Direction: dir}
 		}
 
 		tc := generator.buildTranslationContext(module)
@@ -464,6 +470,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 						Type:     realField.Type,
 						FormType: realField.FormType,
 						Example:  realField.Example,
+						AllLabel: generator.Translate(lang, realField.AllLabel),
 						Options:  options,
 						Check:    realField.Check,
 						Convert:  realField.Convert,
@@ -493,6 +500,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 					}
 				}
 				ef.Title = generator.Translate(lang, ef.Title)
+				ef.AllLabel = generator.Translate(lang, ef.AllLabel)
 				ef.Options = translatedOpts
 				filter[key] = ef
 			}

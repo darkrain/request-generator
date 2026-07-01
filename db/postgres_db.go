@@ -14,7 +14,7 @@ import (
 	"github.com/darkrain/request-generator/actions"
 	"github.com/darkrain/request-generator/fields"
 	pg "github.com/go-jet/jet/v2/postgres"
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -183,6 +183,48 @@ func arrayElementType(value string) string {
 	return "integer"
 }
 
+func dateRangeBounds(value string) (time.Time, time.Time, bool, bool, bool) {
+	parts := strings.SplitN(value, "..", 2)
+	if len(parts) != 2 {
+		return time.Time{}, time.Time{}, false, false, false
+	}
+
+	fromRaw := strings.TrimSpace(parts[0])
+	toRaw := strings.TrimSpace(parts[1])
+	var from, to time.Time
+	var hasFrom, hasTo bool
+	if fromRaw != "" {
+		parsed, ok := parseDateRangeBound(fromRaw, false)
+		if !ok {
+			return time.Time{}, time.Time{}, false, false, false
+		}
+		from = parsed
+		hasFrom = true
+	}
+	if toRaw != "" {
+		parsed, ok := parseDateRangeBound(toRaw, true)
+		if !ok {
+			return time.Time{}, time.Time{}, false, false, false
+		}
+		to = parsed
+		hasTo = true
+	}
+	return from, to, hasFrom, hasTo, hasFrom || hasTo
+}
+
+func parseDateRangeBound(value string, endOfDay bool) (time.Time, bool) {
+	if parsed, err := time.Parse("2006-01-02", value); err == nil {
+		if endOfDay {
+			return parsed.AddDate(0, 0, 1), true
+		}
+		return parsed, true
+	}
+	if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+		return parsed, true
+	}
+	return time.Time{}, false
+}
+
 func (db *DB) List(
 	log *log.Entry,
 	table pg.Table,
@@ -248,9 +290,10 @@ func (db *DB) List(
 					),
 				)
 			} else {
+				searchTableRef := columnTableRef(col, tableRef)
 				searchConds = append(searchConds,
 					pg.RawBool(
-						fmt.Sprintf(`LOWER(%s."%s"::text) LIKE '%%' || #search || '%%'`, tableRef, col.Name()),
+						fmt.Sprintf(`LOWER(%s."%s"::text) LIKE '%%' || #search || '%%'`, searchTableRef, col.Name()),
 						pg.RawArgs{"#search": strings.ToLower(searchText)},
 					),
 				)
@@ -317,8 +360,32 @@ func (db *DB) List(
 						),
 					)
 				}
+			} else if strings.Contains(value, "..") {
+				// 3. Date/datetime range: "2026-06-01..2026-06-29" → >= start AND < next day
+				from, to, hasFrom, hasTo, ok := dateRangeBounds(value)
+				if !ok {
+					continue
+				}
+				var rangeConds []pg.BoolExpression
+				if hasFrom {
+					ph := fmt.Sprintf("#%s_from", colName)
+					rangeConds = append(rangeConds, pg.RawBool(
+						fmt.Sprintf(`%s."%s" >= %s`, tblRef, colName, ph),
+						pg.RawArgs{ph: from},
+					))
+				}
+				if hasTo {
+					ph := fmt.Sprintf("#%s_to", colName)
+					rangeConds = append(rangeConds, pg.RawBool(
+						fmt.Sprintf(`%s."%s" < %s`, tblRef, colName, ph),
+						pg.RawArgs{ph: to},
+					))
+				}
+				if len(rangeConds) > 0 {
+					conditions = append(conditions, pg.AND(rangeConds...))
+				}
 			} else if fmt2 == fields.ModuleFieldFormTypeNumber && strings.Contains(value, "-") {
-				// 3. Number range: "18-20" → >= 18 AND <= 20
+				// 4. Number range: "18-20" → >= 18 AND <= 20
 				rangeParts := strings.SplitN(value, "-", 2)
 				minVal := strings.TrimSpace(rangeParts[0])
 				maxVal := strings.TrimSpace(rangeParts[1])
@@ -341,7 +408,7 @@ func (db *DB) List(
 					conditions = append(conditions, pg.AND(rangeConds...))
 				}
 			} else {
-				// 4. Default: equality
+				// 5. Default: equality
 				conditions = append(conditions,
 					pg.RawBool(
 						fmt.Sprintf(`%s."%s" = #%s_val`, tblRef, colName, colName),
@@ -369,12 +436,13 @@ func (db *DB) List(
 	stmt = stmt.LIMIT(size).OFFSET(size * page)
 
 	// Build COUNT statement
-	countStmt := pg.SELECT(pg.COUNT(pg.STAR)).FROM(from)
+	countProjection := pg.COUNT(pg.STAR)
+	if len(joins) > 0 {
+		countProjection = pg.COUNT(pg.DISTINCT(primaryKey))
+	}
+	countStmt := pg.SELECT(countProjection).FROM(from)
 	if len(conditions) > 0 {
 		countStmt = countStmt.WHERE(pg.AND(conditions...))
-	}
-	if len(joins) > 0 {
-		countStmt = countStmt.GROUP_BY(primaryKey)
 	}
 
 	query, args := stmt.Sql()
@@ -461,8 +529,13 @@ func (db *DB) List(
 			offset = offset + len(moduleFields)
 		}
 
-		for index, join := range joins {
-			joinValue := columnValues[index+offset]
+		joinOffset := offset
+		for _, join := range joins {
+			if len(join.Columns) == 0 {
+				continue
+			}
+			joinValue := columnValues[joinOffset]
+			joinOffset++
 			converted, ok := joinValue.(*json.RawMessage)
 			if !ok {
 				continue
@@ -541,21 +614,22 @@ func (db *DB) List(
 	defer countResult.Close()
 
 	var count int64
-	if len(joins) > 0 {
-		for countResult.Next() {
-			count++
-		}
-	} else {
-		for countResult.Next() {
-			var currentCount int64
-			err = countResult.Scan(&currentCount)
-			if err == nil {
-				count += currentCount
-			}
+	for countResult.Next() {
+		var currentCount int64
+		err = countResult.Scan(&currentCount)
+		if err == nil {
+			count += currentCount
 		}
 	}
 
 	return result, count, nil
+}
+
+func columnTableRef(col pg.Column, fallback string) string {
+	if tableName := col.TableName(); tableName != "" {
+		return tableName
+	}
+	return fallback
 }
 
 func (db *DB) View(
@@ -659,11 +733,20 @@ func (db *DB) View(
 					currentResult[meta.name] = map[string]string{}
 				}
 			} else {
+				field := moduleFields[index]
 				value, ok := columnValues[index+offset].(driver.Valuer)
 				if ok {
-					currentResult[meta.name], _ = value.Value()
+					if field.ResultValueConverter != nil {
+						currentResult[meta.name] = field.ResultValueConverter(value)
+					} else {
+						currentResult[meta.name], _ = value.Value()
+					}
 				} else {
-					currentResult[meta.name] = value
+					if field.ResultValueConverter != nil {
+						currentResult[meta.name] = field.ResultValueConverter(value)
+					} else {
+						currentResult[meta.name] = value
+					}
 				}
 			}
 		}
@@ -672,8 +755,13 @@ func (db *DB) View(
 			offset = offset + len(moduleFields)
 		}
 
-		for index, join := range joins {
-			joinValue := columnValues[index+offset]
+		joinOffset := offset
+		for _, join := range joins {
+			if len(join.Columns) == 0 {
+				continue
+			}
+			joinValue := columnValues[joinOffset]
+			joinOffset++
 			converted, ok := joinValue.(*json.RawMessage)
 			if !ok {
 				continue
@@ -749,7 +837,7 @@ func (db *DB) Add(log *log.Entry, table pg.Table, primaryKey pg.Column, moduleFi
 			continue
 		}
 		keys = append(keys, fmt.Sprintf(`"%s"`, colName))
-		values = append(values, value)
+		values = append(values, dbValue(field, value))
 	}
 
 	tableName := table.TableName()
@@ -834,7 +922,7 @@ func (db *DB) Update(log *log.Entry, table pg.Table, primaryKey pg.Column, modul
 			continue
 		}
 		setClauses = append(setClauses, fmt.Sprintf(`"%s" = $%d`, colName, paramIdx))
-		values = append(values, value)
+		values = append(values, dbValue(field, value))
 		paramIdx++
 	}
 
@@ -913,6 +1001,25 @@ func hasModuleField(moduleFields []fields.ModuleField, columnName string) bool {
 		}
 	}
 	return false
+}
+
+func dbValue(field fields.ModuleField, value interface{}) interface{} {
+	if field.Type != fields.ModuleFieldTypeArray {
+		return value
+	}
+
+	switch typed := value.(type) {
+	case []interface{}:
+		result := make([]string, 0, len(typed))
+		for _, item := range typed {
+			result = append(result, fmt.Sprint(item))
+		}
+		return pq.Array(result)
+	case []string:
+		return pq.Array(typed)
+	default:
+		return value
+	}
 }
 
 var placeholderPattern = regexp.MustCompile(`\$(\d+)`)
