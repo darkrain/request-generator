@@ -10,6 +10,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const (
+	translationLangContextKey = "request-generator.lang"
+	translationFuncContextKey = "request-generator.translate"
+)
+
+// Translator resolves a translation key with a caller-provided fallback.
+type Translator func(key string, fallback string) string
+
 // LoadTranslationsFile reads a nested JSON file, flattens it to dot-separated keys,
 // and stores translations for the given locale.
 //
@@ -72,6 +80,78 @@ func (g *Generator) Translate(lang locale.Lang, key string) string {
 		}
 	}
 	return key
+}
+
+// TranslateWithFallback resolves a translation key for the given locale and
+// returns fallback when the key is empty or not found.
+func (g *Generator) TranslateWithFallback(lang locale.Lang, key string, fallback string) string {
+	if key == "" {
+		return fallback
+	}
+	translated := g.Translate(lang, key)
+	if translated == key {
+		return fallback
+	}
+	return translated
+}
+
+// Lang returns the request locale selected by the generator.
+func Lang(c *gin.Context) locale.Lang {
+	if c == nil {
+		return locale.EN
+	}
+	if value, ok := c.Get(translationLangContextKey); ok {
+		if lang, ok := value.(locale.Lang); ok {
+			return lang
+		}
+	}
+	return locale.EN
+}
+
+// Translate resolves a translation key for the current request.
+func Translate(c *gin.Context, key string, fallback string) string {
+	if c != nil {
+		if value, ok := c.Get(translationFuncContextKey); ok {
+			if translate, ok := value.(Translator); ok {
+				return translate(key, fallback)
+			}
+		}
+	}
+	if key == "" {
+		return fallback
+	}
+	return fallback
+}
+
+// Plural resolves one/few/many for Russian and one/other for other locales.
+func Plural(c *gin.Context, baseKey string, count int, fallback string) string {
+	lang := Lang(c)
+	if lang == locale.RU {
+		n := count
+		if n < 0 {
+			n = -n
+		}
+		mod10 := n % 10
+		mod100 := n % 100
+		if mod10 == 1 && mod100 != 11 {
+			return Translate(c, baseKey+".one", fallback)
+		}
+		if mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) {
+			return Translate(c, baseKey+".few", fallback)
+		}
+		return Translate(c, baseKey+".many", fallback)
+	}
+	if count == 1 {
+		return Translate(c, baseKey+".one", fallback)
+	}
+	return Translate(c, baseKey+".other", fallback)
+}
+
+func (g *Generator) setTranslationContext(c *gin.Context, lang locale.Lang) {
+	c.Set(translationLangContextKey, lang)
+	c.Set(translationFuncContextKey, Translator(func(key string, fallback string) string {
+		return g.TranslateWithFallback(lang, key, fallback)
+	}))
 }
 
 // handleLangList returns the list of supported locales.

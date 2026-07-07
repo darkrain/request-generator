@@ -81,6 +81,7 @@ func (generator *Generator) FeaturesMiddleware() gin.HandlerFunc {
 		ctx := c.Request.Context()
 		l, _ := icontext.GetLogger(ctx)
 		lang := generator.getLang(c)
+		generator.setTranslationContext(c, lang)
 
 		localized := make([]Features, len(generator.Features))
 		for i, f := range generator.Features {
@@ -299,6 +300,8 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 		l, _ := icontext.GetLogger(ctx)
 		role := actions.GetRoleFromContext(c)
 		lang := generator.getLang(c)
+		generator.setTranslationContext(c, lang)
+		generator.setTranslationContext(c, lang)
 
 		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
 			if err := hook(c); err != nil {
@@ -610,6 +613,7 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 		l, _ := icontext.GetLogger(ctx)
 		role := actions.GetRoleFromContext(c)
 		lang := generator.getLang(c)
+		generator.setTranslationContext(c, lang)
 
 		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
 			if err := hook(c); err != nil {
@@ -703,6 +707,7 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 		ctx := c.Request.Context()
 		l, _ := icontext.GetLogger(ctx)
 		lang := generator.getLang(c)
+		generator.setTranslationContext(c, lang)
 
 		err := module.Defrec.BeforeRequest(c)
 		if err != nil {
@@ -899,6 +904,7 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 		}
 
 		lang := generator.getLang(c)
+		generator.setTranslationContext(c, lang)
 		roleStr := string(role)
 
 		item := make(map[string]interface{}, len(realFields))
