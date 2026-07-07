@@ -467,6 +467,21 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 					if realField.Extra != nil && realField.Extra.List != nil {
 						filterExtra = realField.Extra.List
 					}
+					filterGroup := realField.Group
+					filterOrder := realField.Order
+					if extraMap, ok := filterExtra.(map[string]interface{}); ok {
+						if group, ok := extraMap["filter_group"].(string); ok {
+							filterGroup = group
+						}
+						switch order := extraMap["filter_order"].(type) {
+						case int:
+							filterOrder = order
+						case int64:
+							filterOrder = int(order)
+						case float64:
+							filterOrder = int(order)
+						}
+					}
 					filterField := fields.ModuleFilterField{
 						Column:   realField.Column,
 						Title:    generator.Translate(lang, realField.Title),
@@ -477,8 +492,8 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 						Options:  options,
 						Check:    realField.Check,
 						Convert:  realField.Convert,
-						Group:    realField.Group,
-						Order:    realField.Order,
+						Group:    filterGroup,
+						Order:    filterOrder,
 						Extra:    filterExtra,
 					}
 					filter[realField.ColumnName()] = filterField
