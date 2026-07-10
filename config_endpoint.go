@@ -62,6 +62,7 @@ func (generator *Generator) actionConfigEndpoint() gin.HandlerFunc {
 
 		role := user.Role
 		lang := generator.getLang(c)
+		generator.setTranslationContext(c, lang)
 
 		availableModules := make(map[string]*BaseModule)
 		moduleActions := make(map[string][]actions.ModuleAction)

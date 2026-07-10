@@ -81,6 +81,7 @@ func (generator *Generator) FeaturesMiddleware() gin.HandlerFunc {
 		ctx := c.Request.Context()
 		l, _ := icontext.GetLogger(ctx)
 		lang := generator.getLang(c)
+		generator.setTranslationContext(c, lang)
 
 		localized := make([]Features, len(generator.Features))
 		for i, f := range generator.Features {
@@ -299,6 +300,8 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 		l, _ := icontext.GetLogger(ctx)
 		role := actions.GetRoleFromContext(c)
 		lang := generator.getLang(c)
+		generator.setTranslationContext(c, lang)
+		generator.setTranslationContext(c, lang)
 
 		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
 			if err := hook(c); err != nil {
@@ -464,6 +467,21 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 					if realField.Extra != nil && realField.Extra.List != nil {
 						filterExtra = realField.Extra.List
 					}
+					filterGroup := realField.Group
+					filterOrder := realField.Order
+					if extraMap, ok := filterExtra.(map[string]interface{}); ok {
+						if group, ok := extraMap["filter_group"].(string); ok {
+							filterGroup = group
+						}
+						switch order := extraMap["filter_order"].(type) {
+						case int:
+							filterOrder = order
+						case int64:
+							filterOrder = int(order)
+						case float64:
+							filterOrder = int(order)
+						}
+					}
 					filterField := fields.ModuleFilterField{
 						Column:   realField.Column,
 						Title:    generator.Translate(lang, realField.Title),
@@ -474,8 +492,8 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 						Options:  options,
 						Check:    realField.Check,
 						Convert:  realField.Convert,
-						Group:    realField.Group,
-						Order:    realField.Order,
+						Group:    filterGroup,
+						Order:    filterOrder,
 						Extra:    filterExtra,
 					}
 					filter[realField.ColumnName()] = filterField
@@ -610,6 +628,7 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 		l, _ := icontext.GetLogger(ctx)
 		role := actions.GetRoleFromContext(c)
 		lang := generator.getLang(c)
+		generator.setTranslationContext(c, lang)
 
 		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
 			if err := hook(c); err != nil {
@@ -703,6 +722,7 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 		ctx := c.Request.Context()
 		l, _ := icontext.GetLogger(ctx)
 		lang := generator.getLang(c)
+		generator.setTranslationContext(c, lang)
 
 		err := module.Defrec.BeforeRequest(c)
 		if err != nil {
@@ -899,6 +919,7 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 		}
 
 		lang := generator.getLang(c)
+		generator.setTranslationContext(c, lang)
 		roleStr := string(role)
 
 		item := make(map[string]interface{}, len(realFields))

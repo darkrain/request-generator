@@ -43,6 +43,274 @@ packages/request-generator/
   utils/                 -- ParseJson и утилиты
 ```
 
+## Архитектурный стандарт: request-generator как источник UI-контракта
+
+Request-generator должен позволять приложению отдавать не только CRUD-данные, но и расширяемый контракт для frontend renderer. Если клиентское приложение вынуждено знать конкретные ключи полей, роли, порядок блоков или бизнес-условия конкретного модуля, значит metadata в модуле описана неполно.
+
+Базовая схема:
+
+```
+BaseModule
+  ├── Fields
+  │     ├── Type/FormType
+  │     ├── Options/OptionsFunc
+  │     ├── Check/DefaultFunc/Convert
+  │     └── Extra
+  │           ├── Defrec  -> форма и universal field props
+  │           └── View    -> отображение в списках/detail/card view
+  │
+  ├── ListModuleAction
+  │     ├── Filter/Search/Sort/SortDefault
+  │     ├── Where/Permission/Auth
+  │     └── ExtraFunc -> custom list/page/table metadata
+  │
+  ├── ViewModuleAction
+  │     └── Extra -> custom view/detail metadata
+  │
+  ├── DefrecModuleAction
+  │     └── schema for add/edit forms
+  │
+  └── MenuEntries
+        └── navigation/config metadata
+```
+
+### Ответственность модуля
+
+Модуль должен описывать:
+
+- права ролей и server-side ограничения;
+- видимые/редактируемые поля;
+- порядок полей, групп и секций;
+- типы контролов и их варианты;
+- server-side options и справочники;
+- фильтры, сортировки и pagination;
+- действия карточек/строк/detail view;
+- условия видимости действий;
+- ключи переводов;
+- ключи иконок;
+- extra metadata для клиентских renderer'ов.
+
+Frontend должен получать готовую схему и рендерить ее своими универсальными компонентами. Frontend не должен угадывать, что поле `status` нужно показать badge, что `category_ids` является multiselect, а `owner_id` нужно скрыть от определенной роли.
+
+### Где описывать UI metadata
+
+| Что нужно описать | Где описывать |
+|---|---|
+| Поле формы add/edit | `ModuleField.Extra.Defrec` |
+| Поле detail/list/card view | `ModuleField.Extra.View` |
+| Полный список с фильтрами и карточками | `ListModuleAction.ExtraFunc` |
+| Рабочий grid с create/update/delete/status | `ListModuleAction.ExtraFunc` |
+| Detail/detail groups | `ViewModuleAction.Extra` |
+| Пункты меню | `BaseModule.MenuEntries` |
+| Динамический список колонок по роли | `ColumnsFunc` или `Fields`/`RoleContext` |
+| Динамические фильтры по роли | `FilterFunc` |
+| Права на строки | `Where`, `RoleWhere`, `BeforeAction`, `DataCheckRule` |
+| Options из базы | `OptionsFunc` или `Extra.Defrec.options_url` |
+
+### Extra.Defrec
+
+`Extra.Defrec` описывает, каким контролом клиентское приложение должно редактировать поле.
+
+```go
+{
+    Column:   table.CatalogItems.CategoryIDs,
+    Title:    "catalog_items.fields.categories",
+    Type:     fields.ModuleFieldTypeArray,
+    FormType: fields.ModuleFieldFormTypeMultiselect,
+    OptionsFunc: categoryOptions,
+    Extra: &fields.FieldExtra{
+        Defrec: map[string]interface{}{
+            "visual_kind": "select",
+            "multiple":    true,
+            "searchable":  true,
+            "icon":        "tag",
+            "section":     "general",
+            "group":       "main",
+            "order":       30,
+            "layout":      "full",
+            "placeholder": "ui.search",
+        },
+    },
+}
+```
+
+Рекомендуемые ключи:
+
+| Ключ | Назначение |
+|---|---|
+| `visual_kind` | Универсальный тип: `input`, `textarea`, `select`, `location`, `radio`, `switch`, `matrix`, `media`, `collection`. |
+| `section` | ID секции страницы. |
+| `group` | ID группы внутри секции. |
+| `order` | Порядок поля. |
+| `layout` | `full`, `grid`, `inline`, `compact`, `matrix`. |
+| `icon` | Ключ иконки из реестра. |
+| `hint` | Ключ перевода подсказки. |
+| `placeholder` | Ключ перевода placeholder. |
+| `multiple` | Множественный выбор. |
+| `searchable` | Поиск внутри select. |
+| `options_url` | Endpoint для server-driven options. |
+| `options_params` | Параметры endpoint options. |
+| `prefix` / `suffix` | Внутренний prefix/suffix поля. |
+| `min` / `max` / `step` | Числовые ограничения. |
+
+Нельзя добавлять поле так, чтобы frontend узнавал его по имени и вручную выбирал компонент.
+
+### Extra.View
+
+`Extra.View` описывает отображение значения в list/detail/card view.
+
+```go
+Extra: &fields.FieldExtra{
+    View: map[string]interface{}{
+        "display": "badge",
+        "tone":    "glass-cyan",
+        "marker":  false,
+        "option":  "status",
+    },
+}
+```
+
+Типовые `display`:
+
+- `text`;
+- `badge`;
+- `chips`;
+- `boolean`;
+- `code`;
+- `json`;
+- `masked`;
+- `media`;
+- `money`;
+- `date`;
+- `location`.
+
+### ExtraFunc и страницы списков
+
+`ExtraFunc` возвращает runtime metadata, потому что она часто зависит от роли, query, локали или текущего пользователя.
+
+```go
+ExtraFunc: func(c *gin.Context) interface{} {
+    return map[string]interface{}{
+        "list_page": map[string]interface{}{
+            "title":       "catalog_items.list.title",
+            "subtitle":    "catalog_items.list.subtitle",
+            "show_header": false,
+            "filters": map[string]interface{}{
+                "primary_placement": "topbar",
+                "primary":           []string{"status", "category_id", "price"},
+                "secondary":         []string{"created_at", "owner_id"},
+                "more":              []string{"rating", "tags"},
+            },
+            "grid": map[string]interface{}{
+                "enabled": true,
+                "mode":    "cards",
+            },
+            "pagination": map[string]interface{}{
+                "renderer": "universal.pagination",
+                "mode":     "server",
+            },
+            "card_schema": cardSchema,
+            "context": map[string]interface{}{
+                "can_create_request": canCreateRequest(c),
+            },
+        },
+    }
+}
+```
+
+Фильтры в UI должны соответствовать server-side `Filter`/`FilterFunc`. Если фильтр есть в metadata, он обязан применяться на сервере.
+
+### Действия и условия видимости
+
+Действия карточек, строк и detail view описываются декларативно.
+
+```go
+map[string]interface{}{
+    "id":         "message",
+    "icon":       "message",
+    "variant":    "success",
+    "appearance": "outline-fill",
+    "external":   true,
+    "visible_if": map[string]interface{}{
+        "all": []map[string]interface{}{
+            {"path": "relationship.allowed", "equals": true},
+            {"path": "record.status", "equals": "active"},
+            {"path": "record.owner_id", "empty": false},
+        },
+    },
+}
+```
+
+Поддерживаемая форма условий:
+
+- `path`: путь в `record`, `relationship` или `context`;
+- `equals`: строгое равенство;
+- `not`: значение не равно и не truthy;
+- `empty`: проверка пустого значения;
+- `all`: все условия истинны;
+- `any`: хотя бы одно условие истинно;
+- `not`: отрицание вложенного условия, если значение является object.
+
+Важно: `visible_if` и `hidden_if` управляют только отображением. Серверное действие обязательно должно проверять доступ через `Permission`, `Where`, `BeforeAction` или `DataCheckRule`.
+
+### Resource grid metadata
+
+Для страниц типа “управление сущностями” модуль может вернуть custom metadata, например `extra.resource_grid_page`. Название и структура этого блока являются соглашением конкретного приложения; request-generator только передает `ExtraFunc` в ответ.
+
+```go
+ExtraFunc: func(c *gin.Context) interface{} {
+    return map[string]interface{}{
+        "resource_grid_page": map[string]interface{}{
+            "endpoint": "/catalog_items",
+            "list": map[string]interface{}{
+                "size":    100,
+                "filters": map[string]interface{}{"scope": "owned"},
+            },
+            "create": map[string]interface{}{
+                "endpoint":       "/catalog_items",
+                "uniqueEndpoint": "/catalog_items/view/slug/:slug",
+                "afterRoute":     map[string]interface{}{"path": "/catalog/edit", "queryParam": "item", "source": "slug"},
+            },
+            "delete": map[string]interface{}{"endpoint": "/catalog_items/delete/id/:id"},
+            "update": map[string]interface{}{"endpoint": "/catalog_items/id/:id", "method": "post"},
+            "card": map[string]interface{}{
+                "type":            "catalog_item",
+                "surface_variant": "default",
+                "badge_size":      "sm",
+                "action_size":     "md",
+            },
+            "status": map[string]interface{}{
+                "verifyField":         "review_status",
+                "activeField":         "status",
+                "verifiedValue":       "approved",
+                "pendingValue":        "pending",
+                "inactiveActionValue": "inactive",
+                "activeActionValue":   "active",
+            },
+            "text": map[string]interface{}{
+                "title":    "catalog_items.manage.title",
+                "subtitle": "catalog_items.manage.subtitle",
+            },
+        },
+    }
+}
+```
+
+Для такого режима обязательно добавляйте `Where`, чтобы пользователь не мог запросить чужие сущности через тот же endpoint.
+
+### Правила совместимости с универсальным frontend
+
+PR в модуле считается неготовым, если:
+
+- новое поле требует `if field.key == ...` на frontend;
+- options захардкожены во frontend, хотя зависят от базы или роли;
+- `ExtraFunc` возвращает только сырые данные, а порядок/группы должен угадывать frontend;
+- действие скрывается только на frontend, но API все равно разрешает его выполнить;
+- фильтр есть в UI, но не применяется в `Filter`/`Where`;
+- переводимый текст отдается literal-строкой вместо ключа;
+- иконка вшита в клиент вместо передачи стабильного ключа/metadata;
+- техническая таблица превращена в menu entry без пользовательского сценария.
+
 ---
 
 ## Этапы создания модуля
@@ -142,13 +410,13 @@ func NewCoursesModule() *module.BaseModule {
 MenuEntries: []module.MenuEntry{
     {
         ActionName: "list",         // имя действия модуля (list/view/…)
-        Title:      "menu.models", // ключ i18n для заголовка пункта
-        Icon:       "users",       // иконка (передаётся клиенту as-is)
+        Title:      "menu.catalog", // ключ i18n для заголовка пункта
+        Icon:       "catalog",       // иконка (передаётся клиенту as-is)
         Show:       true,
         Order:      1,
         Group:      "main",        // группа блока в левом меню
-        Roles:      []actions.Role{"admin", "agency"},
-        CustomLink: "/models",     // переопределяет URL (вместо API-пути)
+        Roles:      []actions.Role{"admin", "editor"},
+        CustomLink: "/catalog",     // переопределяет URL (вместо API-пути)
     },
 },
 ```
@@ -162,7 +430,7 @@ MenuEntries: []module.MenuEntry{
 | `Order`       | `int`                      | Порядок внутри группы                                 |
 | `Group`       | `string`                   | Ключ группы (становится `blockTitle` в ответе)        |
 | `Roles`       | `[]actions.Role`           | Роли, которым доступен пункт (пустой = все)           |
-| `CustomLink`  | `string`                   | Переопределяет URL (напр. SPA-маршрут `/models`)      |
+| `CustomLink`  | `string`                   | Переопределяет URL (напр. SPA-маршрут `/catalog`)      |
 | `CustomQuery` | `map[string]interface{}`   | Доп. query-параметры для клиента                      |
 | `CustomData`  | `map[string]interface{}`   | Произвольные данные для клиента                       |
 
@@ -204,7 +472,7 @@ MenuEntries: []module.MenuEntry{
 | `ModuleFieldTypeFloat`     | `"float"`  | Дробное число              |
 | `ModuleFieldTypeArray`     | `"array"`  | Массив                     |
 
-For `ModuleFieldTypeArray` fields, add/update accepts JSON arrays and converts them to PostgreSQL arrays before executing SQL. List filters for array columns use PostgreSQL overlap syntax with array literals, for example `filter[tags]={global,model}`.
+For `ModuleFieldTypeArray` fields, add/update accepts JSON arrays and converts them to PostgreSQL arrays before executing SQL. List filters for array columns use PostgreSQL overlap syntax with array literals, for example `filter[tags]={global,featured}`.
 | `ModuleFieldTypeObject`    | `"object"` | Объект (используется для translatable) |
 
 #### Типы форм (ModuleFieldFormType)
@@ -486,6 +754,24 @@ allModules := []*module.BaseModule{
 1. Создаёт все CRUD-эндпоинты для модуля
 2. Регистрирует модуль в `/admin/api/features`
 3. Добавляет в OpenAPI-спеку (если `EnableOpenAPI = true`)
+
+### Этап 11. Чеклист API-driven готовности
+
+Перед PR проверьте:
+
+- `ListModuleAction.Where` ограничивает строки по роли, владельцу и контексту.
+- `UpdateModuleAction.Where` и `DeleteModuleAction.Where` не позволяют менять чужие записи.
+- `AddModuleAction.Columns` содержит только поля, которые клиент имеет право прислать.
+- Системные поля задаются через `DefaultFunc`, а не принимаются от клиента.
+- Все options приходят из `Options`, `OptionsFunc` или `options_url`.
+- Все поля формы имеют `Title` как ключ перевода.
+- Для новых UI-полей заполнен `Extra.Defrec`.
+- Для detail/list отображения заполнен `Extra.View`, если raw value неудобен.
+- `ExtraFunc` возвращает полную схему list/record/resource page, если страница должна быть универсальной.
+- Действия, зависящие от состояния записи, описаны через `visible_if`/`hidden_if`.
+- Все ограничения из `visible_if` продублированы серверной проверкой.
+- Новые фильтры реально работают на сервере.
+- Новые metadata покрыты targeted tests.
 
 ---
 
@@ -954,12 +1240,12 @@ type TranslationContext struct {
 {
   "left_menu": [
     {
-      "blockTitle": "Profiles",
+      "blockTitle": "Catalog",
       "elements": [
         {
-          "url": "/models",
-          "title": "Models",
-          "icon": "users"
+          "url": "/catalog",
+          "title": "Catalog",
+          "icon": "catalog"
         }
       ]
     }
