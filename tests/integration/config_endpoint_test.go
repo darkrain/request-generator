@@ -132,6 +132,10 @@ func TestConfigEndpoint_ValidToken(t *testing.T) {
 	assert.Contains(t, response, "left_menu")
 	assert.Contains(t, response, "routes")
 	assert.Contains(t, response, "role")
+	assert.NotContains(t, response, "menu")
+	assert.NotContains(t, response, "preload")
+	assert.IsType(t, []interface{}{}, response["left_menu"])
+	assert.IsType(t, map[string]interface{}{}, response["routes"])
 	assert.Equal(t, "admin", response["role"])
 }
 

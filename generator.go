@@ -301,7 +301,6 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 		role := actions.GetRoleFromContext(c)
 		lang := generator.getLang(c)
 		generator.setTranslationContext(c, lang)
-		generator.setTranslationContext(c, lang)
 
 		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
 			if err := hook(c); err != nil {
