@@ -14,6 +14,7 @@ import (
 	"github.com/darkrain/request-generator/fields"
 	"github.com/darkrain/request-generator/icontext"
 	"github.com/darkrain/request-generator/locale"
+	"github.com/darkrain/request-generator/renderer"
 	"github.com/darkrain/request-generator/response"
 	"github.com/darkrain/request-generator/utils"
 	"github.com/gin-gonic/gin"
@@ -115,6 +116,13 @@ func (generator *Generator) Run() {
 	generator.initRealtime()
 
 	for _, module := range generator.Modules {
+		if err := module.Render.Validate(); err != nil {
+			if module.RenderFunc != nil {
+				panic(fmt.Sprintf("invalid base renderer config in module %s: %v", module.Name, err))
+			}
+			panic(fmt.Sprintf("invalid renderer config in module %s: %v", module.Name, err))
+		}
+
 		featuresModule := Features{
 			ModuleName:       module.Label,
 			ModuleNameLabels: module.Labels,
@@ -300,7 +308,6 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 		l, _ := icontext.GetLogger(ctx)
 		role := actions.GetRoleFromContext(c)
 		lang := generator.getLang(c)
-		generator.setTranslationContext(c, lang)
 		generator.setTranslationContext(c, lang)
 
 		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
@@ -528,6 +535,12 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			results = make([]interface{}, 0, 10)
 		}
 
+		render, err := module.RenderFor(c)
+		if err != nil {
+			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			return
+		}
+
 		if len(heads) == 0 {
 			heads = make(map[string]interface{})
 		}
@@ -548,18 +561,24 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 		}
 
 		output := struct {
-			Count   int64                               `json:"count"`
-			Size    int64                               `json:"size"`
-			Page    int64                               `json:"page"`
-			Extra   interface{}                         `json:"extra"`
-			Rows    []interface{}                       `json:"rows"`
-			Heads   map[string]interface{}              `json:"heads"`
-			Filters map[string]fields.ModuleFilterField `json:"filters,omitempty"`
-			Sort    []actions.SortResponseItem          `json:"sort,omitempty"`
+			Count            int64                               `json:"count"`
+			Size             int64                               `json:"size"`
+			Page             int64                               `json:"page"`
+			Renderer         *renderer.Identity                  `json:"renderer,omitempty"`
+			ListPage         *renderer.ListPage                  `json:"list_page,omitempty"`
+			ResourceGridPage *renderer.ResourceGridPage          `json:"resource_grid_page,omitempty"`
+			Extra            interface{}                         `json:"extra"`
+			Rows             []interface{}                       `json:"rows"`
+			Heads            map[string]interface{}              `json:"heads"`
+			Filters          map[string]fields.ModuleFilterField `json:"filters,omitempty"`
+			Sort             []actions.SortResponseItem          `json:"sort,omitempty"`
 		}{
-			Count: count,
-			Size:  size,
-			Page:  page,
+			Count:            count,
+			Size:             size,
+			Page:             page,
+			Renderer:         render.ListIdentity(),
+			ListPage:         render.List,
+			ResourceGridPage: render.ResourceGrid,
 			Extra: func() interface{} {
 				if action.ExtraFunc != nil {
 					return action.ExtraFunc(c)
@@ -812,7 +831,14 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 		if module.Defrec.ExtraFunc != nil {
 			extra = module.Defrec.ExtraFunc(c)
 		}
-		response.Response(l, c, response.NewDefrecResponse(extra, output))
+		render, err := module.RenderFor(c)
+		if err != nil {
+			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			return
+		}
+		defrecResponse := response.NewDefrecResponse(extra, output)
+		defrecResponse.AttachRender(render)
+		response.Response(l, c, defrecResponse)
 
 		module.Defrec.AfterRequest(c)
 	}
@@ -973,12 +999,22 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			extra = action.Extra
 		}
 
+		render, err := module.RenderFor(c)
+		if err != nil {
+			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			return
+		}
+
 		output := struct {
-			Extra interface{}            `json:"extra"`
-			Item  map[string]interface{} `json:"item"`
+			Renderer   *renderer.Identity     `json:"renderer,omitempty"`
+			RecordPage *renderer.RecordPage   `json:"record_page,omitempty"`
+			Extra      interface{}            `json:"extra"`
+			Item       map[string]interface{} `json:"item"`
 		}{
-			Extra: extra,
-			Item:  item,
+			Renderer:   render.RecordIdentity(),
+			RecordPage: render.Record,
+			Extra:      extra,
+			Item:       item,
 		}
 
 		response.Response(l, c, output)

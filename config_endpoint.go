@@ -7,6 +7,7 @@ import (
 	"github.com/darkrain/request-generator/actions"
 	"github.com/darkrain/request-generator/icontext"
 	"github.com/darkrain/request-generator/locale"
+	"github.com/darkrain/request-generator/renderer"
 	"github.com/darkrain/request-generator/response"
 	"github.com/gin-gonic/gin"
 )
@@ -37,6 +38,8 @@ type LeftMenuBlock struct {
 type RouteConfig struct {
 	Title     string                 `json:"title"`
 	MenuTitle string                 `json:"menuTitle,omitempty"`
+	Renderer  *renderer.Identity     `json:"renderer,omitempty"`
+	PageType  renderer.PageType      `json:"page_type,omitempty"`
 	Query     *RouteQuery            `json:"query,omitempty"`
 	Data      map[string]interface{} `json:"data,omitempty"`
 	Children  map[string]RouteConfig `json:"children,omitempty"`
@@ -93,7 +96,11 @@ func (generator *Generator) actionConfigEndpoint() gin.HandlerFunc {
 		}
 
 		leftMenu := generator.buildLeftMenu(availableModules, moduleActions, role, lang)
-		routes := generator.buildRoutes(availableModules, moduleActions, role)
+		routes, err := generator.buildRoutes(c, availableModules, moduleActions, role)
+		if err != nil {
+			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			return
+		}
 
 		config := ConfigResponse{
 			LeftMenu: leftMenu,
@@ -269,37 +276,42 @@ func (generator *Generator) buildLeftMenu(
 
 // buildRoutes формирует маршруты с view-адаптерами, actions, children
 func (generator *Generator) buildRoutes(
+	c *gin.Context,
 	availableModules map[string]*BaseModule,
 	moduleActions map[string][]actions.ModuleAction,
 	role string,
-) map[string]RouteConfig {
+) (map[string]RouteConfig, error) {
 	routes := make(map[string]RouteConfig)
 
 	for _, module := range availableModules {
 		actionList := moduleActions[module.Name]
+		render, err := module.RenderFor(c)
+		if err != nil {
+			return nil, err
+		}
 
 		for _, action := range actionList {
 			switch a := action.(type) {
 			case actions.ListModuleAction:
-				routes[module.Path+"/"+module.Name] = generator.buildListRoute(module, a, role)
+				routes[module.Path+"/"+module.Name] = generator.buildListRoute(module, render, a, role)
 			case *actions.ListModuleAction:
-				routes[module.Path+"/"+module.Name] = generator.buildListRoute(module, *a, role)
+				routes[module.Path+"/"+module.Name] = generator.buildListRoute(module, render, *a, role)
 			case actions.ViewModuleAction:
-				routes[module.Path+"/"+module.Name+"/:id"] = generator.buildViewRoute(module, a)
+				routes[module.Path+"/"+module.Name+"/:id"] = generator.buildViewRoute(module, render, a)
 			case *actions.ViewModuleAction:
-				routes[module.Path+"/"+module.Name+"/:id"] = generator.buildViewRoute(module, *a)
+				routes[module.Path+"/"+module.Name+"/:id"] = generator.buildViewRoute(module, render, *a)
 			case actions.AddModuleAction:
-				routes[module.Path+"/"+module.Name+"/add"] = generator.buildAddRoute(module, a)
+				routes[module.Path+"/"+module.Name+"/add"] = generator.buildAddRoute(module, render, a)
 			case *actions.AddModuleAction:
-				routes[module.Path+"/"+module.Name+"/add"] = generator.buildAddRoute(module, *a)
+				routes[module.Path+"/"+module.Name+"/add"] = generator.buildAddRoute(module, render, *a)
 			}
 		}
 	}
 
-	return routes
+	return routes, nil
 }
 
-func (generator *Generator) buildListRoute(module *BaseModule, action actions.ListModuleAction, role string) RouteConfig {
+func (generator *Generator) buildListRoute(module *BaseModule, render renderer.Universal, action actions.ListModuleAction, role string) RouteConfig {
 	routePath := module.Path + "/" + module.Name
 
 	viewAdapter := "list_table"
@@ -310,6 +322,8 @@ func (generator *Generator) buildListRoute(module *BaseModule, action actions.Li
 	route := RouteConfig{
 		Title:     action.Label,
 		MenuTitle: action.Label,
+		Renderer:  render.ListIdentity(),
+		PageType:  render.ListRoutePageType(),
 		Query: &RouteQuery{
 			Url:    "/api" + routePath,
 			Method: "GET",
@@ -320,19 +334,21 @@ func (generator *Generator) buildListRoute(module *BaseModule, action actions.Li
 	}
 
 	route.Data["actions"] = generator.buildRouteActions(module, role)
-	route.Children = generator.buildRouteChildren(module, role)
+	route.Children = generator.buildRouteChildren(module, render, role)
 
 	return route
 }
 
-func (generator *Generator) buildViewRoute(module *BaseModule, action actions.ViewModuleAction) RouteConfig {
+func (generator *Generator) buildViewRoute(module *BaseModule, render renderer.Universal, action actions.ViewModuleAction) RouteConfig {
 	viewAdapter := "view"
 	if adapter, exists := generator.ViewAdapters["view"]; exists {
 		viewAdapter = adapter
 	}
 
 	return RouteConfig{
-		Title: action.Label,
+		Title:    action.Label,
+		Renderer: render.RecordIdentity(),
+		PageType: render.RecordRoutePageType(),
 		Query: &RouteQuery{
 			Url:    "/api" + module.Path + "/" + module.Name + "/view/:bykey/:value",
 			Method: "GET",
@@ -343,14 +359,16 @@ func (generator *Generator) buildViewRoute(module *BaseModule, action actions.Vi
 	}
 }
 
-func (generator *Generator) buildAddRoute(module *BaseModule, action actions.AddModuleAction) RouteConfig {
+func (generator *Generator) buildAddRoute(module *BaseModule, render renderer.Universal, action actions.AddModuleAction) RouteConfig {
 	viewAdapter := "add"
 	if adapter, exists := generator.ViewAdapters["add"]; exists {
 		viewAdapter = adapter
 	}
 
 	return RouteConfig{
-		Title: action.Label,
+		Title:    action.Label,
+		Renderer: render.FormIdentity(),
+		PageType: render.FormRoutePageType(),
 		Query: &RouteQuery{
 			Url:    "/api" + module.Path + "/" + module.Name,
 			Method: "PUT",
@@ -397,33 +415,33 @@ func (generator *Generator) buildRouteActions(module *BaseModule, role string) [
 }
 
 // buildRouteChildren формирует children маршруты (view, edit, add)
-func (generator *Generator) buildRouteChildren(module *BaseModule, role string) map[string]RouteConfig {
+func (generator *Generator) buildRouteChildren(module *BaseModule, render renderer.Universal, role string) map[string]RouteConfig {
 	children := make(map[string]RouteConfig)
 
 	for _, action := range module.Actions {
 		switch a := action.(type) {
 		case actions.ViewModuleAction:
-			if child, ok := generator.buildViewChild(module, a, role); ok {
+			if child, ok := generator.buildViewChild(module, render, a, role); ok {
 				children[":id"] = child
 			}
 		case *actions.ViewModuleAction:
-			if child, ok := generator.buildViewChild(module, *a, role); ok {
+			if child, ok := generator.buildViewChild(module, render, *a, role); ok {
 				children[":id"] = child
 			}
 		case actions.UpdateModuleAction:
-			if child, ok := generator.buildUpdateChild(module, a, role); ok {
+			if child, ok := generator.buildUpdateChild(module, render, a, role); ok {
 				children[":id/edit"] = child
 			}
 		case *actions.UpdateModuleAction:
-			if child, ok := generator.buildUpdateChild(module, *a, role); ok {
+			if child, ok := generator.buildUpdateChild(module, render, *a, role); ok {
 				children[":id/edit"] = child
 			}
 		case actions.AddModuleAction:
-			if child, ok := generator.buildAddChild(module, a, role); ok {
+			if child, ok := generator.buildAddChild(module, render, a, role); ok {
 				children["add"] = child
 			}
 		case *actions.AddModuleAction:
-			if child, ok := generator.buildAddChild(module, *a, role); ok {
+			if child, ok := generator.buildAddChild(module, render, *a, role); ok {
 				children["add"] = child
 			}
 		}
@@ -432,7 +450,7 @@ func (generator *Generator) buildRouteChildren(module *BaseModule, role string) 
 	return children
 }
 
-func (generator *Generator) buildViewChild(module *BaseModule, a actions.ViewModuleAction, role string) (RouteConfig, bool) {
+func (generator *Generator) buildViewChild(module *BaseModule, render renderer.Universal, a actions.ViewModuleAction, role string) (RouteConfig, bool) {
 	if !hasPermission(a, role) {
 		return RouteConfig{}, false
 	}
@@ -443,7 +461,9 @@ func (generator *Generator) buildViewChild(module *BaseModule, a actions.ViewMod
 	}
 
 	return RouteConfig{
-		Title: a.Label,
+		Title:    a.Label,
+		Renderer: render.RecordIdentity(),
+		PageType: render.RecordRoutePageType(),
 		Query: &RouteQuery{
 			Url:    "/api" + module.Path + "/" + module.Name + "/view/:bykey/:value",
 			Method: "GET",
@@ -454,7 +474,7 @@ func (generator *Generator) buildViewChild(module *BaseModule, a actions.ViewMod
 	}, true
 }
 
-func (generator *Generator) buildUpdateChild(module *BaseModule, a actions.UpdateModuleAction, role string) (RouteConfig, bool) {
+func (generator *Generator) buildUpdateChild(module *BaseModule, render renderer.Universal, a actions.UpdateModuleAction, role string) (RouteConfig, bool) {
 	if !hasPermission(a, role) {
 		return RouteConfig{}, false
 	}
@@ -465,19 +485,20 @@ func (generator *Generator) buildUpdateChild(module *BaseModule, a actions.Updat
 	}
 
 	return RouteConfig{
-			Title: a.Label,
-			Query: &RouteQuery{
-				Url:    "/api" + module.Path + "/" + module.Name + "/:bykey/:value",
-				Method: "POST",
-			},
-			Data: map[string]interface{}{
-				"view_adapter": editAdapter,
-			},
+		Title:    a.Label,
+		Renderer: render.FormIdentity(),
+		PageType: render.FormRoutePageType(),
+		Query: &RouteQuery{
+			Url:    "/api" + module.Path + "/" + module.Name + "/:bykey/:value",
+			Method: "POST",
 		},
-		true
+		Data: map[string]interface{}{
+			"view_adapter": editAdapter,
+		},
+	}, true
 }
 
-func (generator *Generator) buildAddChild(module *BaseModule, a actions.AddModuleAction, role string) (RouteConfig, bool) {
+func (generator *Generator) buildAddChild(module *BaseModule, render renderer.Universal, a actions.AddModuleAction, role string) (RouteConfig, bool) {
 	if !hasPermission(a, role) {
 		return RouteConfig{}, false
 	}
@@ -488,14 +509,15 @@ func (generator *Generator) buildAddChild(module *BaseModule, a actions.AddModul
 	}
 
 	return RouteConfig{
-			Title: a.Label,
-			Query: &RouteQuery{
-				Url:    "/api" + module.Path + "/" + module.Name,
-				Method: "PUT",
-			},
-			Data: map[string]interface{}{
-				"view_adapter": addAdapter,
-			},
+		Title:    a.Label,
+		Renderer: render.FormIdentity(),
+		PageType: render.FormRoutePageType(),
+		Query: &RouteQuery{
+			Url:    "/api" + module.Path + "/" + module.Name,
+			Method: "PUT",
 		},
-		true
+		Data: map[string]interface{}{
+			"view_adapter": addAdapter,
+		},
+	}, true
 }
