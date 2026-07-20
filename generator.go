@@ -567,7 +567,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			Renderer         *renderer.Identity                  `json:"renderer,omitempty"`
 			ListPage         *renderer.ListPage                  `json:"list_page,omitempty"`
 			ResourceGridPage *renderer.ResourceGridPage          `json:"resource_grid_page,omitempty"`
-			Extra            interface{}                         `json:"extra"`
+			Extra            interface{}                         `json:"extra,omitempty"`
 			Rows             []interface{}                       `json:"rows"`
 			Heads            map[string]interface{}              `json:"heads"`
 			Filters          map[string]fields.ModuleFilterField `json:"filters,omitempty"`

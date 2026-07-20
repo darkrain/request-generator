@@ -23,7 +23,6 @@ func cloneListPage(v *ListPage) *ListPage {
 	cp.CardSchema = cloneCardSchema(v.CardSchema)
 	cp.Context = cloneMap(v.Context)
 	cp.Actions = cloneActions(v.Actions)
-	cp.Extra = cloneMap(v.Extra)
 	return &cp
 }
 
@@ -52,7 +51,6 @@ func cloneRecordPage(v *RecordPage) *RecordPage {
 	cp.Theme = cloneMap(v.Theme)
 	cp.Actions = cloneActions(v.Actions)
 	cp.Context = cloneMap(v.Context)
-	cp.Extra = cloneMap(v.Extra)
 	return &cp
 }
 
@@ -70,7 +68,6 @@ func cloneResourceGridPage(v *ResourceGridPage) *ResourceGridPage {
 	cp.Actions = cloneMap(v.Actions)
 	cp.Text = cloneMap(v.Text)
 	cp.Context = cloneMap(v.Context)
-	cp.Extra = cloneMap(v.Extra)
 	return &cp
 }
 
@@ -88,13 +85,33 @@ func cloneFilters(v *Filters) *Filters {
 		return nil
 	}
 	cp := *v
+	cp.SecondaryEnabled = clonePtr(v.SecondaryEnabled)
+	cp.Levels = cloneSlice(v.Levels)
 	cp.Primary = cloneSlice(v.Primary)
 	cp.Secondary = cloneSlice(v.Secondary)
 	cp.More = cloneSlice(v.More)
 	cp.Nested = cloneSlice(v.Nested)
+	cp.PillRows = cloneMapRows(v.PillRows)
+	cp.SecondaryPillRows = cloneMapRows(v.SecondaryPillRows)
 	cp.Reset = cloneFilterReset(v.Reset)
-	cp.Extra = cloneMap(v.Extra)
 	return &cp
+}
+
+func cloneMapRows(values [][]map[string]interface{}) [][]map[string]interface{} {
+	if values == nil {
+		return nil
+	}
+	out := make([][]map[string]interface{}, len(values))
+	for i, row := range values {
+		if row == nil {
+			continue
+		}
+		out[i] = make([]map[string]interface{}, len(row))
+		for j, item := range row {
+			out[i][j] = cloneMap(item)
+		}
+	}
+	return out
 }
 
 func cloneFilterReset(v *FilterReset) *FilterReset {
@@ -129,7 +146,6 @@ func cloneSummary(v *Summary) *Summary {
 	cp := *v
 	cp.ShowOnline = clonePtr(v.ShowOnline)
 	cp.ShowAction = clonePtr(v.ShowAction)
-	cp.Extra = cloneMap(v.Extra)
 	return &cp
 }
 
@@ -143,10 +159,9 @@ func cloneCardSchema(v *CardSchema) *CardSchema {
 	cp.Subtitle = cloneTextBinding(v.Subtitle)
 	cp.Description = cloneTextBinding(v.Description)
 	cp.Status = cloneStatusBinding(v.Status)
-	cp.Badges = cloneSlice(v.Badges)
+	cp.Badges = cloneBadges(v.Badges)
 	cp.Stats = cloneStats(v.Stats)
 	cp.Actions = cloneActions(v.Actions)
-	cp.Extra = cloneMap(v.Extra)
 	return &cp
 }
 
@@ -155,7 +170,7 @@ func cloneMedia(v *Media) *Media {
 		return nil
 	}
 	cp := *v
-	cp.Extra = cloneMap(v.Extra)
+	cp.GlowEnabled = clonePtr(v.GlowEnabled)
 	return &cp
 }
 
@@ -167,11 +182,28 @@ func cloneTextBinding(v *TextBinding) *TextBinding {
 	return &cp
 }
 
+func cloneBadges(values []Badge) []Badge {
+	if values == nil {
+		return nil
+	}
+	out := make([]Badge, len(values))
+	for i, v := range values {
+		out[i] = v
+		out[i].Marker = clonePtr(v.Marker)
+		out[i].ToneMap = cloneMap(v.ToneMap)
+		out[i].Then = cloneMap(v.Then)
+		out[i].Else = cloneMap(v.Else)
+	}
+	return out
+}
+
 func cloneStatusBinding(v *StatusBinding) *StatusBinding {
 	if v == nil {
 		return nil
 	}
 	cp := *v
+	cp.Marker = clonePtr(v.Marker)
+	cp.ToneMap = cloneMap(v.ToneMap)
 	return &cp
 }
 
@@ -196,7 +228,9 @@ func cloneFormSections(values []FormSection) []FormSection {
 		out[i] = v
 		out[i].Block = cloneBlock(v.Block)
 		out[i].Fields = cloneSlice(v.Fields)
-		out[i].Extra = cloneMap(v.Extra)
+		out[i].ListPage = cloneListPage(v.ListPage)
+		out[i].Collection = cloneMap(v.Collection)
+		out[i].Preferences = cloneMap(v.Preferences)
 	}
 	return out
 }
@@ -211,7 +245,6 @@ func cloneRecordSections(values []RecordSection) []RecordSection {
 		out[i].Block = cloneBlock(v.Block)
 		out[i].Stack = cloneStack(v.Stack)
 		out[i].Components = cloneDisplayComponents(v.Components)
-		out[i].Extra = cloneMap(v.Extra)
 	}
 	return out
 }
@@ -221,7 +254,6 @@ func cloneBlock(v *Block) *Block {
 		return nil
 	}
 	cp := *v
-	cp.Extra = cloneMap(v.Extra)
 	return &cp
 }
 
@@ -245,7 +277,6 @@ func cloneDisplayComponents(values []DisplayComponent) []DisplayComponent {
 	for i, v := range values {
 		out[i] = v
 		out[i].Block = cloneBlock(v.Block)
-		out[i].Extra = cloneMap(v.Extra)
 		if v.Visible != nil {
 			visible := *v.Visible
 			out[i].Visible = &visible
@@ -291,13 +322,12 @@ func cloneActionValue(v Action) Action {
 	v.VisibleIf = cloneCondition(v.VisibleIf)
 	v.HiddenIf = cloneCondition(v.HiddenIf)
 	v.DisabledIf = cloneCondition(v.DisabledIf)
-	v.Route = cloneRouteAction(v.Route)
+	v.Route = cloneRouteValue(v.Route)
 	v.API = cloneAPIAction(v.API)
 	v.Modal = cloneModalAction(v.Modal)
 	v.Confirm = cloneConfirm(v.Confirm)
 	v.AfterSuccess = cloneActionResult(v.AfterSuccess)
 	v.AfterError = cloneActionResult(v.AfterError)
-	v.Extra = cloneMap(v.Extra)
 	return v
 }
 
@@ -309,6 +339,27 @@ func cloneRouteAction(v *RouteAction) *RouteAction {
 	cp.Params = cloneMap(v.Params)
 	cp.Query = cloneMap(v.Query)
 	return &cp
+}
+
+func cloneRouteValue(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case string:
+		return typed
+	case *RouteAction:
+		return cloneRouteAction(typed)
+	case RouteAction:
+		cloned := cloneRouteAction(&typed)
+		if cloned == nil {
+			return nil
+		}
+		return *cloned
+	case map[string]interface{}:
+		return cloneMap(typed)
+	default:
+		return typed
+	}
 }
 
 func cloneAPIAction(v *APIAction) *APIAction {
@@ -360,8 +411,27 @@ func cloneCondition(v *Condition) *Condition {
 	cp.Falsy = clonePtr(v.Falsy)
 	cp.All = cloneConditions(v.All)
 	cp.Any = cloneConditions(v.Any)
-	cp.Not = cloneCondition(v.Not)
+	cp.Not = cloneConditionValue(v.Not)
 	return &cp
+}
+
+func cloneConditionValue(value interface{}) interface{} {
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case *Condition:
+		return cloneCondition(typed)
+	case Condition:
+		cloned := cloneCondition(&typed)
+		if cloned == nil {
+			return nil
+		}
+		return *cloned
+	case map[string]interface{}:
+		return cloneMap(typed)
+	default:
+		return typed
+	}
 }
 
 func cloneConditions(values []Condition) []Condition {
