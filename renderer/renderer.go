@@ -77,9 +77,9 @@ type Layout struct {
 	Type     LayoutType   `json:"type,omitempty"`
 	Mode     string       `json:"mode,omitempty"`
 	Slots    []string     `json:"slots,omitempty"`
-	Left     string       `json:"left,omitempty"`
-	Center   string       `json:"center,omitempty"`
-	Right    string       `json:"right,omitempty"`
+	Left     SizeToken    `json:"left,omitempty"`
+	Center   SizeToken    `json:"center,omitempty"`
+	Right    SizeToken    `json:"right,omitempty"`
 	Align    AlignToken   `json:"align,omitempty"`
 	MaxWidth MaxWidth     `json:"max_width,omitempty"`
 	Gap      SpacingToken `json:"gap,omitempty"`
