@@ -587,6 +587,19 @@ Supported `action.type`:
 
 `external: true` является legacy shorthand для action, который текущий webapp обрабатывает вне generic action executor. Для новых producer-сервисов предпочтительно использовать `type`.
 
+## Typed Renderer Tokens
+
+Producer code must build UniversalRenderer metadata with typed renderer structs and token types, not by assembling ad-hoc `map[string]interface{}` trees or stringly typed renderer fields.
+
+Core renderer package owns only stable universal values:
+
+- renderer keys: `RendererUniversalDisplay`, `RendererUniversalSection`, `RendererUniversalFilters`, `RendererUniversalPagination`, `RendererMediaGallery`, `RendererCollectionManager`;
+- record layout slots: `LayoutSlotLeft`, `LayoutSlotCenter`, `LayoutSlotRight`;
+- display component types: `DisplayMediaGallery`, `DisplayActions`, `DisplayIdentity`, `DisplayStatList`, `DisplayDataList`, `DisplayBadgeList`, `DisplayRateGroups`, `DisplayAccordionGroups`;
+- generic tokens: spacing, inset, radius, alignment, semantic tones, separator appearance.
+
+Application-specific values, especially visual color names such as `cyan`, `violet`, `magenta`, shell variants, section IDs, business IDs and translation keys, must be declared by the application as typed constants when reused. The renderer package should not try to maintain every project's color or shell catalog.
+
 ## Conditions
 
 `visible_if`, `hidden_if`, `disabled_if` и похожие condition fields используют один grammar.
