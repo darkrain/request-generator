@@ -53,7 +53,7 @@ flowchart TD
 
 ## Где Лежит Metadata
 
-UniversalRenderer читает canonical metadata только из typed top-level response fields. `extra.*` остается legacy/deprecated escape hatch для старых модулей и application-specific compatibility.
+UniversalRenderer читает canonical metadata только из typed top-level response fields. `response.extra` остается legacy/deprecated escape hatch для старых модулей и application-specific compatibility, но не является частью UniversalRenderer metadata.
 
 Каждый response с typed page metadata должен содержать renderer identity:
 
@@ -415,7 +415,9 @@ Renderer discovery происходит через `/api/config`: frontend мо�
     },
     "summary": {
       "title": "entities.summary",
-      "title_fallback": "All records"
+      "title_fallback": "All records",
+      "show_online": true,
+      "show_action": false
     },
     "grid": {
       "enabled": true,
@@ -430,6 +432,8 @@ Renderer discovery происходит через `/api/config`: frontend мо�
   }
 }
 ```
+
+`list_page.extra` не используется. Если producer-у не хватает поля для renderer metadata, поле нужно добавить в typed contract генератора и в документацию.
 
 ### Design Tokens
 
@@ -636,10 +640,15 @@ Conditions отвечают только за отображение. Любое
       "after_success": {"reload": "record"}
     },
     "card": {"type": "entity", "size": "md"},
-    "status": {"activeField": "status"}
+    "status": {"activeField": "status"},
+    "actions": {},
+    "text": {},
+    "context": {}
   }
 }
 ```
+
+`resource_grid_page.actions`, `resource_grid_page.text` и `resource_grid_page.context` предназначены для reusable resource management screens: route/action wiring, translation keys and runtime context.
 
 ## Form Page
 
@@ -678,6 +687,14 @@ Conditions отвечают только за отображение. Любое
 ```json
 {
   "record_page": {
+    "id": "profile",
+    "title": "Anna",
+    "subtitle": "@anna",
+    "show_header": false,
+    "badge": "Model",
+    "badge_tone": "glass-cyan",
+    "badge_teleport": "topbar",
+    "navigation": {"type": "none", "enabled": false},
     "layout": {"type": "three_column"},
     "sections": [
       {
@@ -685,16 +702,20 @@ Conditions отвечают только за отображение. Любое
         "renderer": "universal.display",
         "layout_slot": "center",
         "order": 10,
-        "block": {"type": "panel"},
-        "extra": {"components": []}
+        "block": {"type": "panel", "inset": "md"},
+        "stack": {"gap": "md"},
+        "components": []
       }
     ],
     "display_data": {},
     "theme": {},
-    "actions": []
+    "actions": [],
+    "context": {}
   }
 }
 ```
+
+`record_page.sections[].components` и `record_page.sections[].stack` являются canonical metadata для display renderer. Не кладите layout/display metadata в `section.extra`: такого поля нет в UniversalRenderer contract.
 
 ## View Groups
 
@@ -730,9 +751,9 @@ Stable renderer names:
 | `universal.display` | Display section metadata: `components`, `display_data`, layout fields. |
 | `universal.filters` | `filters`, `levels`, `primary`, `secondary`, `more`, `nested`, `reset`. |
 | `universal.pagination` | `mode`, pagination response fields. |
-| `universal.preferences` | `preferences` config in section `extra`. |
+| `universal.preferences` | `preferences` config directly in section. |
 | `media.gallery` | Media fields/config in section metadata. |
-| `collection.manager` | `collection` config in section `extra`. |
+| `collection.manager` | `collection` config directly in section. |
 
 Unknown renderer names must degrade to a generic block or produce a visible unsupported-renderer state. Producer services should not introduce custom renderer names unless the target frontend registers them.
 
@@ -824,9 +845,10 @@ Examples of application-specific values:
 Legacy forms:
 
 - UniversalRenderer metadata внутри `response.extra.*`, например `extra.list_page`, `extra.form_page`, `extra.record_page`, `extra.resource_grid_page`;
+- application extension fields внутри top-level page `extra` не допускаются в UniversalRenderer contract;
 - `display` как string вместо object, например `"display": "badge"`;
 - `{"path": "...", "not": true}` вместо `{"not": {"path": "...", "truthy": true}}`;
 - `external: true` action without explicit `type`;
 - application-specific route fields such as `uniqueEndpoint` and `afterRoute` in `resource_grid_page`.
 
-`extra` остается deprecated escape hatch для старых модулей и application-specific данных. Новые producer modules должны описывать UniversalRenderer metadata через typed `BaseModule.Render renderer.Universal`, а request-generator должен отдавать canonical top-level `renderer` + page metadata fields.
+`response.extra` остается deprecated escape hatch для старых модулей и application-specific данных вне UniversalRenderer. Новые producer modules должны описывать UniversalRenderer metadata через typed `BaseModule.Render renderer.Universal`, а request-generator должен отдавать canonical top-level `renderer` + page metadata fields.
