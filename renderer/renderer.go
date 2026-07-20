@@ -372,6 +372,10 @@ type Action struct {
 	VisibleIf        *Condition       `json:"visible_if,omitempty"`
 	HiddenIf         *Condition       `json:"hidden_if,omitempty"`
 	DisabledIf       *Condition       `json:"disabled_if,omitempty"`
+	Endpoint         string           `json:"endpoint,omitempty"`
+	Method           string           `json:"method,omitempty"`
+	UniqueEndpoint   string           `json:"uniqueEndpoint,omitempty"`
+	AfterRoute       interface{}      `json:"afterRoute,omitempty"`
 	Route            interface{}      `json:"route,omitempty"`
 	API              *APIAction       `json:"api,omitempty"`
 	Modal            *ModalAction     `json:"modal,omitempty"`

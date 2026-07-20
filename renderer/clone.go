@@ -322,6 +322,7 @@ func cloneActionValue(v Action) Action {
 	v.VisibleIf = cloneCondition(v.VisibleIf)
 	v.HiddenIf = cloneCondition(v.HiddenIf)
 	v.DisabledIf = cloneCondition(v.DisabledIf)
+	v.AfterRoute = cloneRouteValue(v.AfterRoute)
 	v.Route = cloneRouteValue(v.Route)
 	v.API = cloneAPIAction(v.API)
 	v.Modal = cloneModalAction(v.Modal)

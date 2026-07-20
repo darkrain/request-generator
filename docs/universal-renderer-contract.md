@@ -533,6 +533,14 @@ Actions используются в `card_schema.actions`, `record_page.actions`
   "appearance": "outline",
   "visible_if": {"path": "record.status", "equals": "active"},
   "disabled_if": {"path": "record.locked", "equals": true},
+  "endpoint": "/entities/:id/action",
+  "method": "post",
+  "uniqueEndpoint": "/entities/view/slug/:slug",
+  "afterRoute": {
+    "path": "/entities/:id",
+    "queryParam": "record",
+    "source": "id"
+  },
   "route": {
     "path": "/entities/:id",
     "params": {"id": "record.id"},
@@ -849,6 +857,5 @@ Legacy forms:
 - `display` как string вместо object, например `"display": "badge"`;
 - `{"path": "...", "not": true}` вместо `{"not": {"path": "...", "truthy": true}}`;
 - `external: true` action without explicit `type`;
-- application-specific route fields such as `uniqueEndpoint` and `afterRoute` in `resource_grid_page`.
 
 `response.extra` остается deprecated escape hatch для старых модулей и application-specific данных вне UniversalRenderer. Новые producer modules должны описывать UniversalRenderer metadata через typed `BaseModule.Render renderer.Universal`, а request-generator должен отдавать canonical top-level `renderer` + page metadata fields.
