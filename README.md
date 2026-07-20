@@ -272,9 +272,9 @@ renderer.Action{
 Render: renderer.Universal{
     ResourceGrid: &renderer.ResourceGridPage{
         Endpoint: "/catalog_items",
-        List: map[string]interface{}{
-            "size":    100,
-            "filters": map[string]interface{}{"scope": "owned"},
+        List: &renderer.ResourceGridListConfig{
+            Size:    100,
+            Filters: map[string]interface{}{"scope": "owned"},
         },
         Create: &renderer.Action{
             Type:         renderer.ActionAPI,
@@ -306,13 +306,13 @@ Render: renderer.Universal{
             BadgeSize:      renderer.SizeSM,
             ActionSize:     renderer.SizeMD,
         },
-        Status: map[string]interface{}{
-            "verifyField":         "review_status",
-            "activeField":         "status",
-            "verifiedValue":       "approved",
-            "pendingValue":        "pending",
-            "inactiveActionValue": "inactive",
-            "activeActionValue":   "active",
+        Status: &renderer.ResourceGridStatusConfig{
+            VerifyField:         "review_status",
+            ActiveField:         "status",
+            VerifiedValue:       "approved",
+            PendingValue:        "pending",
+            InactiveActionValue: "inactive",
+            ActiveActionValue:   "active",
         },
     }
 }

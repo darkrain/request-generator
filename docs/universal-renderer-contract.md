@@ -105,7 +105,7 @@ RenderFunc: func(c *gin.Context, base renderer.Universal) (renderer.Universal, e
 
 `Render` задает базовую статическую схему. `RenderFunc` является optional typed runtime override/merge и вызывается request-generator через `RenderFor(c)` перед построением `/api/config`, list, defrec и view responses. В `RenderFunc` передается deep clone базового `Render`, поэтому producer module может безопасно менять pointer structs, slices, maps и стандартные JSON-like значения внутри `interface{}` (`map[string]interface{}`, `[]interface{}`, `map[string]string`, `[]string` и т.п.) без протекания state в следующие запросы. Произвольные custom objects внутри `interface{}` не клонируются и остаются ответственностью producer module. Результат `RenderFunc` остается `renderer.Universal` и валидируется через `Validate()` уже после runtime изменений. Legacy `ExtraFunc` не должен использоваться для canonical UniversalRenderer metadata.
 
-Closed enums должны использовать typed constants из package `renderer`. `map[string]interface{}` допустим только в явно typed extension/context/payload полях (`Extra`, `Context`, `Payload`, `Query`, `Status` и т.п.), где metadata заранее является application-specific extension или transport payload.
+Closed enums должны использовать typed constants из package `renderer`. `map[string]interface{}` допустим только в явно typed runtime/transport полях (`Context`, `Payload`, `Query`, route query и т.п.), где содержимое является данными запроса или состоянием выполнения, а не схемой UI. Если producer-у нужен новый UI metadata block, он должен быть добавлен в typed renderer contract, а не передан через ad-hoc map.
 
 ### List Response
 
@@ -662,14 +662,14 @@ Conditions отвечают только за отображение. Любое
     },
     "card": {"type": "entity", "size": "md"},
     "status": {"activeField": "status"},
-    "actions": {},
-    "text": {},
+    "actions": {"editRoute": {"path": "/entities/:id"}},
+    "text": {"title": "entities.title"},
     "context": {}
   }
 }
 ```
 
-`resource_grid_page.actions`, `resource_grid_page.text` и `resource_grid_page.context` предназначены для reusable resource management screens: route/action wiring, translation keys and runtime context.
+`resource_grid_page.list`, `resource_grid_page.status`, `resource_grid_page.actions` и `resource_grid_page.text` являются typed renderer contract. `resource_grid_page.context` предназначен только для runtime state, который не описывает структуру UI.
 
 ## Form Page
 
@@ -728,8 +728,20 @@ Conditions отвечают только за отображение. Любое
         "components": []
       }
     ],
-    "display_data": {},
-    "theme": {},
+    "display_data": {
+      "gallery": {"items": [], "current": 0},
+      "hero": {"identity": {}, "stats": []},
+      "details": {"items": []}
+    },
+    "theme": {
+      "profile": {
+        "panels": {},
+        "headings": {},
+        "badges": {},
+        "buttons": {},
+        "avatar": {}
+      }
+    },
     "actions": [],
     "context": {}
   }
