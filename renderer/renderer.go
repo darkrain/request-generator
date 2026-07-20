@@ -211,9 +211,18 @@ type FormSection struct {
 }
 
 type Block struct {
-	Type    BlockType              `json:"type,omitempty"`
-	Variant BlockVariant           `json:"variant,omitempty"`
-	Extra   map[string]interface{} `json:"extra,omitempty"`
+	Type           BlockType              `json:"type,omitempty"`
+	Variant        BlockVariant           `json:"variant,omitempty"`
+	TitleDecor     string                 `json:"title_decor,omitempty"`
+	TitleBar       string                 `json:"title_bar,omitempty"`
+	TitleUnderline string                 `json:"title_underline,omitempty"`
+	Padding        string                 `json:"padding,omitempty"`
+	MaxWidth       string                 `json:"max_width,omitempty"`
+	BodyClass      string                 `json:"body_class,omitempty"`
+	BorderStyle    string                 `json:"border_style,omitempty"`
+	HoverEnabled   *bool                  `json:"hover_enabled,omitempty"`
+	Effect         string                 `json:"effect,omitempty"`
+	Extra          map[string]interface{} `json:"extra,omitempty"`
 }
 
 type RecordPage struct {
