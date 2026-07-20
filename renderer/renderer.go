@@ -235,12 +235,16 @@ type RecordPage struct {
 }
 
 type RecordSection struct {
-	ID         string                 `json:"id,omitempty"`
-	Renderer   string                 `json:"renderer,omitempty"`
-	LayoutSlot string                 `json:"layout_slot,omitempty"`
-	Order      int                    `json:"order,omitempty"`
-	Block      *Block                 `json:"block,omitempty"`
-	Extra      map[string]interface{} `json:"extra,omitempty"`
+	ID            string                 `json:"id,omitempty"`
+	Title         string                 `json:"title,omitempty"`
+	TitleFallback string                 `json:"title_fallback,omitempty"`
+	TitleLevel    int                    `json:"title_level,omitempty"`
+	TitleTone     string                 `json:"title_tone,omitempty"`
+	Renderer      string                 `json:"renderer,omitempty"`
+	LayoutSlot    string                 `json:"layout_slot,omitempty"`
+	Order         int                    `json:"order,omitempty"`
+	Block         *Block                 `json:"block,omitempty"`
+	Extra         map[string]interface{} `json:"extra,omitempty"`
 }
 
 type ResourceGridPage struct {
