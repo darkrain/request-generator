@@ -9,6 +9,7 @@ import (
 	"github.com/darkrain/request-generator"
 	"github.com/darkrain/request-generator/actions"
 	"github.com/darkrain/request-generator/icontext"
+	"github.com/darkrain/request-generator/renderer"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,6 +24,11 @@ func setupTestRouter(authMiddleware func(actions.ModuleAction) gin.HandlerFunc) 
 	testModule := &module.BaseModule{
 		Name: "users",
 		Path: "/admin",
+		Render: renderer.Universal{
+			List: &renderer.ListPage{
+				ID: "users",
+			},
+		},
 		MenuEntries: []module.MenuEntry{
 			{
 				ActionName: "list",
@@ -308,4 +314,10 @@ func TestConfigEndpoint_RoutesStructure(t *testing.T) {
 		}
 	}
 	assert.True(t, foundUsersRoute, "Should have route for /admin/users")
+
+	usersRoute := response.Routes["/admin/users"]
+	require.NotNil(t, usersRoute.Renderer, "Users route should expose renderer discovery")
+	assert.Equal(t, renderer.Name, usersRoute.Renderer.Name)
+	assert.Equal(t, renderer.Version, usersRoute.Renderer.Version)
+	assert.Equal(t, renderer.PageTypeList, usersRoute.PageType)
 }

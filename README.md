@@ -62,13 +62,16 @@ BaseModule
   ├── ListModuleAction
   │     ├── Filter/Search/Sort/SortDefault
   │     ├── Where/Permission/Auth
-  │     └── ExtraFunc -> custom list/page/table metadata
+  │     └── ExtraFunc -> legacy/dynamic app-specific metadata
   │
   ├── ViewModuleAction
   │     └── Extra -> custom view/detail metadata
   │
   ├── DefrecModuleAction
   │     └── schema for add/edit forms
+  │
+  ├── Render
+  │     └── typed UniversalRenderer page metadata
   │
   └── MenuEntries
         └── navigation/config metadata
@@ -88,7 +91,8 @@ BaseModule
 - условия видимости действий;
 - ключи переводов;
 - ключи иконок;
-- extra metadata для клиентских renderer'ов.
+- typed metadata для UniversalRenderer через `BaseModule.Render`;
+- legacy/application-specific metadata через `extra`, если typed contract еще не покрывает сценарий.
 
 Frontend должен получать готовую схему и рендерить ее своими универсальными компонентами. Frontend не должен угадывать, что поле `status` нужно показать badge, что `category_ids` является multiselect, а `owner_id` нужно скрыть от определенной роли.
 
@@ -98,9 +102,11 @@ Frontend должен получать готовую схему и рендер
 |---|---|
 | Поле формы add/edit | `ModuleField.Extra.Defrec` |
 | Поле detail/list/card view | `ModuleField.Extra.View` |
-| Полный список с фильтрами и карточками | `ListModuleAction.ExtraFunc` |
-| Рабочий grid с create/update/delete/status | `ListModuleAction.ExtraFunc` |
-| Detail/detail groups | `ViewModuleAction.Extra` |
+| Полный список с фильтрами и карточками | `BaseModule.Render.List` |
+| Универсальная form/edit page | `BaseModule.Render.Form` |
+| Страница просмотра записи | `BaseModule.Render.Record` |
+| Рабочий grid с create/update/delete/status | `BaseModule.Render.ResourceGrid` |
+| Legacy/detail groups | `ViewModuleAction.Extra` |
 | Пункты меню | `BaseModule.MenuEntries` |
 | Динамический список колонок по роли | `ColumnsFunc` или `Fields`/`RoleContext` |
 | Динамические фильтры по роли | `FilterFunc` |
@@ -162,10 +168,12 @@ Frontend должен получать готовую схему и рендер
 ```go
 Extra: &fields.FieldExtra{
     View: map[string]interface{}{
-        "display": "badge",
-        "tone":    "glass-cyan",
-        "marker":  false,
-        "option":  "status",
+        "display": map[string]interface{}{
+            "type":   "badge",
+            "tone":   "glass-cyan",
+            "marker": false,
+            "option": "status",
+        },
     },
 }
 ```
@@ -184,37 +192,36 @@ Extra: &fields.FieldExtra{
 - `date`;
 - `location`.
 
-### ExtraFunc и страницы списков
+### Typed Render и страницы списков
 
-`ExtraFunc` возвращает runtime metadata, потому что она часто зависит от роли, query, локали или текущего пользователя.
+Canonical UniversalRenderer metadata описывается через typed `BaseModule.Render`. Request-generator сам добавляет в response `renderer.name/version` и top-level page metadata: `list_page`, `form_page`, `record_page`, `resource_grid_page`.
+
+`/api/config` также получает route discovery metadata: `routes[path].renderer` и `routes[path].page_type`, поэтому frontend может выбрать renderer до загрузки данных страницы.
+
+Если page metadata зависит от роли, query или текущего пользователя, используйте typed `RenderFunc`. Он получает deep clone базового `renderer.Universal`, возвращает итоговый `renderer.Universal`, а request-generator валидирует результат перед ответом. Clone покрывает pointer structs, slices, maps и стандартные JSON-like значения внутри `interface{}` (`map[string]interface{}`, `[]interface{}`, `map[string]string`, `[]string` и т.п.); произвольные custom objects внутри `interface{}` остаются ответственностью producer module.
 
 ```go
-ExtraFunc: func(c *gin.Context) interface{} {
-    return map[string]interface{}{
-        "list_page": map[string]interface{}{
-            "title":       "catalog_items.list.title",
-            "subtitle":    "catalog_items.list.subtitle",
-            "show_header": false,
-            "filters": map[string]interface{}{
-                "primary_placement": "topbar",
-                "primary":           []string{"status", "category_id", "price"},
-                "secondary":         []string{"created_at", "owner_id"},
-                "more":              []string{"rating", "tags"},
-            },
-            "grid": map[string]interface{}{
-                "enabled": true,
-                "mode":    "cards",
-            },
-            "pagination": map[string]interface{}{
-                "renderer": "universal.pagination",
-                "mode":     "server",
-            },
-            "card_schema": cardSchema,
-            "context": map[string]interface{}{
-                "can_create_request": canCreateRequest(c),
-            },
+Render: renderer.Universal{
+    List: &renderer.ListPage{
+        Title:      "catalog_items.list.title",
+        Subtitle:   "catalog_items.list.subtitle",
+        ShowHeader: ptrBool(false),
+        Filters: &renderer.Filters{
+            PrimaryPlacement: "topbar",
+            Primary:          []string{"status", "category_id", "price"},
+            Secondary:        []string{"created_at", "owner_id"},
+            More:             []string{"rating", "tags"},
         },
-    }
+        Grid: &renderer.Grid{Enabled: true, Mode: renderer.GridModeCards},
+        Pagination: &renderer.Pagination{
+            Renderer: "universal.pagination",
+            Mode:     renderer.PaginationServer,
+        },
+        CardSchema: cardSchema,
+        Context: map[string]interface{}{
+            "can_create_request": canCreateRequest(c),
+        },
+    },
 }
 ```
 
@@ -225,17 +232,17 @@ ExtraFunc: func(c *gin.Context) interface{} {
 Действия карточек, строк и detail view описываются декларативно.
 
 ```go
-map[string]interface{}{
-    "id":         "message",
-    "icon":       "message",
-    "variant":    "success",
-    "appearance": "outline-fill",
-    "external":   true,
-    "visible_if": map[string]interface{}{
-        "all": []map[string]interface{}{
-            {"path": "relationship.allowed", "equals": true},
-            {"path": "record.status", "equals": "active"},
-            {"path": "record.owner_id", "empty": false},
+renderer.Action{
+    ID:         "message",
+    Type:       renderer.ActionEmit,
+    Icon:       "message",
+    Variant:    renderer.ActionVariantSuccess,
+    Appearance: renderer.ActionAppearanceOutline,
+    VisibleIf: &renderer.Condition{
+        All: []renderer.Condition{
+            {Path: "relationship.allowed", Equals: true},
+            {Path: "record.status", Equals: "active"},
+            {Path: "record.owner_id", NotEmpty: ptrBool(true)},
         },
     },
 }
@@ -245,52 +252,67 @@ map[string]interface{}{
 
 - `path`: путь в `record`, `relationship` или `context`;
 - `equals`: строгое равенство;
-- `not`: значение не равно и не truthy;
-- `empty`: проверка пустого значения;
+- `not_equals`: строгое неравенство;
+- `in` / `not_in`: значение входит или не входит в список;
+- `empty` / `not_empty`: проверка пустого или непустого значения;
+- `truthy` / `falsy`: проверка truthy/falsy значения;
 - `all`: все условия истинны;
 - `any`: хотя бы одно условие истинно;
-- `not`: отрицание вложенного условия, если значение является object.
+- `not`: только отрицание вложенного condition object.
 
 Важно: `visible_if` и `hidden_if` управляют только отображением. Серверное действие обязательно должно проверять доступ через `Permission`, `Where`, `BeforeAction` или `DataCheckRule`.
 
 ### Resource grid metadata
 
-Для страниц типа “управление сущностями” модуль может вернуть custom metadata, например `extra.resource_grid_page`. Название и структура этого блока являются соглашением конкретного приложения; request-generator только передает `ExtraFunc` в ответ.
+Для страниц типа “управление сущностями” модуль описывает typed `BaseModule.Render.ResourceGrid`. `ExtraFunc` и `extra.resource_grid_page` остаются legacy compatibility, но не являются canonical способом для новых модулей.
+
+Для одного list route `Render.List` и `Render.ResourceGrid` взаимоисключающие. Если нужны обе страницы, создавайте отдельный route/module; request-generator валидирует это при старте.
 
 ```go
-ExtraFunc: func(c *gin.Context) interface{} {
-    return map[string]interface{}{
-        "resource_grid_page": map[string]interface{}{
-            "endpoint": "/catalog_items",
-            "list": map[string]interface{}{
-                "size":    100,
-                "filters": map[string]interface{}{"scope": "owned"},
+Render: renderer.Universal{
+    ResourceGrid: &renderer.ResourceGridPage{
+        Endpoint: "/catalog_items",
+        List: map[string]interface{}{
+            "size":    100,
+            "filters": map[string]interface{}{"scope": "owned"},
+        },
+        Create: &renderer.Action{
+            Type:         renderer.ActionAPI,
+            API:          &renderer.APIAction{Method: "put", Endpoint: "/catalog_items"},
+            AfterSuccess: &renderer.ActionResult{Reload: "list"},
+        },
+        Delete: &renderer.Action{
+            Type: renderer.ActionAPI,
+            API: &renderer.APIAction{
+                Method:   "delete",
+                Endpoint: "/catalog_items/delete/id/:id",
+                Params:   map[string]string{"id": "record.id"},
             },
-            "create": map[string]interface{}{
-                "endpoint":       "/catalog_items",
-                "uniqueEndpoint": "/catalog_items/view/slug/:slug",
-                "afterRoute":     map[string]interface{}{"path": "/catalog/edit", "queryParam": "item", "source": "slug"},
+            Confirm:      &renderer.Confirm{Title: "ui.confirm_delete"},
+            AfterSuccess: &renderer.ActionResult{Reload: "list"},
+        },
+        Update: &renderer.Action{
+            Type: renderer.ActionAPI,
+            API: &renderer.APIAction{
+                Method:   "post",
+                Endpoint: "/catalog_items/id/:id",
+                Params:   map[string]string{"id": "record.id"},
             },
-            "delete": map[string]interface{}{"endpoint": "/catalog_items/delete/id/:id"},
-            "update": map[string]interface{}{"endpoint": "/catalog_items/id/:id", "method": "post"},
-            "card": map[string]interface{}{
-                "type":            "catalog_item",
-                "surface_variant": "default",
-                "badge_size":      "sm",
-                "action_size":     "md",
-            },
-            "status": map[string]interface{}{
-                "verifyField":         "review_status",
-                "activeField":         "status",
-                "verifiedValue":       "approved",
-                "pendingValue":        "pending",
-                "inactiveActionValue": "inactive",
-                "activeActionValue":   "active",
-            },
-            "text": map[string]interface{}{
-                "title":    "catalog_items.manage.title",
-                "subtitle": "catalog_items.manage.subtitle",
-            },
+            AfterSuccess: &renderer.ActionResult{Reload: "record"},
+        },
+        Card: &renderer.CardSchema{
+            Type:           "catalog_item",
+            SurfaceVariant: renderer.SurfaceDefault,
+            BadgeSize:      renderer.SizeSM,
+            ActionSize:     renderer.SizeMD,
+        },
+        Status: map[string]interface{}{
+            "verifyField":         "review_status",
+            "activeField":         "status",
+            "verifiedValue":       "approved",
+            "pendingValue":        "pending",
+            "inactiveActionValue": "inactive",
+            "activeActionValue":   "active",
         },
     }
 }
@@ -298,13 +320,23 @@ ExtraFunc: func(c *gin.Context) interface{} {
 
 Для такого режима обязательно добавляйте `Where`, чтобы пользователь не мог запросить чужие сущности через тот же endpoint.
 
+### Контракт универсального рендера
+
+Документация по универсальному рендеру разделена на три документа:
+
+- [docs/universal-renderer-contract.md](docs/universal-renderer-contract.md) - сама исполняемая спецификация `UniversalRenderer`.
+- [docs/specification-process.md](docs/specification-process.md) - процесс предложения, принятия, статусов и версионирования спецификаций.
+- [docs/specification-goals.md](docs/specification-goals.md) - общие цели, одинаковые для всех спецификаций.
+
+README содержит только обзор request-generator. Полная схема typed `BaseModule.Render`, `renderer`, `field.extra`, `list_page`, `resource_grid_page`, `form_page`, `record_page`, legacy `extra`, actions, conditions, filters и renderer registry описывается в спецификации.
+
 ### Правила совместимости с универсальным frontend
 
 PR в модуле считается неготовым, если:
 
 - новое поле требует `if field.key == ...` на frontend;
 - options захардкожены во frontend, хотя зависят от базы или роли;
-- `ExtraFunc` возвращает только сырые данные, а порядок/группы должен угадывать frontend;
+- UniversalRenderer metadata добавляется через legacy `ExtraFunc`, хотя уже есть typed `BaseModule.Render`;
 - действие скрывается только на frontend, но API все равно разрешает его выполнить;
 - фильтр есть в UI, но не применяется в `Filter`/`Where`;
 - переводимый текст отдается literal-строкой вместо ключа;
@@ -577,13 +609,13 @@ actions.ListModuleAction{
     Maxsize:     1000,
     Join:        []actions.ModuleActionJoin{...},
     Where:       func(c *gin.Context) pg.BoolExpression { ... },
-    ExtraFunc:   func(c *gin.Context) interface{} { ... }, // динамические extra-данные
+    ExtraFunc:   func(c *gin.Context) interface{} { ... }, // legacy/dynamic app-specific extra
 }
 ```
 
 **Обязательные поля:** `Label`, `Columns`.
 
-**`ExtraFunc`** вызывается при каждом запросе; результат включается в ответ как поле `extra`. Используется для динамических pills, счётчиков и других данных, зависящих от роли или параметров запроса:
+**`ExtraFunc`** вызывается при каждом запросе; результат включается в ответ как поле `extra`. Используется для legacy/dynamic app-specific данных, зависящих от роли или параметров запроса. UniversalRenderer page metadata для новых модулей описывайте через `BaseModule.Render`.
 
 ```go
 ExtraFunc: func(c *gin.Context) interface{} {
@@ -767,7 +799,7 @@ allModules := []*module.BaseModule{
 - Все поля формы имеют `Title` как ключ перевода.
 - Для новых UI-полей заполнен `Extra.Defrec`.
 - Для detail/list отображения заполнен `Extra.View`, если raw value неудобен.
-- `ExtraFunc` возвращает полную схему list/record/resource page, если страница должна быть универсальной.
+- UniversalRenderer page metadata описана через typed `BaseModule.Render`, а не через legacy `ExtraFunc`.
 - Действия, зависящие от состояния записи, описаны через `visible_if`/`hidden_if`.
 - Все ограничения из `visible_if` продублированы серверной проверкой.
 - Новые фильтры реально работают на сервере.

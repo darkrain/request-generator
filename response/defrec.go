@@ -2,11 +2,14 @@ package response
 
 import (
 	f "github.com/darkrain/request-generator/fields"
+	"github.com/darkrain/request-generator/renderer"
 )
 
 type DefrecResponse struct {
-	Extra  interface{}                `json:"extra,omitempty"`
-	Fields map[string]interface{} `json:"fields"`
+	Renderer *renderer.Identity     `json:"renderer,omitempty"`
+	FormPage *renderer.FormPage     `json:"form_page,omitempty"`
+	Extra    interface{}            `json:"extra,omitempty"`
+	Fields   map[string]interface{} `json:"fields"`
 }
 
 func NewDefrecResponse(extra interface{}, fields []f.ModuleField) DefrecResponse {
@@ -60,4 +63,9 @@ func NewDefrecResponse(extra interface{}, fields []f.ModuleField) DefrecResponse
 		Extra:  extra,
 		Fields: fieldsMap,
 	}
+}
+
+func (r *DefrecResponse) AttachRender(render renderer.Universal) {
+	r.Renderer = render.FormIdentity()
+	r.FormPage = render.Form
 }

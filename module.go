@@ -3,6 +3,7 @@ package module
 import (
 	"github.com/darkrain/request-generator/actions"
 	"github.com/darkrain/request-generator/fields"
+	"github.com/darkrain/request-generator/renderer"
 	"github.com/gin-gonic/gin"
 	pg "github.com/go-jet/jet/v2/postgres"
 )
@@ -20,6 +21,8 @@ type MenuEntry struct {
 	CustomData  map[string]interface{} `json:"custom_data,omitempty"`
 }
 
+type RenderFunc func(c *gin.Context, base renderer.Universal) (renderer.Universal, error)
+
 type BaseModule struct {
 	Name           string                     `json:"name"`
 	Label          string                     `json:"label"`
@@ -36,6 +39,23 @@ type BaseModule struct {
 	RoleAfterHook  []actions.RoleAfterHook    `json:"-"`
 	EntityName     string                     `json:"-"`
 	MenuEntries    []MenuEntry                `json:"menu_entries,omitempty"`
+	Render         renderer.Universal         `json:"-"`
+	RenderFunc     RenderFunc                 `json:"-"`
+}
+
+func (module *BaseModule) RenderFor(c *gin.Context) (renderer.Universal, error) {
+	render := module.Render.Clone()
+	if module.RenderFunc != nil {
+		var err error
+		render, err = module.RenderFunc(c, render)
+		if err != nil {
+			return renderer.Universal{}, err
+		}
+	}
+	if err := render.Validate(); err != nil {
+		return renderer.Universal{}, err
+	}
+	return render, nil
 }
 
 func (module BaseModule) GetEntityName() string {
