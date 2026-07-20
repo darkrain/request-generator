@@ -119,11 +119,15 @@ type ListPage struct {
 	CardSchema *CardSchema            `json:"card_schema,omitempty"`
 	Context    map[string]interface{} `json:"context,omitempty"`
 	Actions    []Action               `json:"actions,omitempty"`
+	Extra      map[string]interface{} `json:"extra,omitempty"`
 }
 
 type Summary struct {
-	Title         string `json:"title,omitempty"`
-	TitleFallback string `json:"title_fallback,omitempty"`
+	Title         string                 `json:"title,omitempty"`
+	TitleFallback string                 `json:"title_fallback,omitempty"`
+	ShowOnline    *bool                  `json:"show_online,omitempty"`
+	ShowAction    *bool                  `json:"show_action,omitempty"`
+	Extra         map[string]interface{} `json:"extra,omitempty"`
 }
 
 type CardSchema struct {
@@ -213,12 +217,21 @@ type Block struct {
 }
 
 type RecordPage struct {
-	Layout      *Layout                `json:"layout,omitempty"`
-	Sections    []RecordSection        `json:"sections,omitempty"`
-	DisplayData map[string]interface{} `json:"display_data,omitempty"`
-	Theme       map[string]interface{} `json:"theme,omitempty"`
-	Actions     []Action               `json:"actions,omitempty"`
-	Context     map[string]interface{} `json:"context,omitempty"`
+	ID            string                 `json:"id,omitempty"`
+	Title         string                 `json:"title,omitempty"`
+	Subtitle      string                 `json:"subtitle,omitempty"`
+	ShowHeader    *bool                  `json:"show_header,omitempty"`
+	Badge         string                 `json:"badge,omitempty"`
+	BadgeTone     string                 `json:"badge_tone,omitempty"`
+	BadgeTeleport string                 `json:"badge_teleport,omitempty"`
+	Navigation    map[string]interface{} `json:"navigation,omitempty"`
+	Layout        *Layout                `json:"layout,omitempty"`
+	Sections      []RecordSection        `json:"sections,omitempty"`
+	DisplayData   map[string]interface{} `json:"display_data,omitempty"`
+	Theme         map[string]interface{} `json:"theme,omitempty"`
+	Actions       []Action               `json:"actions,omitempty"`
+	Context       map[string]interface{} `json:"context,omitempty"`
+	Extra         map[string]interface{} `json:"extra,omitempty"`
 }
 
 type RecordSection struct {
@@ -238,7 +251,10 @@ type ResourceGridPage struct {
 	Update   *Action                `json:"update,omitempty"`
 	Card     *CardSchema            `json:"card,omitempty"`
 	Status   map[string]interface{} `json:"status,omitempty"`
+	Actions  map[string]interface{} `json:"actions,omitempty"`
+	Text     map[string]interface{} `json:"text,omitempty"`
 	Context  map[string]interface{} `json:"context,omitempty"`
+	Extra    map[string]interface{} `json:"extra,omitempty"`
 }
 
 type Action struct {

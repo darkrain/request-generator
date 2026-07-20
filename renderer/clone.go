@@ -23,6 +23,7 @@ func cloneListPage(v *ListPage) *ListPage {
 	cp.CardSchema = cloneCardSchema(v.CardSchema)
 	cp.Context = cloneMap(v.Context)
 	cp.Actions = cloneActions(v.Actions)
+	cp.Extra = cloneMap(v.Extra)
 	return &cp
 }
 
@@ -43,12 +44,15 @@ func cloneRecordPage(v *RecordPage) *RecordPage {
 		return nil
 	}
 	cp := *v
+	cp.ShowHeader = clonePtr(v.ShowHeader)
+	cp.Navigation = cloneMap(v.Navigation)
 	cp.Layout = cloneLayout(v.Layout)
 	cp.Sections = cloneRecordSections(v.Sections)
 	cp.DisplayData = cloneMap(v.DisplayData)
 	cp.Theme = cloneMap(v.Theme)
 	cp.Actions = cloneActions(v.Actions)
 	cp.Context = cloneMap(v.Context)
+	cp.Extra = cloneMap(v.Extra)
 	return &cp
 }
 
@@ -63,7 +67,10 @@ func cloneResourceGridPage(v *ResourceGridPage) *ResourceGridPage {
 	cp.Update = cloneAction(v.Update)
 	cp.Card = cloneCardSchema(v.Card)
 	cp.Status = cloneMap(v.Status)
+	cp.Actions = cloneMap(v.Actions)
+	cp.Text = cloneMap(v.Text)
 	cp.Context = cloneMap(v.Context)
+	cp.Extra = cloneMap(v.Extra)
 	return &cp
 }
 
@@ -119,6 +126,9 @@ func cloneSummary(v *Summary) *Summary {
 		return nil
 	}
 	cp := *v
+	cp.ShowOnline = clonePtr(v.ShowOnline)
+	cp.ShowAction = clonePtr(v.ShowAction)
+	cp.Extra = cloneMap(v.Extra)
 	return &cp
 }
 

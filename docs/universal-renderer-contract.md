@@ -415,7 +415,9 @@ Renderer discovery происходит через `/api/config`: frontend мо�
     },
     "summary": {
       "title": "entities.summary",
-      "title_fallback": "All records"
+      "title_fallback": "All records",
+      "show_online": true,
+      "show_action": false
     },
     "grid": {
       "enabled": true,
@@ -426,10 +428,13 @@ Renderer discovery происходит через `/api/config`: frontend мо�
       "mode": "server"
     },
     "card_schema": {},
-    "context": {}
+    "context": {},
+    "extra": {}
   }
 }
 ```
+
+`list_page.extra` является typed extension bag текущего page object. Producer может класть туда renderer-specific параметры, которые уже стандартизованы на уровне приложения, но еще не подняты в core Go structs. Frontend нормализует `list_page.extra` внутрь того же `list_page`; это не legacy `response.extra.list_page`.
 
 ### Design Tokens
 
@@ -636,10 +641,16 @@ Conditions отвечают только за отображение. Любое
       "after_success": {"reload": "record"}
     },
     "card": {"type": "entity", "size": "md"},
-    "status": {"activeField": "status"}
+    "status": {"activeField": "status"},
+    "actions": {},
+    "text": {},
+    "context": {},
+    "extra": {}
   }
 }
 ```
+
+`resource_grid_page.actions`, `resource_grid_page.text`, `resource_grid_page.context` и `resource_grid_page.extra` предназначены для reusable resource management screens: route/action wiring, translation keys, runtime context and renderer-specific extensions.
 
 ## Form Page
 
@@ -678,6 +689,14 @@ Conditions отвечают только за отображение. Любое
 ```json
 {
   "record_page": {
+    "id": "profile",
+    "title": "Anna",
+    "subtitle": "@anna",
+    "show_header": false,
+    "badge": "Model",
+    "badge_tone": "glass-cyan",
+    "badge_teleport": "topbar",
+    "navigation": {"type": "none", "enabled": false},
     "layout": {"type": "three_column"},
     "sections": [
       {
@@ -691,10 +710,14 @@ Conditions отвечают только за отображение. Любое
     ],
     "display_data": {},
     "theme": {},
-    "actions": []
+    "actions": [],
+    "context": {},
+    "extra": {}
   }
 }
 ```
+
+`record_page.extra` имеет ту же роль, что и `list_page.extra`: typed extension текущего page object без возврата к `response.extra.record_page`.
 
 ## View Groups
 
@@ -824,6 +847,7 @@ Examples of application-specific values:
 Legacy forms:
 
 - UniversalRenderer metadata внутри `response.extra.*`, например `extra.list_page`, `extra.form_page`, `extra.record_page`, `extra.resource_grid_page`;
+- application extension fields внутри top-level page `extra` допустимы и не считаются legacy, если они относятся к тому же page object;
 - `display` как string вместо object, например `"display": "badge"`;
 - `{"path": "...", "not": true}` вместо `{"not": {"path": "...", "truthy": true}}`;
 - `external: true` action without explicit `type`;
