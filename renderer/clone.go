@@ -79,6 +79,7 @@ func cloneLayout(v *Layout) *Layout {
 		return nil
 	}
 	cp := *v
+	cp.Slots = cloneSlice(v.Slots)
 	return &cp
 }
 
@@ -208,6 +209,8 @@ func cloneRecordSections(values []RecordSection) []RecordSection {
 	for i, v := range values {
 		out[i] = v
 		out[i].Block = cloneBlock(v.Block)
+		out[i].Stack = cloneStack(v.Stack)
+		out[i].Components = cloneDisplayComponents(v.Components)
 		out[i].Extra = cloneMap(v.Extra)
 	}
 	return out
@@ -220,6 +223,49 @@ func cloneBlock(v *Block) *Block {
 	cp := *v
 	cp.Extra = cloneMap(v.Extra)
 	return &cp
+}
+
+func cloneStack(v *Stack) *Stack {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	if v.Wrap != nil {
+		wrap := *v.Wrap
+		cp.Wrap = &wrap
+	}
+	return &cp
+}
+
+func cloneDisplayComponents(values []DisplayComponent) []DisplayComponent {
+	if values == nil {
+		return nil
+	}
+	out := make([]DisplayComponent, len(values))
+	for i, v := range values {
+		out[i] = v
+		out[i].Block = cloneBlock(v.Block)
+		out[i].Extra = cloneMap(v.Extra)
+		if v.Visible != nil {
+			visible := *v.Visible
+			out[i].Visible = &visible
+		}
+		if v.Wrap != nil {
+			wrap := *v.Wrap
+			out[i].Wrap = &wrap
+		}
+		if v.VideoControls != nil {
+			videoControls := *v.VideoControls
+			out[i].VideoControls = &videoControls
+		}
+		if v.MatrixColumns != nil {
+			out[i].MatrixColumns = make([]map[string]interface{}, len(v.MatrixColumns))
+			for j, column := range v.MatrixColumns {
+				out[i].MatrixColumns[j] = cloneMap(column)
+			}
+		}
+	}
+	return out
 }
 
 func cloneActions(values []Action) []Action {

@@ -704,8 +704,9 @@ Conditions отвечают только за отображение. Любое
         "renderer": "universal.display",
         "layout_slot": "center",
         "order": 10,
-        "block": {"type": "panel"},
-        "extra": {"components": []}
+        "block": {"type": "panel", "inset": "md"},
+        "stack": {"gap": "md"},
+        "components": []
       }
     ],
     "display_data": {},
@@ -717,7 +718,7 @@ Conditions отвечают только за отображение. Любое
 }
 ```
 
-`record_page.extra` имеет ту же роль, что и `list_page.extra`: typed extension текущего page object без возврата к `response.extra.record_page`.
+`record_page.sections[].components` и `record_page.sections[].stack` являются canonical metadata для display renderer. Не кладите layout/display metadata в `section.extra`: `extra` остается только legacy escape hatch для старых модулей и не должен использоваться новыми producer modules.
 
 ## View Groups
 

@@ -75,6 +75,11 @@ func (r Universal) Validate() error {
 
 type Layout struct {
 	Type     LayoutType   `json:"type,omitempty"`
+	Mode     string       `json:"mode,omitempty"`
+	Slots    []string     `json:"slots,omitempty"`
+	Left     string       `json:"left,omitempty"`
+	Center   string       `json:"center,omitempty"`
+	Right    string       `json:"right,omitempty"`
 	Align    AlignToken   `json:"align,omitempty"`
 	MaxWidth MaxWidth     `json:"max_width,omitempty"`
 	Gap      SpacingToken `json:"gap,omitempty"`
@@ -216,13 +221,69 @@ type Block struct {
 	TitleDecor     string                 `json:"title_decor,omitempty"`
 	TitleBar       string                 `json:"title_bar,omitempty"`
 	TitleUnderline string                 `json:"title_underline,omitempty"`
-	Padding        string                 `json:"padding,omitempty"`
+	Inset          string                 `json:"inset,omitempty"`
 	MaxWidth       string                 `json:"max_width,omitempty"`
 	BodyClass      string                 `json:"body_class,omitempty"`
 	BorderStyle    string                 `json:"border_style,omitempty"`
 	HoverEnabled   *bool                  `json:"hover_enabled,omitempty"`
 	Effect         string                 `json:"effect,omitempty"`
 	Extra          map[string]interface{} `json:"extra,omitempty"`
+}
+
+type Stack struct {
+	Gap       string `json:"gap,omitempty"`
+	Direction string `json:"direction,omitempty"`
+	Wrap      *bool  `json:"wrap,omitempty"`
+	Justify   string `json:"justify,omitempty"`
+	Align     string `json:"align,omitempty"`
+	Inset     string `json:"inset,omitempty"`
+}
+
+type DisplayComponent struct {
+	ID                  string                   `json:"id,omitempty"`
+	Type                string                   `json:"type,omitempty"`
+	Data                string                   `json:"data,omitempty"`
+	Value               interface{}              `json:"value,omitempty"`
+	Default             interface{}              `json:"default,omitempty"`
+	Visible             *bool                    `json:"visible,omitempty"`
+	ModelValue          string                   `json:"model_value,omitempty"`
+	Overlays            string                   `json:"overlays,omitempty"`
+	OverlayData         string                   `json:"overlay_data,omitempty"`
+	UpdateAction        string                   `json:"update_action,omitempty"`
+	MainRatio           string                   `json:"main_ratio,omitempty"`
+	MainRadius          string                   `json:"main_radius,omitempty"`
+	MainRadiusToken     string                   `json:"main_radius_token,omitempty"`
+	ThumbRatio          string                   `json:"thumb_ratio,omitempty"`
+	ThumbsInset         string                   `json:"thumbs_inset,omitempty"`
+	ThumbsInsetToken    string                   `json:"thumbs_inset_token,omitempty"`
+	VideoControls       *bool                    `json:"video_controls,omitempty"`
+	Size                string                   `json:"size,omitempty"`
+	Wrap                *bool                    `json:"wrap,omitempty"`
+	Gap                 string                   `json:"gap,omitempty"`
+	Direction           string                   `json:"direction,omitempty"`
+	Justify             string                   `json:"justify,omitempty"`
+	Align               string                   `json:"align,omitempty"`
+	Inset               string                   `json:"inset,omitempty"`
+	Compact             bool                     `json:"compact,omitempty"`
+	Columns             int                      `json:"columns,omitempty"`
+	ReadonlyColumns     int                      `json:"readonly_columns,omitempty"`
+	DisplayType         string                   `json:"display_type,omitempty"`
+	SeparatorVariant    string                   `json:"separator_variant,omitempty"`
+	SeparatorAppearance string                   `json:"separator_appearance,omitempty"`
+	MatrixColumns       []map[string]interface{} `json:"matrix_columns,omitempty"`
+	ValueLabel          string                   `json:"value_label,omitempty"`
+	ValueFallback       string                   `json:"value_fallback,omitempty"`
+	MatrixLabel         string                   `json:"matrix_label,omitempty"`
+	MatrixLabelIcon     string                   `json:"matrix_label_icon,omitempty"`
+	Block               *Block                   `json:"block,omitempty"`
+	Title               string                   `json:"title,omitempty"`
+	TitleFallback       string                   `json:"title_fallback,omitempty"`
+	Subtitle            string                   `json:"subtitle,omitempty"`
+	SubtitleFallback    string                   `json:"subtitle_fallback,omitempty"`
+	TitleLevel          int                      `json:"title_level,omitempty"`
+	TitleTone           string                   `json:"title_tone,omitempty"`
+	BodyClass           string                   `json:"body_class,omitempty"`
+	Extra               map[string]interface{}   `json:"extra,omitempty"`
 }
 
 type RecordPage struct {
@@ -253,6 +314,8 @@ type RecordSection struct {
 	LayoutSlot    string                 `json:"layout_slot,omitempty"`
 	Order         int                    `json:"order,omitempty"`
 	Block         *Block                 `json:"block,omitempty"`
+	Stack         *Stack                 `json:"stack,omitempty"`
+	Components    []DisplayComponent     `json:"components,omitempty"`
 	Extra         map[string]interface{} `json:"extra,omitempty"`
 }
 
