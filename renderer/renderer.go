@@ -491,7 +491,6 @@ type RecordDisplayData struct {
 	Meetings *DisplayMeetings `json:"meetings,omitempty"`
 	Rates    *DisplayRates    `json:"rates,omitempty"`
 	Services *DisplayServices `json:"services,omitempty"`
-	Tours    *DisplayTours    `json:"tours,omitempty"`
 	Contacts *DisplayContacts `json:"contacts,omitempty"`
 }
 
@@ -631,21 +630,6 @@ type ServiceItem struct {
 	Label    string      `json:"label,omitempty"`
 	LabelKey string      `json:"label_key,omitempty"`
 	Price    string      `json:"price,omitempty"`
-}
-
-type DisplayTours struct {
-	Cards          []TourCard     `json:"cards,omitempty"`
-	Empty          string         `json:"empty,omitempty"`
-	MakeTourButton *DisplayAction `json:"makeTourButton,omitempty"`
-}
-
-type TourCard struct {
-	ID       interface{}     `json:"id,omitempty"`
-	Title    string          `json:"title,omitempty"`
-	Subtitle string          `json:"subtitle,omitempty"`
-	Block    *Block          `json:"block,omitempty"`
-	Badges   []DisplayBadge  `json:"badges,omitempty"`
-	Actions  []DisplayAction `json:"actions,omitempty"`
 }
 
 type DisplayContacts struct {

@@ -382,15 +382,6 @@ func cloneRecordDisplayData(v *RecordDisplayData) *RecordDisplayData {
 		services.Groups = cloneSlice(v.Services.Groups)
 		cp.Services = &services
 	}
-	if v.Tours != nil {
-		tours := *v.Tours
-		tours.Cards = cloneSlice(v.Tours.Cards)
-		if v.Tours.MakeTourButton != nil {
-			button := *v.Tours.MakeTourButton
-			tours.MakeTourButton = &button
-		}
-		cp.Tours = &tours
-	}
 	if v.Contacts != nil {
 		contacts := *v.Contacts
 		contacts.Items = cloneSlice(v.Contacts.Items)
