@@ -77,28 +77,36 @@ type Layout struct {
 	Type     LayoutType   `json:"type,omitempty"`
 	Mode     string       `json:"mode,omitempty"`
 	Slots    []string     `json:"slots,omitempty"`
-	Left     string       `json:"left,omitempty"`
-	Center   string       `json:"center,omitempty"`
-	Right    string       `json:"right,omitempty"`
+	Left     SizeToken    `json:"left,omitempty"`
+	Center   SizeToken    `json:"center,omitempty"`
+	Right    SizeToken    `json:"right,omitempty"`
 	Align    AlignToken   `json:"align,omitempty"`
 	MaxWidth MaxWidth     `json:"max_width,omitempty"`
 	Gap      SpacingToken `json:"gap,omitempty"`
 }
 
 type Filters struct {
-	Renderer          string                     `json:"renderer,omitempty"`
-	Enabled           bool                       `json:"enabled"`
-	PrimaryPlacement  string                     `json:"primary_placement,omitempty"`
-	SecondaryEnabled  *bool                      `json:"secondary_enabled,omitempty"`
-	ResetPlacement    string                     `json:"reset_placement,omitempty"`
-	Levels            []string                   `json:"levels,omitempty"`
-	Primary           []string                   `json:"primary,omitempty"`
-	Secondary         []string                   `json:"secondary,omitempty"`
-	More              []string                   `json:"more,omitempty"`
-	Nested            []string                   `json:"nested,omitempty"`
-	PillRows          [][]map[string]interface{} `json:"pill_rows,omitempty"`
-	SecondaryPillRows [][]map[string]interface{} `json:"secondary_pill_rows,omitempty"`
-	Reset             *FilterReset               `json:"reset,omitempty"`
+	Renderer          RendererKey    `json:"renderer,omitempty"`
+	Enabled           bool           `json:"enabled"`
+	PrimaryPlacement  string         `json:"primary_placement,omitempty"`
+	SecondaryEnabled  *bool          `json:"secondary_enabled,omitempty"`
+	ResetPlacement    string         `json:"reset_placement,omitempty"`
+	Levels            []string       `json:"levels,omitempty"`
+	Primary           []string       `json:"primary,omitempty"`
+	Secondary         []string       `json:"secondary,omitempty"`
+	More              []string       `json:"more,omitempty"`
+	Nested            []string       `json:"nested,omitempty"`
+	PillRows          [][]FilterPill `json:"pill_rows,omitempty"`
+	SecondaryPillRows [][]FilterPill `json:"secondary_pill_rows,omitempty"`
+	Reset             *FilterReset   `json:"reset,omitempty"`
+}
+
+type FilterPill struct {
+	Label    string `json:"label,omitempty"`
+	LabelKey string `json:"label_key,omitempty"`
+	Key      string `json:"key,omitempty"`
+	Val      string `json:"val,omitempty"`
+	Dot      bool   `json:"dot,omitempty"`
 }
 
 type FilterReset struct {
@@ -111,7 +119,7 @@ type Grid struct {
 }
 
 type Pagination struct {
-	Renderer string         `json:"renderer,omitempty"`
+	Renderer RendererKey    `json:"renderer,omitempty"`
 	Mode     PaginationMode `json:"mode,omitempty"`
 }
 
@@ -159,16 +167,16 @@ type CardSchema struct {
 }
 
 type Media struct {
-	Field        string     `json:"field,omitempty"`
-	Renderer     string     `json:"renderer,omitempty"`
-	Ratio        MediaRatio `json:"ratio,omitempty"`
-	Size         MediaSize  `json:"size,omitempty"`
-	Variant      string     `json:"variant,omitempty"`
-	GlowField    string     `json:"glow_field,omitempty"`
-	GlowFallback string     `json:"glow_fallback,omitempty"`
-	GlowEnabled  *bool      `json:"glow_enabled,omitempty"`
-	StatusField  string     `json:"status_field,omitempty"`
-	Fallback     string     `json:"fallback,omitempty"`
+	Field        string      `json:"field,omitempty"`
+	Renderer     RendererKey `json:"renderer,omitempty"`
+	Ratio        MediaRatio  `json:"ratio,omitempty"`
+	Size         MediaSize   `json:"size,omitempty"`
+	Variant      string      `json:"variant,omitempty"`
+	GlowField    string      `json:"glow_field,omitempty"`
+	GlowFallback string      `json:"glow_fallback,omitempty"`
+	GlowEnabled  *bool       `json:"glow_enabled,omitempty"`
+	StatusField  string      `json:"status_field,omitempty"`
+	Fallback     string      `json:"fallback,omitempty"`
 }
 
 type TextBinding struct {
@@ -188,19 +196,27 @@ type StatusBinding struct {
 }
 
 type Badge struct {
-	ID        string                 `json:"id,omitempty"`
-	Type      string                 `json:"type,omitempty"`
-	Field     string                 `json:"field,omitempty"`
-	IfField   string                 `json:"if_field,omitempty"`
-	Option    string                 `json:"option,omitempty"`
-	Placement string                 `json:"placement,omitempty"`
-	Label     string                 `json:"label,omitempty"`
-	LabelKey  string                 `json:"label_key,omitempty"`
-	Tone      string                 `json:"tone,omitempty"`
-	ToneMap   map[string]string      `json:"tone_map,omitempty"`
-	Marker    *bool                  `json:"marker,omitempty"`
-	Then      map[string]interface{} `json:"then,omitempty"`
-	Else      map[string]interface{} `json:"else,omitempty"`
+	ID        string            `json:"id,omitempty"`
+	Type      string            `json:"type,omitempty"`
+	Field     string            `json:"field,omitempty"`
+	IfField   string            `json:"if_field,omitempty"`
+	Option    string            `json:"option,omitempty"`
+	Placement string            `json:"placement,omitempty"`
+	Label     string            `json:"label,omitempty"`
+	LabelKey  string            `json:"label_key,omitempty"`
+	Tone      string            `json:"tone,omitempty"`
+	ToneMap   map[string]string `json:"tone_map,omitempty"`
+	Marker    *bool             `json:"marker,omitempty"`
+	Then      *BadgeState       `json:"then,omitempty"`
+	Else      *BadgeState       `json:"else,omitempty"`
+}
+
+type BadgeState struct {
+	ID       string `json:"id,omitempty"`
+	Label    string `json:"label,omitempty"`
+	LabelKey string `json:"label_key,omitempty"`
+	Tone     string `json:"tone,omitempty"`
+	Marker   *bool  `json:"marker,omitempty"`
 }
 
 type Stat struct {
@@ -227,77 +243,157 @@ type FormPage struct {
 }
 
 type FormSection struct {
-	ID          string                 `json:"id,omitempty"`
-	Title       string                 `json:"title,omitempty"`
-	PanelTitle  string                 `json:"panel_title,omitempty"`
-	Subtitle    string                 `json:"subtitle,omitempty"`
-	Renderer    string                 `json:"renderer,omitempty"`
-	Group       string                 `json:"group,omitempty"`
-	GroupTitle  string                 `json:"group_title,omitempty"`
-	Icon        string                 `json:"icon,omitempty"`
-	Action      string                 `json:"action,omitempty"`
-	Mode        string                 `json:"mode,omitempty"`
-	Block       *Block                 `json:"block,omitempty"`
-	Fields      []string               `json:"fields,omitempty"`
-	ListPage    *ListPage              `json:"list_page,omitempty"`
-	Collection  map[string]interface{} `json:"collection,omitempty"`
-	Preferences map[string]interface{} `json:"preferences,omitempty"`
+	ID          string             `json:"id,omitempty"`
+	Title       string             `json:"title,omitempty"`
+	PanelTitle  string             `json:"panel_title,omitempty"`
+	Subtitle    string             `json:"subtitle,omitempty"`
+	Renderer    RendererKey        `json:"renderer,omitempty"`
+	Group       string             `json:"group,omitempty"`
+	GroupTitle  string             `json:"group_title,omitempty"`
+	Icon        string             `json:"icon,omitempty"`
+	Action      string             `json:"action,omitempty"`
+	Mode        string             `json:"mode,omitempty"`
+	Block       *Block             `json:"block,omitempty"`
+	Fields      []string           `json:"fields,omitempty"`
+	ListPage    *ListPage          `json:"list_page,omitempty"`
+	Collection  *CollectionConfig  `json:"collection,omitempty"`
+	Preferences *PreferencesConfig `json:"preferences,omitempty"`
+}
+
+type CollectionConfig struct {
+	Resource       string             `json:"resource,omitempty"`
+	ListEndpoint   string             `json:"list_endpoint,omitempty"`
+	DefrecEndpoint string             `json:"defrec_endpoint,omitempty"`
+	ProfileField   string             `json:"profile_field,omitempty"`
+	ValueField     string             `json:"value_field,omitempty"`
+	PriceField     string             `json:"price_field,omitempty"`
+	PricePrefix    string             `json:"price_prefix,omitempty"`
+	Size           int                `json:"size,omitempty"`
+	LoadingLabel   string             `json:"loading_label,omitempty"`
+	Collections    []CollectionBucket `json:"collections,omitempty"`
+	Modal          *CollectionModal   `json:"modal,omitempty"`
+}
+
+type CollectionBucket struct {
+	ID            string                  `json:"id,omitempty"`
+	Title         string                  `json:"title,omitempty"`
+	CountLabel    string                  `json:"count_label,omitempty"`
+	AddLabel      string                  `json:"add_label,omitempty"`
+	ClearLabel    string                  `json:"clear_label,omitempty"`
+	ModalTitle    string                  `json:"modal_title,omitempty"`
+	ModalSubtitle string                  `json:"modal_subtitle,omitempty"`
+	ConfirmLabel  string                  `json:"confirm_label,omitempty"`
+	Tone          string                  `json:"tone,omitempty"`
+	PriceEnabled  bool                    `json:"price_enabled"`
+	DefaultPrice  int                     `json:"default_price"`
+	PricePrefix   string                  `json:"price_prefix,omitempty"`
+	EditFields    []CollectionEditField   `json:"edit_fields,omitempty"`
+	Filter        *CollectionBucketFilter `json:"filter,omitempty"`
+}
+
+type CollectionEditField struct {
+	ID      string `json:"id,omitempty"`
+	Type    string `json:"type,omitempty"`
+	Variant string `json:"variant,omitempty"`
+	Prefix  string `json:"prefix,omitempty"`
+	Min     int    `json:"min"`
+}
+
+type CollectionBucketFilter struct {
+	Price string `json:"price,omitempty"`
+}
+
+type CollectionModal struct {
+	Icon                string `json:"icon,omitempty"`
+	Search              bool   `json:"search"`
+	SearchPlaceholder   string `json:"search_placeholder,omitempty"`
+	EmptyLabel          string `json:"empty_label,omitempty"`
+	SelectedLabel       string `json:"selected_label,omitempty"`
+	TakenLabel          string `json:"taken_label,omitempty"`
+	CancelLabel         string `json:"cancel_label,omitempty"`
+	ConfirmLoadingLabel string `json:"confirm_loading_label,omitempty"`
+}
+
+type PreferencesConfig struct {
+	Resource          string                        `json:"resource,omitempty"`
+	ListEndpoint      string                        `json:"list_endpoint,omitempty"`
+	SaveEndpoint      string                        `json:"save_endpoint,omitempty"`
+	Channels          []string                      `json:"channels,omitempty"`
+	Blocks            []PreferencesBlock            `json:"blocks,omitempty"`
+	ConnectionPrompts []PreferencesConnectionPrompt `json:"connection_prompts,omitempty"`
+}
+
+type PreferencesBlock struct {
+	ID       string `json:"id,omitempty"`
+	Title    string `json:"title,omitempty"`
+	Subtitle string `json:"subtitle,omitempty"`
+}
+
+type PreferencesConnectionPrompt struct {
+	ID               string           `json:"id,omitempty"`
+	Channel          string           `json:"channel,omitempty"`
+	Icon             string           `json:"icon,omitempty"`
+	Tone             string           `json:"tone,omitempty"`
+	Text             string           `json:"text,omitempty"`
+	ActionLabel      string           `json:"action_label,omitempty"`
+	ActionVariant    ActionVariant    `json:"action_variant,omitempty"`
+	ActionAppearance ActionAppearance `json:"action_appearance,omitempty"`
 }
 
 type Block struct {
-	Type           BlockType    `json:"type,omitempty"`
-	Variant        BlockVariant `json:"variant,omitempty"`
-	TitleDecor     string       `json:"title_decor,omitempty"`
-	TitleBar       string       `json:"title_bar,omitempty"`
-	TitleUnderline string       `json:"title_underline,omitempty"`
-	Inset          string       `json:"inset,omitempty"`
-	MaxWidth       string       `json:"max_width,omitempty"`
-	BodyClass      string       `json:"body_class,omitempty"`
-	BorderStyle    string       `json:"border_style,omitempty"`
-	HoverEnabled   *bool        `json:"hover_enabled,omitempty"`
-	Effect         string       `json:"effect,omitempty"`
+	Type           BlockType       `json:"type,omitempty"`
+	Variant        BlockVariant    `json:"variant,omitempty"`
+	TitleDecor     TitleDecorToken `json:"title_decor,omitempty"`
+	TitleBar       ToneToken       `json:"title_bar,omitempty"`
+	TitleUnderline ToneToken       `json:"title_underline,omitempty"`
+	Inset          InsetToken      `json:"inset,omitempty"`
+	MaxWidth       string          `json:"max_width,omitempty"`
+	BodyClass      string          `json:"body_class,omitempty"`
+	BorderStyle    string          `json:"border_style,omitempty"`
+	HoverEnabled   *bool           `json:"hover_enabled,omitempty"`
+	Effect         string          `json:"effect,omitempty"`
 }
 
 type Stack struct {
-	Gap       string `json:"gap,omitempty"`
-	Direction string `json:"direction,omitempty"`
-	Wrap      *bool  `json:"wrap,omitempty"`
-	Justify   string `json:"justify,omitempty"`
-	Align     string `json:"align,omitempty"`
-	Inset     string `json:"inset,omitempty"`
+	Gap       SpacingToken   `json:"gap,omitempty"`
+	Direction DirectionToken `json:"direction,omitempty"`
+	Wrap      *bool          `json:"wrap,omitempty"`
+	Justify   JustifyToken   `json:"justify,omitempty"`
+	Align     AlignToken     `json:"align,omitempty"`
+	Inset     InsetToken     `json:"inset,omitempty"`
 }
 
 type DisplayComponent struct {
 	ID                  string                   `json:"id,omitempty"`
-	Type                string                   `json:"type,omitempty"`
-	Data                string                   `json:"data,omitempty"`
+	Type                DisplayComponentType     `json:"type,omitempty"`
+	Data                DataPath                 `json:"data,omitempty"`
 	Value               interface{}              `json:"value,omitempty"`
 	Default             interface{}              `json:"default,omitempty"`
 	Visible             *bool                    `json:"visible,omitempty"`
-	ModelValue          string                   `json:"model_value,omitempty"`
-	Overlays            string                   `json:"overlays,omitempty"`
-	OverlayData         string                   `json:"overlay_data,omitempty"`
-	UpdateAction        string                   `json:"update_action,omitempty"`
-	MainRatio           string                   `json:"main_ratio,omitempty"`
-	MainRadius          string                   `json:"main_radius,omitempty"`
-	MainRadiusToken     string                   `json:"main_radius_token,omitempty"`
-	ThumbRatio          string                   `json:"thumb_ratio,omitempty"`
-	ThumbsInset         string                   `json:"thumbs_inset,omitempty"`
-	ThumbsInsetToken    string                   `json:"thumbs_inset_token,omitempty"`
+	ModelValue          DataPath                 `json:"model_value,omitempty"`
+	Overlays            DataPath                 `json:"overlays,omitempty"`
+	OverlayData         DataPath                 `json:"overlay_data,omitempty"`
+	UpdateAction        ComponentAction          `json:"update_action,omitempty"`
+	MainRatio           ComponentRatio           `json:"main_ratio,omitempty"`
+	MainRadius          ComponentRadiusToken     `json:"main_radius,omitempty"`
+	MainRadiusToken     ComponentRadiusToken     `json:"main_radius_token,omitempty"`
+	ThumbRatio          ComponentRatio           `json:"thumb_ratio,omitempty"`
+	ThumbsInset         InsetToken               `json:"thumbs_inset,omitempty"`
+	ThumbsInsetToken    SpacingToken             `json:"thumbs_inset_token,omitempty"`
 	VideoControls       *bool                    `json:"video_controls,omitempty"`
-	Size                string                   `json:"size,omitempty"`
+	Size                SizeToken                `json:"size,omitempty"`
 	Wrap                *bool                    `json:"wrap,omitempty"`
-	Gap                 string                   `json:"gap,omitempty"`
-	Direction           string                   `json:"direction,omitempty"`
-	Justify             string                   `json:"justify,omitempty"`
-	Align               string                   `json:"align,omitempty"`
-	Inset               string                   `json:"inset,omitempty"`
+	Gap                 SpacingToken             `json:"gap,omitempty"`
+	Direction           DirectionToken           `json:"direction,omitempty"`
+	Justify             JustifyToken             `json:"justify,omitempty"`
+	Align               AlignToken               `json:"align,omitempty"`
+	Inset               InsetToken               `json:"inset,omitempty"`
 	Compact             bool                     `json:"compact,omitempty"`
 	Columns             int                      `json:"columns,omitempty"`
 	ReadonlyColumns     int                      `json:"readonly_columns,omitempty"`
-	DisplayType         string                   `json:"display_type,omitempty"`
-	SeparatorVariant    string                   `json:"separator_variant,omitempty"`
-	SeparatorAppearance string                   `json:"separator_appearance,omitempty"`
+	DisplayType         ComponentDisplayType     `json:"display_type,omitempty"`
+	SeparatorVariant    ToneToken                `json:"separator_variant,omitempty"`
+	SeparatorAppearance SeparatorAppearance      `json:"separator_appearance,omitempty"`
 	MatrixColumns       []map[string]interface{} `json:"matrix_columns,omitempty"`
 	ValueLabel          string                   `json:"value_label,omitempty"`
 	ValueFallback       string                   `json:"value_fallback,omitempty"`
@@ -309,7 +405,7 @@ type DisplayComponent struct {
 	Subtitle            string                   `json:"subtitle,omitempty"`
 	SubtitleFallback    string                   `json:"subtitle_fallback,omitempty"`
 	TitleLevel          int                      `json:"title_level,omitempty"`
-	TitleTone           string                   `json:"title_tone,omitempty"`
+	TitleTone           ToneToken                `json:"title_tone,omitempty"`
 	BodyClass           string                   `json:"body_class,omitempty"`
 }
 
@@ -321,40 +417,292 @@ type RecordPage struct {
 	Badge         string                 `json:"badge,omitempty"`
 	BadgeTone     string                 `json:"badge_tone,omitempty"`
 	BadgeTeleport string                 `json:"badge_teleport,omitempty"`
-	Navigation    map[string]interface{} `json:"navigation,omitempty"`
+	Navigation    *RecordNavigation      `json:"navigation,omitempty"`
 	Layout        *Layout                `json:"layout,omitempty"`
 	Sections      []RecordSection        `json:"sections,omitempty"`
-	DisplayData   map[string]interface{} `json:"display_data,omitempty"`
-	Theme         map[string]interface{} `json:"theme,omitempty"`
+	DisplayData   *RecordDisplayData     `json:"display_data,omitempty"`
+	Theme         *RecordTheme           `json:"theme,omitempty"`
 	Actions       []Action               `json:"actions,omitempty"`
 	Context       map[string]interface{} `json:"context,omitempty"`
 }
 
+type RecordNavigation struct {
+	Type    string `json:"type,omitempty"`
+	Enabled bool   `json:"enabled"`
+}
+
+type RecordTheme struct {
+	Profile *ProfileRecordTheme `json:"profile,omitempty"`
+}
+
+type ProfileRecordTheme struct {
+	Panels   ProfilePanelTheme   `json:"panels,omitempty"`
+	Headings ProfileHeadingTheme `json:"headings,omitempty"`
+	Badges   ProfileBadgeTheme   `json:"badges,omitempty"`
+	Buttons  ProfileButtonTheme  `json:"buttons,omitempty"`
+	Avatar   ProfileAvatarTheme  `json:"avatar,omitempty"`
+}
+
+type ProfilePanelTheme struct {
+	DefaultVariant string `json:"default_variant,omitempty"`
+	GalleryVariant string `json:"gallery_variant,omitempty"`
+	HeroVariant    string `json:"hero_variant,omitempty"`
+	NestedVariant  string `json:"nested_variant,omitempty"`
+}
+
+type ProfileHeadingTheme struct {
+	TitleDecor     TitleDecorToken `json:"title_decor,omitempty"`
+	TitleBar       ToneToken       `json:"title_bar,omitempty"`
+	TitleUnderline ToneToken       `json:"title_underline,omitempty"`
+}
+
+type ProfileBadgeTheme struct {
+	VerifiedTone  string `json:"verified_tone,omitempty"`
+	RoleTone      string `json:"role_tone,omitempty"`
+	StatusOnline  string `json:"status_online,omitempty"`
+	StatusOffline string `json:"status_offline,omitempty"`
+	LanguageTone  string `json:"language_tone,omitempty"`
+	WorkIncall    string `json:"work_incall,omitempty"`
+	WorkOutcall   string `json:"work_outcall,omitempty"`
+	TourStatus    string `json:"tour_status,omitempty"`
+}
+
+type ProfileButtonTheme struct {
+	DefaultVariant      ActionVariant    `json:"default_variant,omitempty"`
+	DefaultAppearance   ActionAppearance `json:"default_appearance,omitempty"`
+	SecondaryVariant    ActionVariant    `json:"secondary_variant,omitempty"`
+	SecondaryAppearance ActionAppearance `json:"secondary_appearance,omitempty"`
+	PrimaryVariant      ActionVariant    `json:"primary_variant,omitempty"`
+	PrimaryAppearance   ActionAppearance `json:"primary_appearance,omitempty"`
+	WarningVariant      ActionVariant    `json:"warning_variant,omitempty"`
+	MutedVariant        ActionVariant    `json:"muted_variant,omitempty"`
+	LightVariant        ActionVariant    `json:"light_variant,omitempty"`
+}
+
+type ProfileAvatarTheme struct {
+	Glow string `json:"glow,omitempty"`
+}
+
+type RecordDisplayData struct {
+	Gallery  *DisplayGallery  `json:"gallery,omitempty"`
+	Hero     *DisplayHero     `json:"hero,omitempty"`
+	Details  *DisplayDetails  `json:"details,omitempty"`
+	About    *DisplayAbout    `json:"about,omitempty"`
+	Meetings *DisplayMeetings `json:"meetings,omitempty"`
+	Rates    *DisplayRates    `json:"rates,omitempty"`
+	Services *DisplayServices `json:"services,omitempty"`
+	Contacts *DisplayContacts `json:"contacts,omitempty"`
+}
+
+type DisplayGallery struct {
+	Items    []MediaItem     `json:"items,omitempty"`
+	Current  int             `json:"current"`
+	Actions  []DisplayAction `json:"actions,omitempty"`
+	Overlays []OverlayGroup  `json:"overlays,omitempty"`
+}
+
+type MediaItem struct {
+	ID        interface{} `json:"id,omitempty"`
+	Kind      string      `json:"kind,omitempty"`
+	Src       string      `json:"src,omitempty"`
+	Thumbnail string      `json:"thumbnail,omitempty"`
+	Title     string      `json:"title,omitempty"`
+	Alt       string      `json:"alt,omitempty"`
+}
+
+type OverlayGroup struct {
+	ID       string         `json:"id,omitempty"`
+	Position string         `json:"position,omitempty"`
+	Items    []DisplayBadge `json:"items,omitempty"`
+}
+
+type DisplayHero struct {
+	Identity *HeroIdentity `json:"identity,omitempty"`
+	Stats    []DisplayStat `json:"stats,omitempty"`
+}
+
+type HeroIdentity struct {
+	Avatar       *HeroAvatar    `json:"avatar,omitempty"`
+	Name         string         `json:"name,omitempty"`
+	Handle       string         `json:"handle,omitempty"`
+	CornerBadges []DisplayBadge `json:"cornerBadges,omitempty"`
+	Location     *LocationValue `json:"location,omitempty"`
+	StatusText   string         `json:"statusText,omitempty"`
+}
+
+type HeroAvatar struct {
+	Src  string `json:"src,omitempty"`
+	Name string `json:"name,omitempty"`
+	Size string `json:"size,omitempty"`
+	Glow string `json:"glow,omitempty"`
+}
+
+type LocationValue struct {
+	Country string `json:"country,omitempty"`
+	City    string `json:"city,omitempty"`
+}
+
+type DisplayStat struct {
+	ID       string      `json:"id,omitempty"`
+	Icon     string      `json:"icon,omitempty"`
+	Value    interface{} `json:"value,omitempty"`
+	Label    string      `json:"label,omitempty"`
+	LabelKey string      `json:"label_key,omitempty"`
+}
+
+type DisplayDetails struct {
+	Items      []DetailItem      `json:"items,omitempty"`
+	Commercial []CommercialGroup `json:"commercial,omitempty"`
+}
+
+type DetailItem struct {
+	ID        string      `json:"id,omitempty"`
+	Label     string      `json:"label,omitempty"`
+	LabelKey  string      `json:"label_key,omitempty"`
+	Fallback  string      `json:"fallback,omitempty"`
+	Value     interface{} `json:"value,omitempty"`
+	ValueKey  string      `json:"value_key,omitempty"`
+	ValueType string      `json:"value_type,omitempty"`
+	Span      string      `json:"span,omitempty"`
+}
+
+type CommercialGroup struct {
+	ID       string         `json:"id,omitempty"`
+	Label    string         `json:"label,omitempty"`
+	LabelKey string         `json:"label_key,omitempty"`
+	Items    []DisplayBadge `json:"items,omitempty"`
+}
+
+type DisplayAbout struct {
+	Description string `json:"description,omitempty"`
+}
+
+type DisplayMeetings struct {
+	Items      []DisplayBadge `json:"items,omitempty"`
+	Commission []DisplayBadge `json:"commission,omitempty"`
+	WorkArea   []DisplayBadge `json:"workArea,omitempty"`
+	Payments   []DisplayBadge `json:"payments,omitempty"`
+}
+
+type DisplayRates struct {
+	Items  []RateItem  `json:"items,omitempty"`
+	Groups []RateGroup `json:"groups,omitempty"`
+}
+
+type RateGroup struct {
+	ID       string     `json:"id,omitempty"`
+	Label    string     `json:"label,omitempty"`
+	LabelKey string     `json:"label_key,omitempty"`
+	Tone     ToneToken  `json:"tone,omitempty"`
+	Items    []RateItem `json:"items,omitempty"`
+}
+
+type RateItem struct {
+	ID            string `json:"id,omitempty"`
+	Label         string `json:"label,omitempty"`
+	LabelKey      string `json:"label_key,omitempty"`
+	DurationCount int    `json:"duration_count,omitempty"`
+	DurationUnit  string `json:"duration_unit,omitempty"`
+	Value         string `json:"value,omitempty"`
+	Featured      bool   `json:"featured,omitempty"`
+}
+
+type DisplayServices struct {
+	Included []ServiceItem  `json:"included,omitempty"`
+	Extra    []ServiceItem  `json:"extra,omitempty"`
+	Groups   []ServiceGroup `json:"groups,omitempty"`
+}
+
+type ServiceGroup struct {
+	ID         string        `json:"id,omitempty"`
+	Label      string        `json:"label,omitempty"`
+	LabelKey   string        `json:"label_key,omitempty"`
+	Count      int           `json:"count"`
+	CountKey   string        `json:"count_key,omitempty"`
+	CountLabel string        `json:"count_label,omitempty"`
+	Tone       string        `json:"tone,omitempty"`
+	Open       bool          `json:"open"`
+	Items      []ServiceItem `json:"items,omitempty"`
+}
+
+type ServiceItem struct {
+	ID       interface{} `json:"id,omitempty"`
+	Label    string      `json:"label,omitempty"`
+	LabelKey string      `json:"label_key,omitempty"`
+	Price    string      `json:"price,omitempty"`
+}
+
+type DisplayContacts struct {
+	Items []DetailItem `json:"items,omitempty"`
+}
+
+type DisplayBadge struct {
+	ID       string            `json:"id,omitempty"`
+	Label    string            `json:"label,omitempty"`
+	LabelKey string            `json:"label_key,omitempty"`
+	Tone     string            `json:"tone,omitempty"`
+	Marker   *bool             `json:"marker,omitempty"`
+	Icon     string            `json:"icon,omitempty"`
+	Style    map[string]string `json:"style,omitempty"`
+}
+
+type DisplayAction struct {
+	ID         string           `json:"id,omitempty"`
+	Label      string           `json:"label,omitempty"`
+	LabelKey   string           `json:"label_key,omitempty"`
+	Variant    ActionVariant    `json:"variant,omitempty"`
+	Appearance ActionAppearance `json:"appearance,omitempty"`
+	Icon       string           `json:"icon,omitempty"`
+	Block      bool             `json:"block,omitempty"`
+	Route      interface{}      `json:"route,omitempty"`
+}
+
 type RecordSection struct {
-	ID            string             `json:"id,omitempty"`
-	Title         string             `json:"title,omitempty"`
-	TitleFallback string             `json:"title_fallback,omitempty"`
-	TitleLevel    int                `json:"title_level,omitempty"`
-	TitleTone     string             `json:"title_tone,omitempty"`
-	Renderer      string             `json:"renderer,omitempty"`
-	LayoutSlot    string             `json:"layout_slot,omitempty"`
-	Order         int                `json:"order,omitempty"`
-	Block         *Block             `json:"block,omitempty"`
-	Stack         *Stack             `json:"stack,omitempty"`
-	Components    []DisplayComponent `json:"components,omitempty"`
+	ID            string                `json:"id,omitempty"`
+	Title         string                `json:"title,omitempty"`
+	TitleFallback string                `json:"title_fallback,omitempty"`
+	TitleLevel    int                   `json:"title_level,omitempty"`
+	TitleTone     ToneToken             `json:"title_tone,omitempty"`
+	Renderer      RecordSectionRenderer `json:"renderer,omitempty"`
+	LayoutSlot    LayoutSlotToken       `json:"layout_slot,omitempty"`
+	Order         int                   `json:"order,omitempty"`
+	Block         *Block                `json:"block,omitempty"`
+	Stack         *Stack                `json:"stack,omitempty"`
+	Components    []DisplayComponent    `json:"components,omitempty"`
 }
 
 type ResourceGridPage struct {
-	Endpoint string                 `json:"endpoint,omitempty"`
-	List     map[string]interface{} `json:"list,omitempty"`
-	Create   *Action                `json:"create,omitempty"`
-	Delete   *Action                `json:"delete,omitempty"`
-	Update   *Action                `json:"update,omitempty"`
-	Card     *CardSchema            `json:"card,omitempty"`
-	Status   map[string]interface{} `json:"status,omitempty"`
-	Actions  map[string]interface{} `json:"actions,omitempty"`
-	Text     map[string]interface{} `json:"text,omitempty"`
-	Context  map[string]interface{} `json:"context,omitempty"`
+	Endpoint string                     `json:"endpoint,omitempty"`
+	List     *ResourceGridListConfig    `json:"list,omitempty"`
+	Create   *Action                    `json:"create,omitempty"`
+	Delete   *Action                    `json:"delete,omitempty"`
+	Update   *Action                    `json:"update,omitempty"`
+	Card     *CardSchema                `json:"card,omitempty"`
+	Status   *ResourceGridStatusConfig  `json:"status,omitempty"`
+	Actions  *ResourceGridActionsConfig `json:"actions,omitempty"`
+	Text     map[string]string          `json:"text,omitempty"`
+	Context  map[string]interface{}     `json:"context,omitempty"`
+}
+
+type ResourceGridListConfig struct {
+	Size    int                    `json:"size,omitempty"`
+	Filters map[string]interface{} `json:"filters,omitempty"`
+}
+
+type ResourceGridStatusConfig struct {
+	VerifyField         string        `json:"verifyField,omitempty"`
+	ActiveField         string        `json:"activeField,omitempty"`
+	VerifiedValue       string        `json:"verifiedValue,omitempty"`
+	PendingValue        string        `json:"pendingValue,omitempty"`
+	InactiveValue       string        `json:"inactiveValue,omitempty"`
+	InactiveActionValue string        `json:"inactiveActionValue,omitempty"`
+	ActiveActionValue   string        `json:"activeActionValue,omitempty"`
+	DraftValues         []interface{} `json:"draftValues,omitempty"`
+	PendingPayload      interface{}   `json:"pendingPayload,omitempty"`
+}
+
+type ResourceGridActionsConfig struct {
+	EditRoute interface{} `json:"editRoute,omitempty"`
 }
 
 type Action struct {
@@ -372,6 +720,10 @@ type Action struct {
 	VisibleIf        *Condition       `json:"visible_if,omitempty"`
 	HiddenIf         *Condition       `json:"hidden_if,omitempty"`
 	DisabledIf       *Condition       `json:"disabled_if,omitempty"`
+	Endpoint         string           `json:"endpoint,omitempty"`
+	Method           string           `json:"method,omitempty"`
+	UniqueEndpoint   string           `json:"uniqueEndpoint,omitempty"`
+	AfterRoute       interface{}      `json:"afterRoute,omitempty"`
 	Route            interface{}      `json:"route,omitempty"`
 	API              *APIAction       `json:"api,omitempty"`
 	Modal            *ModalAction     `json:"modal,omitempty"`
@@ -398,7 +750,7 @@ type APIAction struct {
 }
 
 type ModalAction struct {
-	Renderer string                 `json:"renderer,omitempty"`
+	Renderer RendererKey            `json:"renderer,omitempty"`
 	Title    string                 `json:"title,omitempty"`
 	Data     map[string]interface{} `json:"data,omitempty"`
 }

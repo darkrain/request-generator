@@ -44,13 +44,33 @@ func cloneRecordPage(v *RecordPage) *RecordPage {
 	}
 	cp := *v
 	cp.ShowHeader = clonePtr(v.ShowHeader)
-	cp.Navigation = cloneMap(v.Navigation)
+	cp.Navigation = cloneRecordNavigation(v.Navigation)
 	cp.Layout = cloneLayout(v.Layout)
 	cp.Sections = cloneRecordSections(v.Sections)
-	cp.DisplayData = cloneMap(v.DisplayData)
-	cp.Theme = cloneMap(v.Theme)
+	cp.DisplayData = cloneRecordDisplayData(v.DisplayData)
+	cp.Theme = cloneRecordTheme(v.Theme)
 	cp.Actions = cloneActions(v.Actions)
 	cp.Context = cloneMap(v.Context)
+	return &cp
+}
+
+func cloneRecordNavigation(v *RecordNavigation) *RecordNavigation {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	return &cp
+}
+
+func cloneRecordTheme(v *RecordTheme) *RecordTheme {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	if v.Profile != nil {
+		profile := *v.Profile
+		cp.Profile = &profile
+	}
 	return &cp
 }
 
@@ -59,15 +79,43 @@ func cloneResourceGridPage(v *ResourceGridPage) *ResourceGridPage {
 		return nil
 	}
 	cp := *v
-	cp.List = cloneMap(v.List)
+	cp.List = cloneResourceGridListConfig(v.List)
 	cp.Create = cloneAction(v.Create)
 	cp.Delete = cloneAction(v.Delete)
 	cp.Update = cloneAction(v.Update)
 	cp.Card = cloneCardSchema(v.Card)
-	cp.Status = cloneMap(v.Status)
-	cp.Actions = cloneMap(v.Actions)
+	cp.Status = cloneResourceGridStatusConfig(v.Status)
+	cp.Actions = cloneResourceGridActionsConfig(v.Actions)
 	cp.Text = cloneMap(v.Text)
 	cp.Context = cloneMap(v.Context)
+	return &cp
+}
+
+func cloneResourceGridListConfig(v *ResourceGridListConfig) *ResourceGridListConfig {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.Filters = cloneMap(v.Filters)
+	return &cp
+}
+
+func cloneResourceGridStatusConfig(v *ResourceGridStatusConfig) *ResourceGridStatusConfig {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.DraftValues = cloneSlice(v.DraftValues)
+	cp.PendingPayload = cloneInterface(v.PendingPayload)
+	return &cp
+}
+
+func cloneResourceGridActionsConfig(v *ResourceGridActionsConfig) *ResourceGridActionsConfig {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.EditRoute = cloneRouteValue(v.EditRoute)
 	return &cp
 }
 
@@ -97,18 +145,18 @@ func cloneFilters(v *Filters) *Filters {
 	return &cp
 }
 
-func cloneMapRows(values [][]map[string]interface{}) [][]map[string]interface{} {
+func cloneMapRows(values [][]FilterPill) [][]FilterPill {
 	if values == nil {
 		return nil
 	}
-	out := make([][]map[string]interface{}, len(values))
+	out := make([][]FilterPill, len(values))
 	for i, row := range values {
 		if row == nil {
 			continue
 		}
-		out[i] = make([]map[string]interface{}, len(row))
+		out[i] = make([]FilterPill, len(row))
 		for j, item := range row {
-			out[i][j] = cloneMap(item)
+			out[i][j] = item
 		}
 	}
 	return out
@@ -191,10 +239,19 @@ func cloneBadges(values []Badge) []Badge {
 		out[i] = v
 		out[i].Marker = clonePtr(v.Marker)
 		out[i].ToneMap = cloneMap(v.ToneMap)
-		out[i].Then = cloneMap(v.Then)
-		out[i].Else = cloneMap(v.Else)
+		out[i].Then = cloneBadgeState(v.Then)
+		out[i].Else = cloneBadgeState(v.Else)
 	}
 	return out
+}
+
+func cloneBadgeState(v *BadgeState) *BadgeState {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.Marker = clonePtr(v.Marker)
+	return &cp
 }
 
 func cloneStatusBinding(v *StatusBinding) *StatusBinding {
@@ -229,10 +286,108 @@ func cloneFormSections(values []FormSection) []FormSection {
 		out[i].Block = cloneBlock(v.Block)
 		out[i].Fields = cloneSlice(v.Fields)
 		out[i].ListPage = cloneListPage(v.ListPage)
-		out[i].Collection = cloneMap(v.Collection)
-		out[i].Preferences = cloneMap(v.Preferences)
+		out[i].Collection = cloneCollectionConfig(v.Collection)
+		out[i].Preferences = clonePreferencesConfig(v.Preferences)
 	}
 	return out
+}
+
+func cloneCollectionConfig(v *CollectionConfig) *CollectionConfig {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.Collections = cloneSlice(v.Collections)
+	cp.Modal = cloneCollectionModal(v.Modal)
+	return &cp
+}
+
+func cloneCollectionModal(v *CollectionModal) *CollectionModal {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	return &cp
+}
+
+func clonePreferencesConfig(v *PreferencesConfig) *PreferencesConfig {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.Channels = cloneSlice(v.Channels)
+	cp.Blocks = cloneSlice(v.Blocks)
+	cp.ConnectionPrompts = cloneSlice(v.ConnectionPrompts)
+	return &cp
+}
+
+func cloneRecordDisplayData(v *RecordDisplayData) *RecordDisplayData {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	if v.Gallery != nil {
+		gallery := *v.Gallery
+		gallery.Items = cloneSlice(v.Gallery.Items)
+		gallery.Actions = cloneSlice(v.Gallery.Actions)
+		gallery.Overlays = cloneSlice(v.Gallery.Overlays)
+		cp.Gallery = &gallery
+	}
+	if v.Hero != nil {
+		hero := *v.Hero
+		if v.Hero.Identity != nil {
+			identity := *v.Hero.Identity
+			if v.Hero.Identity.Avatar != nil {
+				avatar := *v.Hero.Identity.Avatar
+				identity.Avatar = &avatar
+			}
+			identity.CornerBadges = cloneSlice(v.Hero.Identity.CornerBadges)
+			if v.Hero.Identity.Location != nil {
+				location := *v.Hero.Identity.Location
+				identity.Location = &location
+			}
+			hero.Identity = &identity
+		}
+		hero.Stats = cloneSlice(v.Hero.Stats)
+		cp.Hero = &hero
+	}
+	if v.Details != nil {
+		details := *v.Details
+		details.Items = cloneSlice(v.Details.Items)
+		details.Commercial = cloneSlice(v.Details.Commercial)
+		cp.Details = &details
+	}
+	if v.About != nil {
+		about := *v.About
+		cp.About = &about
+	}
+	if v.Meetings != nil {
+		meetings := *v.Meetings
+		meetings.Items = cloneSlice(v.Meetings.Items)
+		meetings.Commission = cloneSlice(v.Meetings.Commission)
+		meetings.WorkArea = cloneSlice(v.Meetings.WorkArea)
+		meetings.Payments = cloneSlice(v.Meetings.Payments)
+		cp.Meetings = &meetings
+	}
+	if v.Rates != nil {
+		rates := *v.Rates
+		rates.Items = cloneSlice(v.Rates.Items)
+		rates.Groups = cloneSlice(v.Rates.Groups)
+		cp.Rates = &rates
+	}
+	if v.Services != nil {
+		services := *v.Services
+		services.Included = cloneSlice(v.Services.Included)
+		services.Extra = cloneSlice(v.Services.Extra)
+		services.Groups = cloneSlice(v.Services.Groups)
+		cp.Services = &services
+	}
+	if v.Contacts != nil {
+		contacts := *v.Contacts
+		contacts.Items = cloneSlice(v.Contacts.Items)
+		cp.Contacts = &contacts
+	}
+	return &cp
 }
 
 func cloneRecordSections(values []RecordSection) []RecordSection {
@@ -322,6 +477,7 @@ func cloneActionValue(v Action) Action {
 	v.VisibleIf = cloneCondition(v.VisibleIf)
 	v.HiddenIf = cloneCondition(v.HiddenIf)
 	v.DisabledIf = cloneCondition(v.DisabledIf)
+	v.AfterRoute = cloneRouteValue(v.AfterRoute)
 	v.Route = cloneRouteValue(v.Route)
 	v.API = cloneAPIAction(v.API)
 	v.Modal = cloneModalAction(v.Modal)

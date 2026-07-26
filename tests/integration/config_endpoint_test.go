@@ -29,7 +29,7 @@ func setupTestRouter(authMiddleware func(actions.ModuleAction) gin.HandlerFunc) 
 				ID: "users",
 			},
 		},
-		MenuEntries: []module.MenuEntry{
+		MenuItems: []module.MenuItem{
 			{
 				ActionName: "list",
 				Title:      "Пользователи",
@@ -135,7 +135,7 @@ func TestConfigEndpoint_ValidToken(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
-	assert.Contains(t, response, "left_menu")
+	assert.Contains(t, response, "menus")
 	assert.Contains(t, response, "routes")
 	assert.Contains(t, response, "role")
 	assert.Equal(t, "admin", response["role"])
@@ -182,7 +182,7 @@ func TestConfigEndpoint_RoleFiltering(t *testing.T) {
 	testModule := &module.BaseModule{
 		Name: "restricted",
 		Path: "/admin",
-		MenuEntries: []module.MenuEntry{
+		MenuItems: []module.MenuItem{
 			{
 				ActionName: "list",
 				Title:      "Restricted Module",
@@ -241,8 +241,8 @@ func TestConfigEndpoint_RoleFiltering(t *testing.T) {
 	assert.Empty(t, managerResponse.Routes, "Manager should not see admin-only routes")
 }
 
-// TestConfigEndpoint_LeftMenuStructure — проверка структуры left_menu
-func TestConfigEndpoint_LeftMenuStructure(t *testing.T) {
+// TestConfigEndpoint_MenuStructure — проверка структуры menus
+func TestConfigEndpoint_MenuStructure(t *testing.T) {
 	mockUser := &icontext.UserInfo{
 		ID:   1,
 		Role: "admin",
@@ -258,16 +258,19 @@ func TestConfigEndpoint_LeftMenuStructure(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
-	require.NotEmpty(t, response.LeftMenu, "Left menu should not be empty")
+	require.NotEmpty(t, response.Menus, "Menus should not be empty")
+	require.NotEmpty(t, response.Menus["sidebar"], "Sidebar menu should not be empty")
 
 	// Проверяем структуру первого блока меню
-	leftMenuBlock := response.LeftMenu[0]
-	assert.NotEmpty(t, leftMenuBlock.BlockTitle, "Block title should not be empty")
-	assert.NotEmpty(t, leftMenuBlock.Elements, "Block should have elements")
+	sidebarBlock := response.Menus["sidebar"][0]
+	assert.NotEmpty(t, sidebarBlock.BlockTitle, "Block title should not be empty")
+	assert.NotEmpty(t, sidebarBlock.Elements, "Block should have elements")
 
-	// Проверяем, что элементы являются строками (ссылками)
-	for _, element := range leftMenuBlock.Elements {
-		assert.NotEmpty(t, element, "Menu element should not be empty")
+	for _, element := range sidebarBlock.Elements {
+		assert.Equal(t, "route", element.Target.Type, "Menu item should default to route target")
+		assert.NotEmpty(t, element.Target.URL, "Route menu item target URL should not be empty")
+		assert.NotEmpty(t, element.Target.RouteKey, "Route menu item target route_key should not be empty")
+		assert.Contains(t, response.Routes, element.Target.RouteKey, "Menu item target route_key should point to routes")
 	}
 }
 

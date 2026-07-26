@@ -268,7 +268,7 @@ func TestUniversalRendererMetadata_RenderFuncBuildsTypedRuntimeMetadata(t *testi
 			}
 			return base, nil
 		},
-		MenuEntries: []module.MenuEntry{
+		MenuItems: []module.MenuItem{
 			{ActionName: "list", Title: "Dynamic", Group: "Admin", Order: 1, Show: true},
 		},
 		Actions: []actions.ModuleAction{

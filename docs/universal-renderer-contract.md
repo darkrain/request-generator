@@ -105,7 +105,7 @@ RenderFunc: func(c *gin.Context, base renderer.Universal) (renderer.Universal, e
 
 `Render` задает базовую статическую схему. `RenderFunc` является optional typed runtime override/merge и вызывается request-generator через `RenderFor(c)` перед построением `/api/config`, list, defrec и view responses. В `RenderFunc` передается deep clone базового `Render`, поэтому producer module может безопасно менять pointer structs, slices, maps и стандартные JSON-like значения внутри `interface{}` (`map[string]interface{}`, `[]interface{}`, `map[string]string`, `[]string` и т.п.) без протекания state в следующие запросы. Произвольные custom objects внутри `interface{}` не клонируются и остаются ответственностью producer module. Результат `RenderFunc` остается `renderer.Universal` и валидируется через `Validate()` уже после runtime изменений. Legacy `ExtraFunc` не должен использоваться для canonical UniversalRenderer metadata.
 
-Closed enums должны использовать typed constants из package `renderer`. `map[string]interface{}` допустим только в явно typed extension/context/payload полях (`Extra`, `Context`, `Payload`, `Query`, `Status` и т.п.), где metadata заранее является application-specific extension или transport payload.
+Closed enums должны использовать typed constants из package `renderer`. `map[string]interface{}` допустим только в явно typed runtime/transport полях (`Context`, `Payload`, `Query`, route query и т.п.), где содержимое является данными запроса или состоянием выполнения, а не схемой UI. Если producer-у нужен новый UI metadata block, он должен быть добавлен в typed renderer contract, а не передан через ad-hoc map.
 
 ### List Response
 
@@ -243,22 +243,31 @@ Closed enums должны использовать typed constants из package 
 
 ```json
 {
-  "left_menu": [
-    {
-      "blockTitle": "navigation.main",
-      "elements": [
-        {
-          "url": "/entities",
-          "title": "entities.menu.list",
-          "icon": "list",
-          "query": {},
-          "data": {}
-        }
-      ]
-    }
-  ],
+  "menus": {
+    "sidebar": [
+      {
+        "blockTitle": "navigation.main",
+        "elements": [
+          {
+            "id": "sidebar.entities.list",
+            "target": {
+              "type": "route",
+              "url": "/entities",
+              "route_key": "/api/entities"
+            },
+            "title": "entities.menu.list",
+            "icon": "list",
+            "order": 10,
+            "group": "navigation.main",
+            "query": {},
+            "data": {}
+          }
+        ]
+      }
+    ]
+  },
   "routes": {
-    "/entities": {
+    "/api/entities": {
       "title": "entities.routes.list",
       "menuTitle": "entities.menu.list",
       "renderer": {
@@ -282,9 +291,15 @@ Closed enums должны использовать typed constants из package 
 
 | Path | Назначение |
 |------|------------|
-| `left_menu[]` | Группы навигации. |
-| `left_menu[].elements[]` | Пункты меню. |
-| `routes` | Map route config, где ключ это frontend path. |
+| `menus` | Map меню, где ключ это имя меню (`sidebar`, `mobile_bottom`, `profile`, ...). |
+| `menus[name][]` | Группы пунктов конкретного меню. |
+| `menus[name][].elements[]` | Пункты меню. |
+| `menus[name][].elements[].target` | Поведение пункта меню. |
+| `menus[name][].elements[].target.type` | Тип поведения: `route`, `widget`, `modal`, `action`, `external`, `submenu`. |
+| `menus[name][].elements[].target.url` | Frontend URL для `route` или внешний URL для `external`. |
+| `menus[name][].elements[].target.route_key` | Ключ в `routes` для `target.type=route`. |
+| `menus[name][].elements[].target.name` | Имя widget/modal/action. |
+| `routes` | Map route config, где ключ совпадает с `route_key` из пункта меню. |
 | `routes[path].renderer` | Renderer identity/version для route discovery, если route использует typed `BaseModule.Render`. |
 | `routes[path].page_type` | Тип страницы: `list`, `form`, `record`, `resource_grid`. |
 | `routes[path].query` | Endpoint и method для загрузки данных route. |
@@ -533,6 +548,14 @@ Actions используются в `card_schema.actions`, `record_page.actions`
   "appearance": "outline",
   "visible_if": {"path": "record.status", "equals": "active"},
   "disabled_if": {"path": "record.locked", "equals": true},
+  "endpoint": "/entities/:id/action",
+  "method": "post",
+  "uniqueEndpoint": "/entities/view/slug/:slug",
+  "afterRoute": {
+    "path": "/entities/:id",
+    "queryParam": "record",
+    "source": "id"
+  },
   "route": {
     "path": "/entities/:id",
     "params": {"id": "record.id"},
@@ -578,6 +601,19 @@ Supported `action.type`:
 | `external` | Внешний обработчик текущего приложения. |
 
 `external: true` является legacy shorthand для action, который текущий webapp обрабатывает вне generic action executor. Для новых producer-сервисов предпочтительно использовать `type`.
+
+## Typed Renderer Tokens
+
+Producer code must build UniversalRenderer metadata with typed renderer structs and token types, not by assembling ad-hoc `map[string]interface{}` trees or stringly typed renderer fields.
+
+Core renderer package owns only stable universal values:
+
+- renderer keys: `RendererUniversalDisplay`, `RendererUniversalSection`, `RendererUniversalFilters`, `RendererUniversalPagination`, `RendererMediaGallery`, `RendererCollectionManager`;
+- record layout slots: `LayoutSlotLeft`, `LayoutSlotCenter`, `LayoutSlotRight`;
+- display component types: `DisplayMediaGallery`, `DisplayActions`, `DisplayIdentity`, `DisplayStatList`, `DisplayDataList`, `DisplayBadgeList`, `DisplayRateGroups`, `DisplayAccordionGroups`;
+- generic tokens: spacing, inset, radius, alignment, semantic tones, separator appearance.
+
+Application-specific values, especially visual color names such as `cyan`, `violet`, `magenta`, shell variants, section IDs, business IDs and translation keys, must be declared by the application as typed constants when reused. The renderer package should not try to maintain every project's color or shell catalog.
 
 ## Conditions
 
@@ -641,14 +677,14 @@ Conditions отвечают только за отображение. Любое
     },
     "card": {"type": "entity", "size": "md"},
     "status": {"activeField": "status"},
-    "actions": {},
-    "text": {},
+    "actions": {"editRoute": {"path": "/entities/:id"}},
+    "text": {"title": "entities.title"},
     "context": {}
   }
 }
 ```
 
-`resource_grid_page.actions`, `resource_grid_page.text` и `resource_grid_page.context` предназначены для reusable resource management screens: route/action wiring, translation keys and runtime context.
+`resource_grid_page.list`, `resource_grid_page.status`, `resource_grid_page.actions` и `resource_grid_page.text` являются typed renderer contract. `resource_grid_page.context` предназначен только для runtime state, который не описывает структуру UI.
 
 ## Form Page
 
@@ -707,8 +743,20 @@ Conditions отвечают только за отображение. Любое
         "components": []
       }
     ],
-    "display_data": {},
-    "theme": {},
+    "display_data": {
+      "gallery": {"items": [], "current": 0},
+      "hero": {"identity": {}, "stats": []},
+      "details": {"items": []}
+    },
+    "theme": {
+      "profile": {
+        "panels": {},
+        "headings": {},
+        "badges": {},
+        "buttons": {},
+        "avatar": {}
+      }
+    },
     "actions": [],
     "context": {}
   }
@@ -849,6 +897,5 @@ Legacy forms:
 - `display` как string вместо object, например `"display": "badge"`;
 - `{"path": "...", "not": true}` вместо `{"not": {"path": "...", "truthy": true}}`;
 - `external: true` action without explicit `type`;
-- application-specific route fields such as `uniqueEndpoint` and `afterRoute` in `resource_grid_page`.
 
 `response.extra` остается deprecated escape hatch для старых модулей и application-specific данных вне UniversalRenderer. Новые producer modules должны описывать UniversalRenderer metadata через typed `BaseModule.Render renderer.Universal`, а request-generator должен отдавать canonical top-level `renderer` + page metadata fields.
