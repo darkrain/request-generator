@@ -8,17 +8,26 @@ import (
 	pg "github.com/go-jet/jet/v2/postgres"
 )
 
-type MenuEntry struct {
-	ActionName  string                 `json:"action"`
-	Title       string                 `json:"title"`
-	Icon        string                 `json:"icon,omitempty"`
-	Show        bool                   `json:"show"`
-	Order       int                    `json:"order"`
-	Group       string                 `json:"group"`
-	Roles       []actions.Role         `json:"roles,omitempty"`
-	CustomLink  string                 `json:"custom_link,omitempty"`
-	CustomQuery map[string]interface{} `json:"custom_query,omitempty"`
-	CustomData  map[string]interface{} `json:"custom_data,omitempty"`
+type MenuItem struct {
+	ActionName string                 `json:"action"`
+	Title      string                 `json:"title"`
+	Icon       string                 `json:"icon,omitempty"`
+	Show       bool                   `json:"show"`
+	Order      int                    `json:"order"`
+	Group      string                 `json:"group"`
+	Menu       string                 `json:"menu,omitempty"`
+	Target     MenuTarget             `json:"target,omitempty"`
+	Roles      []actions.Role         `json:"roles,omitempty"`
+	Query      map[string]interface{} `json:"query,omitempty"`
+	Data       map[string]interface{} `json:"data,omitempty"`
+}
+
+type MenuTarget struct {
+	Type     string                 `json:"type"`
+	URL      string                 `json:"url,omitempty"`
+	RouteKey string                 `json:"route_key,omitempty"`
+	Name     string                 `json:"name,omitempty"`
+	Params   map[string]interface{} `json:"params,omitempty"`
 }
 
 type RenderFunc func(c *gin.Context, base renderer.Universal) (renderer.Universal, error)
@@ -38,7 +47,7 @@ type BaseModule struct {
 	RoleBeforeHook []actions.RoleHook         `json:"-"`
 	RoleAfterHook  []actions.RoleAfterHook    `json:"-"`
 	EntityName     string                     `json:"-"`
-	MenuEntries    []MenuEntry                `json:"menu_entries,omitempty"`
+	MenuItems      []MenuItem                 `json:"menu_items,omitempty"`
 	Render         renderer.Universal         `json:"-"`
 	RenderFunc     RenderFunc                 `json:"-"`
 }

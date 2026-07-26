@@ -4,11 +4,11 @@
 
 ### Added
 
-- **`MenuEntry` на `BaseModule`** — декларативное описание пунктов левого меню для config endpoint.
-  Поля: `ActionName`, `Title`, `Icon`, `Show`, `Order`, `Group`, `Roles`, `CustomLink`, `CustomQuery`, `CustomData`.
+- **`MenuItem` на `BaseModule`** — декларативное описание пунктов произвольных меню для config endpoint.
+  Поля: `ActionName`, `Title`, `Icon`, `Show`, `Order`, `Menu`, `Group`, `Roles`, `URL`, `RouteKey`, `Query`, `Data`.
 
-- **Config endpoint** — возвращает клиентский конфиг с role-based левым меню (`left_menu`).
-  Меню формируется из `MenuEntries` каждого модуля, группируется по `Group`, фильтруется по `Roles` текущего пользователя.
+- **Config endpoint** — возвращает клиентский конфиг с role-based меню (`menus`) и явным соответствием `route_key -> routes`.
+  Меню формируется из `MenuItems` каждого модуля, группируется по `Menu` и `Group`, фильтруется по `Roles` текущего пользователя.
   Заголовки блоков переводятся через i18n (lang из query-параметра или `Accept-Language`).
 
 - **`ExtraFunc` на `ListModuleAction`** — динамические extra-данные per-request.

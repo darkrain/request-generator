@@ -73,7 +73,7 @@ BaseModule
   ├── Render
   │     └── typed UniversalRenderer page metadata
   │
-  └── MenuEntries
+  └── MenuItems
         └── navigation/config metadata
 ```
 
@@ -107,7 +107,7 @@ Frontend должен получать готовую схему и рендер
 | Страница просмотра записи | `BaseModule.Render.Record` |
 | Рабочий grid с create/update/delete/status | `BaseModule.Render.ResourceGrid` |
 | Legacy/detail groups | `ViewModuleAction.Extra` |
-| Пункты меню | `BaseModule.MenuEntries` |
+| Пункты меню | `BaseModule.MenuItems` |
 | Динамический список колонок по роли | `ColumnsFunc` или `Fields`/`RoleContext` |
 | Динамические фильтры по роли | `FilterFunc` |
 | Права на строки | `Where`, `RoleWhere`, `BeforeAction`, `DataCheckRule` |
@@ -432,23 +432,24 @@ func NewCoursesModule() *module.BaseModule {
 | `RoleJoin`       | `[]actions.RoleJoin`       | JOIN-ы по ролям                             |
 | `RoleBeforeHook` | `[]actions.RoleHook`       | Хуки до обработки по ролям                  |
 | `RoleAfterHook`  | `[]actions.RoleAfterHook`  | Хуки после обработки по ролям               |
-| `MenuEntries`    | `[]module.MenuEntry`       | Пункты левого меню для config endpoint      |
+| `MenuItems`      | `[]module.MenuItem`        | Пункты произвольных меню для config endpoint |
 
-#### MenuEntry
+#### MenuItem
 
-`MenuEntry` описывает пункт левого меню, возвращаемого config endpoint. Меню строится из `MenuEntries` всех модулей, фильтруется по `Roles` текущего пользователя и группируется по `Group`.
+`MenuItem` описывает пункт меню, возвращаемого config endpoint. Меню строятся из `MenuItems` всех модулей, фильтруются по `Roles` текущего пользователя и группируются по `Menu` и `Group`.
 
 ```go
-MenuEntries: []module.MenuEntry{
+MenuItems: []module.MenuItem{
     {
         ActionName: "list",         // имя действия модуля (list/view/…)
         Title:      "menu.catalog", // ключ i18n для заголовка пункта
         Icon:       "catalog",       // иконка (передаётся клиенту as-is)
         Show:       true,
         Order:      1,
+        Menu:       "sidebar",     // имя меню; по умолчанию sidebar
         Group:      "main",        // группа блока в левом меню
         Roles:      []actions.Role{"admin", "editor"},
-        CustomLink: "/catalog",     // переопределяет URL (вместо API-пути)
+        Target:     module.MenuTarget{Type: "route", URL: "/catalog", RouteKey: "/api/catalog"},
     },
 },
 ```
@@ -460,11 +461,22 @@ MenuEntries: []module.MenuEntry{
 | `Icon`        | `string`                   | Имя иконки (передаётся клиенту)                       |
 | `Show`        | `bool`                     | Показывать пункт (`false` — скрыт, но в features есть) |
 | `Order`       | `int`                      | Порядок внутри группы                                 |
+| `Menu`        | `string`                   | Имя меню (`sidebar`, `mobile_bottom`, `profile`, ...) |
 | `Group`       | `string`                   | Ключ группы (становится `blockTitle` в ответе)        |
+| `Target`      | `module.MenuTarget`        | Явное поведение пункта меню                           |
 | `Roles`       | `[]actions.Role`           | Роли, которым доступен пункт (пустой = все)           |
-| `CustomLink`  | `string`                   | Переопределяет URL (напр. SPA-маршрут `/catalog`)      |
-| `CustomQuery` | `map[string]interface{}`   | Доп. query-параметры для клиента                      |
-| `CustomData`  | `map[string]interface{}`   | Произвольные данные для клиента                       |
+| `Query`       | `map[string]interface{}`   | Доп. query-параметры для клиента                      |
+| `Data`        | `map[string]interface{}`   | Произвольные данные для клиента                       |
+
+`Target.Type` определяет поведение пункта:
+
+| Type | Обязательные поля | Назначение |
+|---|---|---|
+| `route` | `URL`, `RouteKey` | Переход на frontend route и загрузка renderer/query из `routes[route_key]`. |
+| `widget` | `Name` | Открытие клиентского виджета, например `chat`. |
+| `modal` | `Name` | Открытие клиентского popup/modal. |
+| `action` | `Name` | Выполнение клиентского действия. |
+| `external` | `URL` | Переход на внешний URL. |
 
 ### Этап 5. Описание полей (ModuleField)
 
@@ -1259,30 +1271,47 @@ type TranslationContext struct {
 | `GET` | `/admin/api/lang`         | Список поддерживаемых языков          |
 | `GET` | `/admin/api/lang/:key`    | Все переводы для языка                |
 | `GET` | `/admin/api/openapi.json` | OpenAPI 3.0 спецификация              |
-| `GET` | `<path>/config`           | Клиентский конфиг: левое меню по ролям   |
+| `GET` | `<path>/config`           | Клиентский конфиг: меню, routes и роль   |
 
 ### Config endpoint
 
-Возвращает конфигурацию для клиентского приложения. Меню фильтруется по роли текущего пользователя.
+Возвращает конфигурацию для клиентского приложения. Все меню фильтруются по роли текущего пользователя.
 
 **Query-параметры:** `lang` — код языка для перевода заголовков блоков меню.
 
 **Пример ответа:**
 ```json
 {
-  "left_menu": [
-    {
-      "blockTitle": "Catalog",
-      "elements": [
-        {
-          "url": "/catalog",
-          "title": "Catalog",
-          "icon": "catalog"
-        }
-      ]
+  "menus": {
+    "sidebar": [
+      {
+        "blockTitle": "Catalog",
+        "elements": [
+          {
+            "id": "sidebar.catalog.list",
+            "target": {
+              "type": "route",
+              "url": "/catalog",
+              "route_key": "/api/catalog"
+            },
+            "title": "Catalog",
+            "icon": "catalog",
+            "order": 10,
+            "group": "main"
+          }
+        ]
+      }
+    ]
+  },
+  "routes": {
+    "/api/catalog": {
+      "query": {
+        "url": "/api/api/catalog",
+        "method": "GET"
+      }
     }
-  ]
+  }
 }
 ```
 
-Меню строится из `MenuEntries` каждого `BaseModule`. Пункты группируются по `Group`, сортируются по `Order`. `blockTitle` — переведённый `Title` первого пункта группы (ключ i18n).
+Меню строится из `MenuItems` каждого `BaseModule`. Пункты группируются по `Menu` и `Group`, сортируются по `Order`. Для `target.type=route` поле `route_key` связывает пункт меню с записью в `routes`. Для popup/widget/action route не требуется. `left_menu` может присутствовать как legacy alias для `menus.sidebar`, но новые клиенты должны использовать `menus`.

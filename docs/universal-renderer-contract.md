@@ -243,22 +243,31 @@ Closed enums должны использовать typed constants из package 
 
 ```json
 {
-  "left_menu": [
-    {
-      "blockTitle": "navigation.main",
-      "elements": [
-        {
-          "url": "/entities",
-          "title": "entities.menu.list",
-          "icon": "list",
-          "query": {},
-          "data": {}
-        }
-      ]
-    }
-  ],
+  "menus": {
+    "sidebar": [
+      {
+        "blockTitle": "navigation.main",
+        "elements": [
+          {
+            "id": "sidebar.entities.list",
+            "target": {
+              "type": "route",
+              "url": "/entities",
+              "route_key": "/api/entities"
+            },
+            "title": "entities.menu.list",
+            "icon": "list",
+            "order": 10,
+            "group": "navigation.main",
+            "query": {},
+            "data": {}
+          }
+        ]
+      }
+    ]
+  },
   "routes": {
-    "/entities": {
+    "/api/entities": {
       "title": "entities.routes.list",
       "menuTitle": "entities.menu.list",
       "renderer": {
@@ -282,9 +291,15 @@ Closed enums должны использовать typed constants из package 
 
 | Path | Назначение |
 |------|------------|
-| `left_menu[]` | Группы навигации. |
-| `left_menu[].elements[]` | Пункты меню. |
-| `routes` | Map route config, где ключ это frontend path. |
+| `menus` | Map меню, где ключ это имя меню (`sidebar`, `mobile_bottom`, `profile`, ...). |
+| `menus[name][]` | Группы пунктов конкретного меню. |
+| `menus[name][].elements[]` | Пункты меню. |
+| `menus[name][].elements[].target` | Поведение пункта меню. |
+| `menus[name][].elements[].target.type` | Тип поведения: `route`, `widget`, `modal`, `action`, `external`, `submenu`. |
+| `menus[name][].elements[].target.url` | Frontend URL для `route` или внешний URL для `external`. |
+| `menus[name][].elements[].target.route_key` | Ключ в `routes` для `target.type=route`. |
+| `menus[name][].elements[].target.name` | Имя widget/modal/action. |
+| `routes` | Map route config, где ключ совпадает с `route_key` из пункта меню. |
 | `routes[path].renderer` | Renderer identity/version для route discovery, если route использует typed `BaseModule.Render`. |
 | `routes[path].page_type` | Тип страницы: `list`, `form`, `record`, `resource_grid`. |
 | `routes[path].query` | Endpoint и method для загрузки данных route. |

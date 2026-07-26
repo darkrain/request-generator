@@ -14,24 +14,28 @@ import (
 
 // ConfigResponse структурирует ответ эндпоинта /api/config
 type ConfigResponse struct {
-	LeftMenu []LeftMenuBlock        `json:"left_menu"`
+	Menus    map[string][]MenuBlock `json:"menus"`
+	LeftMenu []MenuBlock            `json:"left_menu,omitempty"`
 	Routes   map[string]RouteConfig `json:"routes"`
 	Role     string                 `json:"role"`
 }
 
-// LeftMenuItem представляет один пункт меню
-type LeftMenuItem struct {
-	URL   string                 `json:"url"`
-	Title string                 `json:"title"`
-	Icon  string                 `json:"icon,omitempty"`
-	Query map[string]interface{} `json:"query,omitempty"`
-	Data  map[string]interface{} `json:"data,omitempty"`
+// ConfigMenuItem представляет один пункт меню в клиентском конфиге.
+type ConfigMenuItem struct {
+	ID     string                 `json:"id,omitempty"`
+	Target MenuTarget             `json:"target"`
+	Title  string                 `json:"title"`
+	Icon   string                 `json:"icon,omitempty"`
+	Order  int                    `json:"order,omitempty"`
+	Group  string                 `json:"group,omitempty"`
+	Query  map[string]interface{} `json:"query,omitempty"`
+	Data   map[string]interface{} `json:"data,omitempty"`
 }
 
-// LeftMenuBlock представляет блок левого меню
-type LeftMenuBlock struct {
-	BlockTitle string         `json:"blockTitle"`
-	Elements   []LeftMenuItem `json:"elements"`
+// MenuBlock представляет сгруппированный блок меню.
+type MenuBlock struct {
+	BlockTitle string           `json:"blockTitle"`
+	Elements   []ConfigMenuItem `json:"elements"`
 }
 
 // RouteConfig конфигурирует маршрут
@@ -74,12 +78,12 @@ func (generator *Generator) actionConfigEndpoint() gin.HandlerFunc {
 			moduleAvailable := false
 			var accessibleActions []actions.ModuleAction
 
-			for _, menuEntry := range module.MenuEntries {
-				if !menuEntry.Show {
+			for _, menuItem := range moduleMenuItems(module) {
+				if !menuItem.Show {
 					continue
 				}
 				for _, action := range module.Actions {
-					if string(action.Action()) == menuEntry.ActionName {
+					if string(action.Action()) == menuItem.ActionName {
 						if hasPermission(action, role) {
 							moduleAvailable = true
 							accessibleActions = append(accessibleActions, action)
@@ -95,7 +99,8 @@ func (generator *Generator) actionConfigEndpoint() gin.HandlerFunc {
 			}
 		}
 
-		leftMenu := generator.buildLeftMenu(availableModules, moduleActions, role, lang)
+		menus := generator.buildMenus(availableModules, moduleActions, role, lang)
+		leftMenu := menus["sidebar"]
 		routes, err := generator.buildRoutes(c, availableModules, moduleActions, role)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
@@ -103,6 +108,7 @@ func (generator *Generator) actionConfigEndpoint() gin.HandlerFunc {
 		}
 
 		config := ConfigResponse{
+			Menus:    menus,
 			LeftMenu: leftMenu,
 			Routes:   routes,
 			Role:     role,
@@ -154,20 +160,68 @@ func hasPermission(action actions.ModuleAction, role string) bool {
 	return false
 }
 
-// buildLeftMenu формирует левое меню с группировкой по Group
-func (generator *Generator) buildLeftMenu(
+func moduleMenuItems(module *BaseModule) []MenuItem {
+	return module.MenuItems
+}
+
+func menuRouteKey(module *BaseModule, entry MenuItem) string {
+	if entry.Target.RouteKey != "" {
+		return entry.Target.RouteKey
+	}
+	return module.Path + "/" + module.Name
+}
+
+func menuURL(module *BaseModule, entry MenuItem) string {
+	if entry.Target.URL != "" {
+		return entry.Target.URL
+	}
+	return menuRouteKey(module, entry)
+}
+
+func menuName(entry MenuItem) string {
+	if entry.Menu != "" {
+		return entry.Menu
+	}
+	return "sidebar"
+}
+
+func menuTarget(module *BaseModule, entry MenuItem) MenuTarget {
+	target := entry.Target
+	if target.Type == "" {
+		target.Type = "route"
+	}
+	if target.Type == "route" {
+		if target.URL == "" {
+			target.URL = menuURL(module, entry)
+		}
+		if target.RouteKey == "" {
+			target.RouteKey = menuRouteKey(module, entry)
+		}
+	}
+	return target
+}
+
+func menuItemID(module *BaseModule, entry MenuItem) string {
+	if entry.Menu != "" || entry.Group != "" || entry.ActionName != "" {
+		return menuName(entry) + "." + module.Name + "." + entry.ActionName
+	}
+	return module.Name
+}
+
+// buildMenus формирует произвольные меню с группировкой по Menu и Group.
+func (generator *Generator) buildMenus(
 	availableModules map[string]*BaseModule,
 	moduleActions map[string][]actions.ModuleAction,
 	role string,
 	lang locale.Lang,
-) []LeftMenuBlock {
+) map[string][]MenuBlock {
 	type menuEntryWithModule struct {
-		entry  MenuEntry
+		entry  MenuItem
 		module *BaseModule
 	}
 
-	grouped := make(map[string][]menuEntryWithModule)
-	groupOrder := make(map[string]int)
+	grouped := make(map[string]map[string][]menuEntryWithModule)
+	groupOrder := make(map[string]map[string]int)
 
 	for _, module := range availableModules {
 		actionMap := make(map[string]bool)
@@ -175,7 +229,7 @@ func (generator *Generator) buildLeftMenu(
 			actionMap[string(action.Action())] = true
 		}
 
-		for _, entry := range module.MenuEntries {
+		for _, entry := range moduleMenuItems(module) {
 			if !entry.Show {
 				continue
 			}
@@ -201,73 +255,83 @@ func (generator *Generator) buildLeftMenu(
 			if group == "" {
 				group = "default"
 			}
+			menu := menuName(entry)
 
-			grouped[group] = append(grouped[group], menuEntryWithModule{
+			if grouped[menu] == nil {
+				grouped[menu] = make(map[string][]menuEntryWithModule)
+			}
+			if groupOrder[menu] == nil {
+				groupOrder[menu] = make(map[string]int)
+			}
+
+			grouped[menu][group] = append(grouped[menu][group], menuEntryWithModule{
 				entry:  entry,
 				module: module,
 			})
 
-			if _, exists := groupOrder[group]; !exists {
-				groupOrder[group] = entry.Order
-			} else if entry.Order < groupOrder[group] {
-				groupOrder[group] = entry.Order
+			if _, exists := groupOrder[menu][group]; !exists {
+				groupOrder[menu][group] = entry.Order
+			} else if entry.Order < groupOrder[menu][group] {
+				groupOrder[menu][group] = entry.Order
 			}
 		}
 	}
 
+	result := make(map[string][]MenuBlock)
 	type groupInfo struct {
 		name  string
 		order int
 	}
-	var groups []groupInfo
-	for name, order := range groupOrder {
-		groups = append(groups, groupInfo{name: name, order: order})
-	}
-	sort.Slice(groups, func(i, j int) bool {
-		return groups[i].order < groups[j].order
-	})
-
-	var result []LeftMenuBlock
-	for _, group := range groups {
-		entries := grouped[group.name]
-
-		sort.Slice(entries, func(i, j int) bool {
-			return entries[i].entry.Order < entries[j].entry.Order
+	for menu, orderByGroup := range groupOrder {
+		var groups []groupInfo
+		for name, order := range orderByGroup {
+			groups = append(groups, groupInfo{name: name, order: order})
+		}
+		sort.Slice(groups, func(i, j int) bool {
+			return groups[i].order < groups[j].order
 		})
 
-		blockTitle := group.name
-		if title, exists := generator.GroupTitles[group.name]; exists {
-			blockTitle = title
-		}
+		for _, group := range groups {
+			entries := grouped[menu][group.name]
 
-		var elements []LeftMenuItem
-		for _, item := range entries {
-			entry := item.entry
-			menuItem := LeftMenuItem{
-				Title: generator.Translate(lang, entry.Title),
-				Icon:  entry.Icon,
-			}
-
-			if entry.CustomLink != "" {
-				menuItem.URL = entry.CustomLink
-			} else {
-				menuItem.URL = item.module.Path + "/" + item.module.Name
-			}
-			if entry.CustomQuery != nil {
-				menuItem.Query = entry.CustomQuery
-			}
-			if entry.CustomData != nil {
-				menuItem.Data = entry.CustomData
-			}
-
-			elements = append(elements, menuItem)
-		}
-
-		if len(elements) > 0 {
-			result = append(result, LeftMenuBlock{
-				BlockTitle: blockTitle,
-				Elements:   elements,
+			sort.Slice(entries, func(i, j int) bool {
+				return entries[i].entry.Order < entries[j].entry.Order
 			})
+
+			blockTitle := group.name
+			if title, exists := generator.GroupTitles[group.name]; exists {
+				blockTitle = title
+			}
+
+			var elements []ConfigMenuItem
+			for _, item := range entries {
+				entry := item.entry
+				target := menuTarget(item.module, entry)
+				menuItem := ConfigMenuItem{
+					ID:     menuItemID(item.module, entry),
+					Title:  generator.Translate(lang, entry.Title),
+					Icon:   entry.Icon,
+					Target: target,
+					Order:  entry.Order,
+					Group:  group.name,
+				}
+
+				if entry.Query != nil {
+					menuItem.Query = entry.Query
+				}
+				if entry.Data != nil {
+					menuItem.Data = entry.Data
+				}
+
+				elements = append(elements, menuItem)
+			}
+
+			if len(elements) > 0 {
+				result[menu] = append(result[menu], MenuBlock{
+					BlockTitle: blockTitle,
+					Elements:   elements,
+				})
+			}
 		}
 	}
 
@@ -383,7 +447,7 @@ func (generator *Generator) buildAddRoute(module *BaseModule, render renderer.Un
 func (generator *Generator) buildRouteActions(module *BaseModule, role string) []map[string]interface{} {
 	var result []map[string]interface{}
 
-	for _, entry := range module.MenuEntries {
+	for _, entry := range moduleMenuItems(module) {
 		for _, action := range module.Actions {
 			if string(action.Action()) != entry.ActionName {
 				continue
@@ -399,11 +463,11 @@ func (generator *Generator) buildRouteActions(module *BaseModule, role string) [
 				"show":  entry.Show,
 			}
 
-			if entry.CustomQuery != nil {
-				actionMap["query"] = entry.CustomQuery
+			if entry.Query != nil {
+				actionMap["query"] = entry.Query
 			}
-			if entry.CustomData != nil {
-				actionMap["data"] = entry.CustomData
+			if entry.Data != nil {
+				actionMap["data"] = entry.Data
 			}
 
 			result = append(result, actionMap)
