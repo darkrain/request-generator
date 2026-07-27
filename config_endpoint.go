@@ -3,6 +3,7 @@ package module
 import (
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/darkrain/request-generator/actions"
 	"github.com/darkrain/request-generator/icontext"
@@ -14,16 +15,15 @@ import (
 
 // ConfigResponse структурирует ответ эндпоинта /api/config
 type ConfigResponse struct {
-	Menus    map[string][]MenuBlock `json:"menus"`
-	LeftMenu []MenuBlock            `json:"left_menu,omitempty"`
-	Routes   map[string]RouteConfig `json:"routes"`
-	Role     string                 `json:"role"`
+	Navigation []ConfigNavigationEntry `json:"navigation"`
+	Widgets    []ConfigWidget          `json:"widgets"`
+	Role       string                  `json:"role"`
 }
 
-// ConfigMenuItem представляет один пункт меню в клиентском конфиге.
-type ConfigMenuItem struct {
+type ConfigNavigationEntry struct {
 	ID     string                 `json:"id,omitempty"`
-	Target MenuTarget             `json:"target"`
+	Path   string                 `json:"path,omitempty"`
+	Target NavigationPageTarget   `json:"target"`
 	Title  string                 `json:"title"`
 	Icon   string                 `json:"icon,omitempty"`
 	Order  int                    `json:"order,omitempty"`
@@ -32,10 +32,26 @@ type ConfigMenuItem struct {
 	Data   map[string]interface{} `json:"data,omitempty"`
 }
 
-// MenuBlock представляет сгруппированный блок меню.
-type MenuBlock struct {
-	BlockTitle string           `json:"blockTitle"`
-	Elements   []ConfigMenuItem `json:"elements"`
+type NavigationPageTarget struct {
+	Type     string                 `json:"type"`
+	Name     string                 `json:"name,omitempty"`
+	Params   map[string]interface{} `json:"params,omitempty"`
+	Renderer *renderer.Identity     `json:"renderer,omitempty"`
+	PageType renderer.PageType      `json:"page_type,omitempty"`
+	Query    *RouteQuery            `json:"query,omitempty"`
+	Data     map[string]interface{} `json:"data,omitempty"`
+	Children map[string]RouteConfig `json:"children,omitempty"`
+}
+
+type ConfigWidget struct {
+	ID        string                 `json:"id"`
+	Type      string                 `json:"type"`
+	Placement string                 `json:"placement"`
+	Order     int                    `json:"order,omitempty"`
+	Renderer  string                 `json:"renderer,omitempty"`
+	Query     *RouteQuery            `json:"query,omitempty"`
+	Config    map[string]interface{} `json:"config,omitempty"`
+	Params    map[string]interface{} `json:"params,omitempty"`
 }
 
 // RouteConfig конфигурирует маршрут
@@ -51,8 +67,9 @@ type RouteConfig struct {
 
 // RouteQuery описывает параметры запроса для маршрута
 type RouteQuery struct {
-	Url    string `json:"url"`
-	Method string `json:"method"`
+	Url    string                 `json:"url"`
+	Method string                 `json:"method"`
+	Params map[string]interface{} `json:"params,omitempty"`
 }
 
 // actionConfigEndpoint генерирует конфиг для webapp
@@ -71,47 +88,21 @@ func (generator *Generator) actionConfigEndpoint() gin.HandlerFunc {
 		lang := generator.getLang(c)
 		generator.setTranslationContext(c, lang)
 
-		availableModules := make(map[string]*BaseModule)
-		moduleActions := make(map[string][]actions.ModuleAction)
-
-		for _, module := range generator.Modules {
-			moduleAvailable := false
-			var accessibleActions []actions.ModuleAction
-
-			for _, menuItem := range moduleMenuItems(module) {
-				if !menuItem.Show {
-					continue
-				}
-				for _, action := range module.Actions {
-					if string(action.Action()) == menuItem.ActionName {
-						if hasPermission(action, role) {
-							moduleAvailable = true
-							accessibleActions = append(accessibleActions, action)
-						}
-						break
-					}
-				}
-			}
-
-			if moduleAvailable {
-				availableModules[module.Name] = module
-				moduleActions[module.Name] = accessibleActions
-			}
+		navigation, err := generator.buildNavigation(c, role, lang)
+		if err != nil {
+			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			return
 		}
-
-		menus := generator.buildMenus(availableModules, moduleActions, role, lang)
-		leftMenu := menus["sidebar"]
-		routes, err := generator.buildRoutes(c, availableModules, moduleActions, role)
+		widgets, err := generator.buildWidgets(c, role)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
 
 		config := ConfigResponse{
-			Menus:    menus,
-			LeftMenu: leftMenu,
-			Routes:   routes,
-			Role:     role,
+			Navigation: navigation,
+			Widgets:    widgets,
+			Role:       role,
 		}
 
 		response.Response(l, c, config)
@@ -143,6 +134,10 @@ func hasPermission(action actions.ModuleAction, role string) bool {
 		permissions = a.Permission
 	case *actions.DeleteModuleAction:
 		permissions = a.Permission
+	case actions.DefrecModuleAction:
+		permissions = a.Permission
+	case *actions.DefrecModuleAction:
+		permissions = a.Permission
 	default:
 		return false
 	}
@@ -160,219 +155,220 @@ func hasPermission(action actions.ModuleAction, role string) bool {
 	return false
 }
 
-func moduleMenuItems(module *BaseModule) []MenuItem {
-	return module.MenuItems
-}
-
-func menuRouteKey(module *BaseModule, entry MenuItem) string {
-	if entry.Target.RouteKey != "" {
-		return entry.Target.RouteKey
+func navigationID(module *BaseModule, entry NavigationEntry) string {
+	if entry.ID != "" {
+		return entry.ID
 	}
-	return module.Path + "/" + module.Name
-}
-
-func menuURL(module *BaseModule, entry MenuItem) string {
-	if entry.Target.URL != "" {
-		return entry.Target.URL
-	}
-	return menuRouteKey(module, entry)
-}
-
-func menuName(entry MenuItem) string {
-	if entry.Menu != "" {
-		return entry.Menu
-	}
-	return "sidebar"
-}
-
-func menuTarget(module *BaseModule, entry MenuItem) MenuTarget {
-	target := entry.Target
-	if target.Type == "" {
-		target.Type = "route"
-	}
-	if target.Type == "route" {
-		if target.URL == "" {
-			target.URL = menuURL(module, entry)
-		}
-		if target.RouteKey == "" {
-			target.RouteKey = menuRouteKey(module, entry)
-		}
-	}
-	return target
-}
-
-func menuItemID(module *BaseModule, entry MenuItem) string {
-	if entry.Menu != "" || entry.Group != "" || entry.ActionName != "" {
-		return menuName(entry) + "." + module.Name + "." + entry.ActionName
+	if entry.Group != "" || entry.ActionName != "" {
+		return entry.Group + "." + module.Name + "." + entry.ActionName
 	}
 	return module.Name
 }
 
-// buildMenus формирует произвольные меню с группировкой по Menu и Group.
-func (generator *Generator) buildMenus(
-	availableModules map[string]*BaseModule,
-	moduleActions map[string][]actions.ModuleAction,
-	role string,
-	lang locale.Lang,
-) map[string][]MenuBlock {
-	type menuEntryWithModule struct {
-		entry  MenuItem
-		module *BaseModule
+func navigationPath(module *BaseModule, entry NavigationEntry, targetType string) string {
+	if entry.Path != "" {
+		return entry.Path
 	}
+	if targetType != "page" {
+		return ""
+	}
+	return module.Path + "/" + module.Name
+}
 
-	grouped := make(map[string]map[string][]menuEntryWithModule)
-	groupOrder := make(map[string]map[string]int)
+func navigationTarget(entry NavigationEntry) NavigationPageTarget {
+	target := NavigationPageTarget{
+		Type:   entry.Target.Type,
+		Name:   entry.Target.Name,
+		Params: entry.Target.Params,
+	}
+	if target.Type == "" {
+		target.Type = "page"
+	}
+	return target
+}
 
-	for _, module := range availableModules {
-		actionMap := make(map[string]bool)
-		for _, action := range moduleActions[module.Name] {
-			actionMap[string(action.Action())] = true
-		}
+func (generator *Generator) buildNavigation(c *gin.Context, role string, lang locale.Lang) ([]ConfigNavigationEntry, error) {
+	var result []ConfigNavigationEntry
 
-		for _, entry := range moduleMenuItems(module) {
+	for _, module := range generator.Modules {
+		for _, entry := range module.Navigation {
 			if !entry.Show {
 				continue
 			}
-			if !actionMap[entry.ActionName] {
+			action, ok := findModuleAction(module, entry.ActionName)
+			if !ok || !hasPermission(action, role) || !navigationRoleAllowed(entry, role) {
 				continue
 			}
 
-			// Role-specific visibility
-			if len(entry.Roles) > 0 {
-				allowed := false
-				for _, r := range entry.Roles {
-					if string(r) == role || r == actions.RoleAll {
-						allowed = true
-						break
-					}
+			target := navigationTarget(entry)
+			if target.Type == "page" {
+				render, err := module.RenderFor(c)
+				if err != nil {
+					return nil, err
 				}
-				if !allowed {
-					continue
+				route := generator.buildRouteForAction(module, render, action, role)
+				target.Renderer = route.Renderer
+				target.PageType = route.PageType
+				target.Query = route.Query
+				target.Data = route.Data
+				target.Children = route.Children
+				if target.Query != nil && entry.Query != nil {
+					target.Query.Params = entry.Query
 				}
 			}
 
-			group := entry.Group
-			if group == "" {
-				group = "default"
-			}
-			menu := menuName(entry)
-
-			if grouped[menu] == nil {
-				grouped[menu] = make(map[string][]menuEntryWithModule)
-			}
-			if groupOrder[menu] == nil {
-				groupOrder[menu] = make(map[string]int)
-			}
-
-			grouped[menu][group] = append(grouped[menu][group], menuEntryWithModule{
-				entry:  entry,
-				module: module,
+			result = append(result, ConfigNavigationEntry{
+				ID:     navigationID(module, entry),
+				Path:   navigationPath(module, entry, target.Type),
+				Title:  generator.Translate(lang, entry.Title),
+				Icon:   entry.Icon,
+				Group:  entry.Group,
+				Order:  entry.Order,
+				Target: target,
+				Query:  entry.Query,
+				Data:   entry.Data,
 			})
-
-			if _, exists := groupOrder[menu][group]; !exists {
-				groupOrder[menu][group] = entry.Order
-			} else if entry.Order < groupOrder[menu][group] {
-				groupOrder[menu][group] = entry.Order
-			}
 		}
 	}
 
-	result := make(map[string][]MenuBlock)
-	type groupInfo struct {
-		name  string
-		order int
-	}
-	for menu, orderByGroup := range groupOrder {
-		var groups []groupInfo
-		for name, order := range orderByGroup {
-			groups = append(groups, groupInfo{name: name, order: order})
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i].Group == result[j].Group {
+			return result[i].Order < result[j].Order
 		}
-		sort.Slice(groups, func(i, j int) bool {
-			return groups[i].order < groups[j].order
-		})
+		return result[i].Group < result[j].Group
+	})
 
-		for _, group := range groups {
-			entries := grouped[menu][group.name]
-
-			sort.Slice(entries, func(i, j int) bool {
-				return entries[i].entry.Order < entries[j].entry.Order
-			})
-
-			blockTitle := group.name
-			if title, exists := generator.GroupTitles[group.name]; exists {
-				blockTitle = title
-			}
-
-			var elements []ConfigMenuItem
-			for _, item := range entries {
-				entry := item.entry
-				target := menuTarget(item.module, entry)
-				menuItem := ConfigMenuItem{
-					ID:     menuItemID(item.module, entry),
-					Title:  generator.Translate(lang, entry.Title),
-					Icon:   entry.Icon,
-					Target: target,
-					Order:  entry.Order,
-					Group:  group.name,
-				}
-
-				if entry.Query != nil {
-					menuItem.Query = entry.Query
-				}
-				if entry.Data != nil {
-					menuItem.Data = entry.Data
-				}
-
-				elements = append(elements, menuItem)
-			}
-
-			if len(elements) > 0 {
-				result[menu] = append(result[menu], MenuBlock{
-					BlockTitle: blockTitle,
-					Elements:   elements,
-				})
-			}
-		}
-	}
-
-	return result
+	return result, nil
 }
 
-// buildRoutes формирует маршруты с view-адаптерами, actions, children
-func (generator *Generator) buildRoutes(
-	c *gin.Context,
-	availableModules map[string]*BaseModule,
-	moduleActions map[string][]actions.ModuleAction,
-	role string,
-) (map[string]RouteConfig, error) {
-	routes := make(map[string]RouteConfig)
+func navigationRoleAllowed(entry NavigationEntry, role string) bool {
+	if len(entry.Roles) == 0 {
+		return true
+	}
+	for _, r := range entry.Roles {
+		if string(r) == role || r == actions.RoleAll {
+			return true
+		}
+	}
+	return false
+}
 
-	for _, module := range availableModules {
-		actionList := moduleActions[module.Name]
-		render, err := module.RenderFor(c)
-		if err != nil {
-			return nil, err
+func findModuleAction(module *BaseModule, actionName string) (actions.ModuleAction, bool) {
+	for _, action := range module.Actions {
+		if string(action.Action()) == actionName {
+			return action, true
+		}
+	}
+	return nil, false
+}
+
+func (generator *Generator) buildRouteForAction(module *BaseModule, render renderer.Universal, action actions.ModuleAction, role string) RouteConfig {
+	switch a := action.(type) {
+	case actions.ListModuleAction:
+		return generator.buildListRoute(module, render, a, role)
+	case *actions.ListModuleAction:
+		return generator.buildListRoute(module, render, *a, role)
+	case actions.ViewModuleAction:
+		return generator.buildViewRoute(module, render, a)
+	case *actions.ViewModuleAction:
+		return generator.buildViewRoute(module, render, *a)
+	case actions.AddModuleAction:
+		return generator.buildAddRoute(module, render, a)
+	case *actions.AddModuleAction:
+		return generator.buildAddRoute(module, render, *a)
+	case actions.DefrecModuleAction:
+		return generator.buildDefrecRoute(module, render, a)
+	case *actions.DefrecModuleAction:
+		return generator.buildDefrecRoute(module, render, *a)
+	default:
+		return RouteConfig{}
+	}
+}
+
+func (generator *Generator) buildWidgets(c *gin.Context, role string) ([]ConfigWidget, error) {
+	var result []ConfigWidget
+
+	for _, module := range generator.Modules {
+		for _, action := range module.Actions {
+			widget := actionWidget(action)
+			if widget == nil || !hasPermission(action, role) {
+				continue
+			}
+			render, err := module.RenderFor(c)
+			if err != nil {
+				return nil, err
+			}
+			route := generator.buildRouteForAction(module, render, action, role)
+			result = append(result, ConfigWidget{
+				ID:        widget.ID,
+				Type:      widget.Type,
+				Placement: widget.Placement,
+				Order:     widget.Order,
+				Renderer:  widget.Renderer,
+				Query:     route.Query,
+				Config:    widget.Config,
+				Params:    widget.Params,
+			})
 		}
 
-		for _, action := range actionList {
-			switch a := action.(type) {
-			case actions.ListModuleAction:
-				routes[module.Path+"/"+module.Name] = generator.buildListRoute(module, render, a, role)
-			case *actions.ListModuleAction:
-				routes[module.Path+"/"+module.Name] = generator.buildListRoute(module, render, *a, role)
-			case actions.ViewModuleAction:
-				routes[module.Path+"/"+module.Name+"/:id"] = generator.buildViewRoute(module, render, a)
-			case *actions.ViewModuleAction:
-				routes[module.Path+"/"+module.Name+"/:id"] = generator.buildViewRoute(module, render, *a)
-			case actions.AddModuleAction:
-				routes[module.Path+"/"+module.Name+"/add"] = generator.buildAddRoute(module, render, a)
-			case *actions.AddModuleAction:
-				routes[module.Path+"/"+module.Name+"/add"] = generator.buildAddRoute(module, render, *a)
+		if module.Defrec.Widget != nil && hasPermission(module.Defrec, role) {
+			render, err := module.RenderFor(c)
+			if err != nil {
+				return nil, err
 			}
+			route := generator.buildDefrecRoute(module, render, module.Defrec)
+			result = append(result, ConfigWidget{
+				ID:        module.Defrec.Widget.ID,
+				Type:      module.Defrec.Widget.Type,
+				Placement: module.Defrec.Widget.Placement,
+				Order:     module.Defrec.Widget.Order,
+				Renderer:  module.Defrec.Widget.Renderer,
+				Query:     route.Query,
+				Config:    module.Defrec.Widget.Config,
+				Params:    module.Defrec.Widget.Params,
+			})
 		}
 	}
 
-	return routes, nil
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i].Placement == result[j].Placement {
+			return result[i].Order < result[j].Order
+		}
+		return result[i].Placement < result[j].Placement
+	})
+
+	return result, nil
+}
+
+func actionWidget(action actions.ModuleAction) *actions.WidgetConfig {
+	switch a := action.(type) {
+	case actions.ListModuleAction:
+		return a.Widget
+	case *actions.ListModuleAction:
+		return a.Widget
+	case actions.ViewModuleAction:
+		return a.Widget
+	case *actions.ViewModuleAction:
+		return a.Widget
+	case actions.AddModuleAction:
+		return a.Widget
+	case *actions.AddModuleAction:
+		return a.Widget
+	case actions.UpdateModuleAction:
+		return a.Widget
+	case *actions.UpdateModuleAction:
+		return a.Widget
+	case actions.DeleteModuleAction:
+		return a.Widget
+	case *actions.DeleteModuleAction:
+		return a.Widget
+	case actions.DefrecModuleAction:
+		return a.Widget
+	case *actions.DefrecModuleAction:
+		return a.Widget
+	default:
+		return nil
+	}
 }
 
 func (generator *Generator) buildListRoute(module *BaseModule, render renderer.Universal, action actions.ListModuleAction, role string) RouteConfig {
@@ -389,7 +385,7 @@ func (generator *Generator) buildListRoute(module *BaseModule, render renderer.U
 		Renderer:  render.ListIdentity(),
 		PageType:  render.ListRoutePageType(),
 		Query: &RouteQuery{
-			Url:    "/api" + routePath,
+			Url:    apiQueryURL(routePath),
 			Method: "GET",
 		},
 		Data: map[string]interface{}{
@@ -414,7 +410,7 @@ func (generator *Generator) buildViewRoute(module *BaseModule, render renderer.U
 		Renderer: render.RecordIdentity(),
 		PageType: render.RecordRoutePageType(),
 		Query: &RouteQuery{
-			Url:    "/api" + module.Path + "/" + module.Name + "/view/:bykey/:value",
+			Url:    apiQueryURL(module.Path + "/" + module.Name + "/view/:bykey/:value"),
 			Method: "GET",
 		},
 		Data: map[string]interface{}{
@@ -434,7 +430,7 @@ func (generator *Generator) buildAddRoute(module *BaseModule, render renderer.Un
 		Renderer: render.FormIdentity(),
 		PageType: render.FormRoutePageType(),
 		Query: &RouteQuery{
-			Url:    "/api" + module.Path + "/" + module.Name,
+			Url:    apiQueryURL(module.Path + "/" + module.Name),
 			Method: "PUT",
 		},
 		Data: map[string]interface{}{
@@ -443,11 +439,38 @@ func (generator *Generator) buildAddRoute(module *BaseModule, render renderer.Un
 	}
 }
 
+func (generator *Generator) buildDefrecRoute(module *BaseModule, render renderer.Universal, action actions.DefrecModuleAction) RouteConfig {
+	viewAdapter := "add"
+	if adapter, exists := generator.ViewAdapters["add"]; exists {
+		viewAdapter = adapter
+	}
+
+	return RouteConfig{
+		Title:    action.Label,
+		Renderer: render.FormIdentity(),
+		PageType: render.FormRoutePageType(),
+		Query: &RouteQuery{
+			Url:    apiQueryURL(module.Path + "/" + module.Name + "/defrec/"),
+			Method: "GET",
+		},
+		Data: map[string]interface{}{
+			"view_adapter": viewAdapter,
+		},
+	}
+}
+
+func apiQueryURL(path string) string {
+	if path == "/api" || strings.HasPrefix(path, "/api/") {
+		return path
+	}
+	return "/api" + path
+}
+
 // buildRouteActions формирует actions для маршрута
 func (generator *Generator) buildRouteActions(module *BaseModule, role string) []map[string]interface{} {
 	var result []map[string]interface{}
 
-	for _, entry := range moduleMenuItems(module) {
+	for _, entry := range module.Navigation {
 		for _, action := range module.Actions {
 			if string(action.Action()) != entry.ActionName {
 				continue
@@ -529,7 +552,7 @@ func (generator *Generator) buildViewChild(module *BaseModule, render renderer.U
 		Renderer: render.RecordIdentity(),
 		PageType: render.RecordRoutePageType(),
 		Query: &RouteQuery{
-			Url:    "/api" + module.Path + "/" + module.Name + "/view/:bykey/:value",
+			Url:    apiQueryURL(module.Path + "/" + module.Name + "/view/:bykey/:value"),
 			Method: "GET",
 		},
 		Data: map[string]interface{}{
@@ -553,7 +576,7 @@ func (generator *Generator) buildUpdateChild(module *BaseModule, render renderer
 		Renderer: render.FormIdentity(),
 		PageType: render.FormRoutePageType(),
 		Query: &RouteQuery{
-			Url:    "/api" + module.Path + "/" + module.Name + "/:bykey/:value",
+			Url:    apiQueryURL(module.Path + "/" + module.Name + "/:bykey/:value"),
 			Method: "POST",
 		},
 		Data: map[string]interface{}{
@@ -577,7 +600,7 @@ func (generator *Generator) buildAddChild(module *BaseModule, render renderer.Un
 		Renderer: render.FormIdentity(),
 		PageType: render.FormRoutePageType(),
 		Query: &RouteQuery{
-			Url:    "/api" + module.Path + "/" + module.Name,
+			Url:    apiQueryURL(module.Path + "/" + module.Name),
 			Method: "PUT",
 		},
 		Data: map[string]interface{}{

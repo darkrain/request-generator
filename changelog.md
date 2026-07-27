@@ -4,12 +4,15 @@
 
 ### Added
 
-- **`MenuItem` на `BaseModule`** — декларативное описание пунктов произвольных меню для config endpoint.
-  Поля: `ActionName`, `Title`, `Icon`, `Show`, `Order`, `Menu`, `Group`, `Roles`, `URL`, `RouteKey`, `Query`, `Data`.
+- **`NavigationEntry` на `BaseModule`** — декларативное описание навигации и frontend routes для config endpoint.
+  Поля: `ActionName`, `ID`, `Path`, `Title`, `Icon`, `Show`, `Order`, `Group`, `Target`, `Roles`, `Query`, `Data`.
 
-- **Config endpoint** — возвращает клиентский конфиг с role-based меню (`menus`) и явным соответствием `route_key -> routes`.
-  Меню формируется из `MenuItems` каждого модуля, группируется по `Menu` и `Group`, фильтруется по `Roles` текущего пользователя.
-  Заголовки блоков переводятся через i18n (lang из query-параметра или `Accept-Language`).
+- **Config endpoint** — возвращает единый role-based список `navigation`, глобальные `widgets` и роль пользователя.
+  Навигация формируется из `Navigation` каждого модуля, фильтруется по правам действия и `Roles` пункта.
+  Для `target.type=page` renderer/query/children встраиваются прямо в `navigation[].target`, без отдельного `routes`.
+
+- **`WidgetConfig` на действиях модулей** — глобальные виджеты описываются на конкретном действии (`list`, `view`, `add`, `defrec`, ...).
+  Такие виджеты автоматически попадают в `/api/config.widgets` с query соответствующего действия.
 
 - **`ExtraFunc` на `ListModuleAction`** — динамические extra-данные per-request.
   Функция вызывается при каждом List-запросе; результат добавляется в ответ как `extra`.
@@ -128,5 +131,5 @@
   Convert: func(c *gin.Context, value interface{}) (interface{}, error) { ... }
   ```
 
-- `LeftMenuItem` расширен полями `Query` (`map[string]interface{}`) и `Data` (`map[string]interface{}`) для передачи дополнительных параметров клиенту.
-- `CustomLink` в `MenuEntry` позволяет переопределить URL пункта меню.
+- `NavigationEntry` поддерживает поля `Query` (`map[string]interface{}`) и `Data` (`map[string]interface{}`) для передачи дополнительных параметров клиенту.
+- `NavigationEntry.Path` позволяет явно задать frontend route для `target.type=page`.

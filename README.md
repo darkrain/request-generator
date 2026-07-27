@@ -73,8 +73,8 @@ BaseModule
   ├── Render
   │     └── typed UniversalRenderer page metadata
   │
-  └── MenuItems
-        └── navigation/config metadata
+  └── Navigation
+        └── navigation/config metadata and page routes
 ```
 
 ### Ответственность модуля
@@ -107,7 +107,7 @@ Frontend должен получать готовую схему и рендер
 | Страница просмотра записи | `BaseModule.Render.Record` |
 | Рабочий grid с create/update/delete/status | `BaseModule.Render.ResourceGrid` |
 | Legacy/detail groups | `ViewModuleAction.Extra` |
-| Пункты меню | `BaseModule.MenuItems` |
+| Навигация и page routes | `BaseModule.Navigation` |
 | Динамический список колонок по роли | `ColumnsFunc` или `Fields`/`RoleContext` |
 | Динамические фильтры по роли | `FilterFunc` |
 | Права на строки | `Where`, `RoleWhere`, `BeforeAction`, `DataCheckRule` |
@@ -196,7 +196,7 @@ Extra: &fields.FieldExtra{
 
 Canonical UniversalRenderer metadata описывается через typed `BaseModule.Render`. Request-generator сам добавляет в response `renderer.name/version` и top-level page metadata: `list_page`, `form_page`, `record_page`, `resource_grid_page`.
 
-`/api/config` также получает route discovery metadata: `routes[path].renderer` и `routes[path].page_type`, поэтому frontend может выбрать renderer до загрузки данных страницы.
+`/api/config` также получает route discovery metadata в `navigation[].target.renderer` и `navigation[].target.page_type`, поэтому frontend может выбрать renderer до загрузки данных страницы.
 
 Если page metadata зависит от роли, query или текущего пользователя, используйте typed `RenderFunc`. Он получает deep clone базового `renderer.Universal`, возвращает итоговый `renderer.Universal`, а request-generator валидирует результат перед ответом. Clone покрывает pointer structs, slices, maps и стандартные JSON-like значения внутри `interface{}` (`map[string]interface{}`, `[]interface{}`, `map[string]string`, `[]string` и т.п.); произвольные custom objects внутри `interface{}` остаются ответственностью producer module.
 
@@ -432,24 +432,25 @@ func NewCoursesModule() *module.BaseModule {
 | `RoleJoin`       | `[]actions.RoleJoin`       | JOIN-ы по ролям                             |
 | `RoleBeforeHook` | `[]actions.RoleHook`       | Хуки до обработки по ролям                  |
 | `RoleAfterHook`  | `[]actions.RoleAfterHook`  | Хуки после обработки по ролям               |
-| `MenuItems`      | `[]module.MenuItem`        | Пункты произвольных меню для config endpoint |
+| `Navigation`     | `[]module.NavigationEntry` | Пункты навигации и frontend page routes для config endpoint |
 
-#### MenuItem
+#### NavigationEntry
 
-`MenuItem` описывает пункт меню, возвращаемого config endpoint. Меню строятся из `MenuItems` всех модулей, фильтруются по `Roles` текущего пользователя и группируются по `Menu` и `Group`.
+`NavigationEntry` описывает пункт навигации и связанный с ним frontend route. Навигация строится из `Navigation` всех модулей, фильтруется по `Roles` пункта и по permission указанного `ActionName`.
 
 ```go
-MenuItems: []module.MenuItem{
+Navigation: []module.NavigationEntry{
     {
         ActionName: "list",         // имя действия модуля (list/view/…)
+        ID:         "catalog.list", // стабильный id пункта, опционально
+        Path:       "/catalog",     // frontend route для page target
         Title:      "menu.catalog", // ключ i18n для заголовка пункта
         Icon:       "catalog",       // иконка (передаётся клиенту as-is)
         Show:       true,
         Order:      1,
-        Menu:       "sidebar",     // имя меню; по умолчанию sidebar
         Group:      "main",        // группа блока в левом меню
         Roles:      []actions.Role{"admin", "editor"},
-        Target:     module.MenuTarget{Type: "route", URL: "/catalog", RouteKey: "/api/catalog"},
+        Target:     module.NavigationTarget{Type: "page"},
     },
 },
 ```
@@ -461,9 +462,8 @@ MenuItems: []module.MenuItem{
 | `Icon`        | `string`                   | Имя иконки (передаётся клиенту)                       |
 | `Show`        | `bool`                     | Показывать пункт (`false` — скрыт, но в features есть) |
 | `Order`       | `int`                      | Порядок внутри группы                                 |
-| `Menu`        | `string`                   | Имя меню (`sidebar`, `mobile_bottom`, `profile`, ...) |
-| `Group`       | `string`                   | Ключ группы (становится `blockTitle` в ответе)        |
-| `Target`      | `module.MenuTarget`        | Явное поведение пункта меню                           |
+| `Group`       | `string`                   | Ключ группы для группировки на клиенте                |
+| `Target`      | `module.NavigationTarget`  | Явное поведение пункта навигации                      |
 | `Roles`       | `[]actions.Role`           | Роли, которым доступен пункт (пустой = все)           |
 | `Query`       | `map[string]interface{}`   | Доп. query-параметры для клиента                      |
 | `Data`        | `map[string]interface{}`   | Произвольные данные для клиента                       |
@@ -472,11 +472,32 @@ MenuItems: []module.MenuItem{
 
 | Type | Обязательные поля | Назначение |
 |---|---|---|
-| `route` | `URL`, `RouteKey` | Переход на frontend route и загрузка renderer/query из `routes[route_key]`. |
-| `widget` | `Name` | Открытие клиентского виджета, например `chat`. |
+| `page` | `Path` | Переход на frontend route. Renderer/query/children встраиваются в `navigation[].target`. |
 | `modal` | `Name` | Открытие клиентского popup/modal. |
-| `action` | `Name` | Выполнение клиентского действия. |
-| `external` | `URL` | Переход на внешний URL. |
+| `client_action` | `Name` | Выполнение клиентского действия, например `chat.open`. |
+| `external` | `Name` или `Data.url` | Переход на внешний URL по договоренности клиента. |
+
+#### WidgetConfig
+
+Глобальные виджеты описываются на конкретном действии модуля через `Widget`. Config endpoint автоматически возвращает такие действия в `widgets[]`; query строится из действия, на котором висит виджет.
+
+```go
+Actions: []actions.ModuleAction{
+    actions.ListModuleAction{
+        Label:      "profile_menu",
+        Permission: []actions.Role{actions.RoleAll},
+        Auth:       true,
+        Widget: &actions.WidgetConfig{
+            ID:        "profile-menu",
+            Type:      "module",
+            Placement: "topbar",
+            Order:     10,
+        },
+    },
+},
+```
+
+`DefrecModuleAction` тоже может быть widget source, если нужно автоматически получить форму добавления в `/api/config.widgets`.
 
 ### Этап 5. Описание полей (ModuleField)
 
@@ -1271,47 +1292,57 @@ type TranslationContext struct {
 | `GET` | `/admin/api/lang`         | Список поддерживаемых языков          |
 | `GET` | `/admin/api/lang/:key`    | Все переводы для языка                |
 | `GET` | `/admin/api/openapi.json` | OpenAPI 3.0 спецификация              |
-| `GET` | `<path>/config`           | Клиентский конфиг: меню, routes и роль   |
+| `GET` | `<path>/config`           | Клиентский конфиг: navigation, widgets и роль |
 
 ### Config endpoint
 
-Возвращает конфигурацию для клиентского приложения. Все меню фильтруются по роли текущего пользователя.
+Возвращает конфигурацию для клиентского приложения. Навигация и виджеты фильтруются по роли текущего пользователя и permission действия.
 
-**Query-параметры:** `lang` — код языка для перевода заголовков блоков меню.
+**Query-параметры:** `lang` — код языка для перевода заголовков навигации.
 
 **Пример ответа:**
 ```json
 {
-  "menus": {
-    "sidebar": [
-      {
-        "blockTitle": "Catalog",
-        "elements": [
-          {
-            "id": "sidebar.catalog.list",
-            "target": {
-              "type": "route",
-              "url": "/catalog",
-              "route_key": "/api/catalog"
-            },
-            "title": "Catalog",
-            "icon": "catalog",
-            "order": 10,
-            "group": "main"
-          }
-        ]
-      }
-    ]
-  },
-  "routes": {
-    "/api/catalog": {
+  "navigation": [
+    {
+      "id": "catalog.list",
+      "path": "/catalog",
+      "target": {
+        "type": "page",
+        "renderer": {
+          "name": "UniversalRenderer",
+          "version": "1.0.0"
+        },
+        "page_type": "list",
+        "query": {
+          "url": "/api/api/catalog",
+          "method": "GET"
+        },
+        "data": {
+          "view_adapter": "list_table"
+        },
+        "children": {}
+      },
+      "title": "Catalog",
+      "icon": "catalog",
+      "order": 10,
+      "group": "main"
+    }
+  ],
+  "widgets": [
+    {
+      "id": "profile-menu",
+      "type": "module",
+      "placement": "topbar",
+      "order": 10,
       "query": {
-        "url": "/api/api/catalog",
+        "url": "/api/api/profile-menu",
         "method": "GET"
       }
     }
-  }
+  ],
+  "role": "admin"
 }
 ```
 
-Меню строится из `MenuItems` каждого `BaseModule`. Пункты группируются по `Menu` и `Group`, сортируются по `Order`. Для `target.type=route` поле `route_key` связывает пункт меню с записью в `routes`. Для popup/widget/action route не требуется. `left_menu` может присутствовать как legacy alias для `menus.sidebar`, но новые клиенты должны использовать `menus`.
+Навигация строится из `Navigation` каждого `BaseModule`. Пункты сортируются по `Group`, затем по `Order`. Для `target.type=page` frontend route хранится в `path`, а renderer/query/children находятся прямо в `target`. Для popup/client_action route не требуется. Глобальные виджеты строятся из `WidgetConfig` на действиях модулей и возвращаются в `widgets`.

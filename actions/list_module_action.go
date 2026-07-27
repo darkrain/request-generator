@@ -31,6 +31,7 @@ type ListModuleAction struct {
 	SortDefaultDirection SortDirection                          `json:"-"`
 	SortDefaultFunc      func(c *gin.Context) *SortOption       `json:"-"`
 	Fields               []RoleContext                          `json:"-"`
+	Widget               *WidgetConfig                          `json:"widget,omitempty"`
 }
 
 func (action ListModuleAction) Action() ModuleActionName {

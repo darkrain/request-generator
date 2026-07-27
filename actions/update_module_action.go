@@ -19,6 +19,7 @@ type UpdateModuleAction struct {
 	Where           func(c *gin.Context) pg.BoolExpression `json:"-"`
 	Fields          []RoleContext                          `json:"-"`
 	ViewAfterUpdate *bool                                  `json:"-"` // default true; if true and ViewAction exists, return view response after update
+	Widget          *WidgetConfig                          `json:"widget,omitempty"`
 }
 
 func (action UpdateModuleAction) Action() ModuleActionName {

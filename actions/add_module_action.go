@@ -13,9 +13,10 @@ type AddModuleAction struct {
 	Labels       map[string]string                `json:"-"`
 	Columns      []pg.Column                      `json:"-"`
 	ColumnsFunc  func(c *gin.Context) []pg.Column `json:"-"`
-	Permission   []Role        `json:"permission"`
-	Auth         bool          `json:"auth"`
-	Fields       []RoleContext `json:"-"`
+	Permission   []Role                           `json:"permission"`
+	Auth         bool                             `json:"auth"`
+	Fields       []RoleContext                    `json:"-"`
+	Widget       *WidgetConfig                    `json:"widget,omitempty"`
 }
 
 func (action AddModuleAction) Action() ModuleActionName {

@@ -239,50 +239,57 @@ Closed enums должны использовать typed constants из package 
 
 ### Config Response
 
-`config` используется для navigation/routes и роли текущего пользователя, если producer service участвует в построении оболочки приложения.
+`config` используется для навигации, глобальных виджетов и роли текущего пользователя, если producer service участвует в построении оболочки приложения.
 
 ```json
 {
-  "menus": {
-    "sidebar": [
-      {
-        "blockTitle": "navigation.main",
-        "elements": [
-          {
-            "id": "sidebar.entities.list",
-            "target": {
-              "type": "route",
-              "url": "/entities",
-              "route_key": "/api/entities"
-            },
-            "title": "entities.menu.list",
-            "icon": "list",
-            "order": 10,
-            "group": "navigation.main",
-            "query": {},
-            "data": {}
-          }
-        ]
+  "navigation": [
+    {
+      "id": "entities.list",
+      "path": "/entities",
+      "target": {
+        "type": "page",
+        "renderer": {
+          "name": "UniversalRenderer",
+          "version": "1.0.0"
+        },
+        "page_type": "list",
+        "query": {
+          "url": "/api/entities",
+          "method": "GET"
+        },
+        "data": {},
+        "children": {}
+      },
+      "title": "entities.menu.list",
+      "icon": "list",
+      "order": 10,
+      "group": "navigation.main",
+      "query": {},
+      "data": {}
+    },
+    {
+      "id": "chat.open",
+      "target": {
+        "type": "client_action",
+        "name": "chat.open"
       }
-    ]
-  },
-  "routes": {
-    "/api/entities": {
-      "title": "entities.routes.list",
-      "menuTitle": "entities.menu.list",
-      "renderer": {
-        "name": "UniversalRenderer",
-        "version": "1.0.0"
-      },
-      "page_type": "list",
-      "query": {
-        "url": "/entities",
-        "method": "get"
-      },
-      "data": {},
-      "children": {}
     }
-  },
+  ],
+  "widgets": [
+    {
+      "id": "profile-menu",
+      "type": "module",
+      "placement": "topbar",
+      "order": 10,
+      "query": {
+        "url": "/api/profile-menu",
+        "method": "GET"
+      },
+      "config": {},
+      "params": {}
+    }
+  ],
   "role": "admin"
 }
 ```
@@ -291,19 +298,18 @@ Closed enums должны использовать typed constants из package 
 
 | Path | Назначение |
 |------|------------|
-| `menus` | Map меню, где ключ это имя меню (`sidebar`, `mobile_bottom`, `profile`, ...). |
-| `menus[name][]` | Группы пунктов конкретного меню. |
-| `menus[name][].elements[]` | Пункты меню. |
-| `menus[name][].elements[].target` | Поведение пункта меню. |
-| `menus[name][].elements[].target.type` | Тип поведения: `route`, `widget`, `modal`, `action`, `external`, `submenu`. |
-| `menus[name][].elements[].target.url` | Frontend URL для `route` или внешний URL для `external`. |
-| `menus[name][].elements[].target.route_key` | Ключ в `routes` для `target.type=route`. |
-| `menus[name][].elements[].target.name` | Имя widget/modal/action. |
-| `routes` | Map route config, где ключ совпадает с `route_key` из пункта меню. |
-| `routes[path].renderer` | Renderer identity/version для route discovery, если route использует typed `BaseModule.Render`. |
-| `routes[path].page_type` | Тип страницы: `list`, `form`, `record`, `resource_grid`. |
-| `routes[path].query` | Endpoint и method для загрузки данных route. |
-| `routes[path].children` | Вложенные route configs. |
+| `navigation` | Плоский список пунктов навигации. Это источник истины для frontend routes. |
+| `navigation[].path` | Frontend path для `target.type=page`. Для popup/client_action может отсутствовать. |
+| `navigation[].target` | Поведение пункта навигации. |
+| `navigation[].target.type` | Тип поведения: `page`, `modal`, `client_action`, `external`. |
+| `navigation[].target.name` | Имя modal/client_action/external target. |
+| `navigation[].target.renderer` | Renderer identity/version для page discovery, если route использует typed `BaseModule.Render`. |
+| `navigation[].target.page_type` | Тип страницы: `list`, `form`, `record`, `resource_grid`. |
+| `navigation[].target.query` | Endpoint и method для загрузки данных page route. |
+| `navigation[].target.children` | Вложенные route configs. |
+| `widgets` | Глобальные виджеты, построенные из действий модулей с `WidgetConfig`. |
+| `widgets[].placement` | Место отображения виджета в shell, например `topbar`. |
+| `widgets[].query` | Endpoint и method действия, данные которого нужны виджету. |
 | `role` | Роль текущего пользователя. |
 
 Renderer discovery происходит через `/api/config`: frontend может проверить compatibility с `UniversalRenderer` до загрузки данных страницы. Data responses (`list`, `defrec`, `view`) повторяют `renderer.name/version`, чтобы каждый response был самодостаточным.

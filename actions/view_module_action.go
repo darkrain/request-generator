@@ -20,6 +20,7 @@ type ViewModuleAction struct {
 	Extra        interface{}                      `json:"extra"`
 	ExtraFunc    func(c *gin.Context) interface{} `json:"-"`
 	Fields       []RoleContext                    `json:"-"`
+	Widget       *WidgetConfig                    `json:"widget,omitempty"`
 }
 
 func (action ViewModuleAction) Action() ModuleActionName {

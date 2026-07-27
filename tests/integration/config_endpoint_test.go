@@ -29,7 +29,7 @@ func setupTestRouter(authMiddleware func(actions.ModuleAction) gin.HandlerFunc) 
 				ID: "users",
 			},
 		},
-		MenuItems: []module.MenuItem{
+		Navigation: []module.NavigationEntry{
 			{
 				ActionName: "list",
 				Title:      "Пользователи",
@@ -37,6 +37,7 @@ func setupTestRouter(authMiddleware func(actions.ModuleAction) gin.HandlerFunc) 
 				Order:      1,
 				Icon:       "user",
 				Show:       true,
+				Path:       "/admin/users",
 			},
 			{
 				ActionName: "add",
@@ -45,6 +46,7 @@ func setupTestRouter(authMiddleware func(actions.ModuleAction) gin.HandlerFunc) 
 				Order:      2,
 				Icon:       "plus",
 				Show:       true,
+				Path:       "/admin/users/add",
 			},
 		},
 		Actions: []actions.ModuleAction{
@@ -135,8 +137,8 @@ func TestConfigEndpoint_ValidToken(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
-	assert.Contains(t, response, "menus")
-	assert.Contains(t, response, "routes")
+	assert.Contains(t, response, "navigation")
+	assert.Contains(t, response, "widgets")
 	assert.Contains(t, response, "role")
 	assert.Equal(t, "admin", response["role"])
 }
@@ -182,13 +184,14 @@ func TestConfigEndpoint_RoleFiltering(t *testing.T) {
 	testModule := &module.BaseModule{
 		Name: "restricted",
 		Path: "/admin",
-		MenuItems: []module.MenuItem{
+		Navigation: []module.NavigationEntry{
 			{
 				ActionName: "list",
 				Title:      "Restricted Module",
 				Group:      "Admin",
 				Order:      1,
 				Show:       true,
+				Path:       "/admin/restricted",
 			},
 		},
 		Actions: []actions.ModuleAction{
@@ -223,7 +226,7 @@ func TestConfigEndpoint_RoleFiltering(t *testing.T) {
 	var adminResponse module.ConfigResponse
 	err := json.Unmarshal(w.Body.Bytes(), &adminResponse)
 	require.NoError(t, err)
-	assert.NotEmpty(t, adminResponse.Routes, "Admin should see routes")
+	assert.NotEmpty(t, adminResponse.Navigation, "Admin should see navigation")
 
 	// Тестируем доступ для менеджера (НЕ должен видеть модуль)
 	managerEngine := gin.New()
@@ -238,11 +241,11 @@ func TestConfigEndpoint_RoleFiltering(t *testing.T) {
 	var managerResponse module.ConfigResponse
 	err = json.Unmarshal(w.Body.Bytes(), &managerResponse)
 	require.NoError(t, err)
-	assert.Empty(t, managerResponse.Routes, "Manager should not see admin-only routes")
+	assert.Empty(t, managerResponse.Navigation, "Manager should not see admin-only navigation")
 }
 
-// TestConfigEndpoint_MenuStructure — проверка структуры menus
-func TestConfigEndpoint_MenuStructure(t *testing.T) {
+// TestConfigEndpoint_NavigationStructure — проверка структуры navigation
+func TestConfigEndpoint_NavigationStructure(t *testing.T) {
 	mockUser := &icontext.UserInfo{
 		ID:   1,
 		Role: "admin",
@@ -258,24 +261,19 @@ func TestConfigEndpoint_MenuStructure(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
-	require.NotEmpty(t, response.Menus, "Menus should not be empty")
-	require.NotEmpty(t, response.Menus["sidebar"], "Sidebar menu should not be empty")
+	require.NotEmpty(t, response.Navigation, "Navigation should not be empty")
 
-	// Проверяем структуру первого блока меню
-	sidebarBlock := response.Menus["sidebar"][0]
-	assert.NotEmpty(t, sidebarBlock.BlockTitle, "Block title should not be empty")
-	assert.NotEmpty(t, sidebarBlock.Elements, "Block should have elements")
-
-	for _, element := range sidebarBlock.Elements {
-		assert.Equal(t, "route", element.Target.Type, "Menu item should default to route target")
-		assert.NotEmpty(t, element.Target.URL, "Route menu item target URL should not be empty")
-		assert.NotEmpty(t, element.Target.RouteKey, "Route menu item target route_key should not be empty")
-		assert.Contains(t, response.Routes, element.Target.RouteKey, "Menu item target route_key should point to routes")
+	for _, element := range response.Navigation {
+		assert.Equal(t, "page", element.Target.Type, "Navigation item should default to page target")
+		assert.NotEmpty(t, element.Path, "Page navigation item path should not be empty")
+		assert.NotEmpty(t, element.Target.Query.Url, "Page navigation target query URL should not be empty")
+		assert.NotEmpty(t, element.Target.Query.Method, "Page navigation target query method should not be empty")
+		assert.NotNil(t, element.Target.Data, "Page navigation target data should not be nil")
 	}
 }
 
-// TestConfigEndpoint_RoutesStructure — проверка структуры routes
-func TestConfigEndpoint_RoutesStructure(t *testing.T) {
+// TestConfigEndpoint_PageTargetStructure — проверка структуры page target
+func TestConfigEndpoint_PageTargetStructure(t *testing.T) {
 	mockUser := &icontext.UserInfo{
 		ID:   1,
 		Role: "admin",
@@ -291,36 +289,22 @@ func TestConfigEndpoint_RoutesStructure(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	require.NoError(t, err)
 
-	require.NotEmpty(t, response.Routes, "Routes should not be empty")
+	require.NotEmpty(t, response.Navigation, "Navigation should not be empty")
 
-	// Проверяем структуру маршрутов
-	for routePath, routeConfig := range response.Routes {
-		assert.NotEmpty(t, routePath, "Route path should not be empty")
-		assert.NotEmpty(t, routeConfig.Title, "Route title should not be empty")
-
-		// Проверяем наличие query для маршрута
-		if routeConfig.Query != nil {
-			assert.NotEmpty(t, routeConfig.Query.Url, "Query URL should not be empty")
-			assert.NotEmpty(t, routeConfig.Query.Method, "Query method should not be empty")
-		}
-
-		// Проверяем наличие data
-		assert.NotNil(t, routeConfig.Data, "Route data should not be nil")
-	}
-
-	// Проверяем, что есть хотя бы один маршрут для нашего тестового модуля
-	foundUsersRoute := false
-	for routePath := range response.Routes {
-		if routePath == "/admin/users" {
-			foundUsersRoute = true
+	var usersEntry *module.ConfigNavigationEntry
+	for i := range response.Navigation {
+		if response.Navigation[i].Path == "/admin/users" {
+			usersEntry = &response.Navigation[i]
 			break
 		}
 	}
-	assert.True(t, foundUsersRoute, "Should have route for /admin/users")
+	require.NotNil(t, usersEntry, "Should have navigation entry for /admin/users")
 
-	usersRoute := response.Routes["/admin/users"]
-	require.NotNil(t, usersRoute.Renderer, "Users route should expose renderer discovery")
-	assert.Equal(t, renderer.Name, usersRoute.Renderer.Name)
-	assert.Equal(t, renderer.Version, usersRoute.Renderer.Version)
-	assert.Equal(t, renderer.PageTypeList, usersRoute.PageType)
+	require.NotNil(t, usersEntry.Target.Renderer, "Users page target should expose renderer discovery")
+	assert.Equal(t, renderer.Name, usersEntry.Target.Renderer.Name)
+	assert.Equal(t, renderer.Version, usersEntry.Target.Renderer.Version)
+	assert.Equal(t, renderer.PageTypeList, usersEntry.Target.PageType)
+	assert.Equal(t, "/api/admin/users", usersEntry.Target.Query.Url)
+	assert.Equal(t, "GET", usersEntry.Target.Query.Method)
+	assert.NotNil(t, usersEntry.Target.Data, "Users page target data should not be nil")
 }
