@@ -8,26 +8,25 @@ import (
 	pg "github.com/go-jet/jet/v2/postgres"
 )
 
-type MenuItem struct {
+type NavigationEntry struct {
 	ActionName string                 `json:"action"`
+	ID         string                 `json:"id,omitempty"`
+	Path       string                 `json:"path,omitempty"`
 	Title      string                 `json:"title"`
 	Icon       string                 `json:"icon,omitempty"`
 	Show       bool                   `json:"show"`
 	Order      int                    `json:"order"`
 	Group      string                 `json:"group"`
-	Menu       string                 `json:"menu,omitempty"`
-	Target     MenuTarget             `json:"target,omitempty"`
+	Target     NavigationTarget       `json:"target,omitempty"`
 	Roles      []actions.Role         `json:"roles,omitempty"`
 	Query      map[string]interface{} `json:"query,omitempty"`
 	Data       map[string]interface{} `json:"data,omitempty"`
 }
 
-type MenuTarget struct {
-	Type     string                 `json:"type"`
-	URL      string                 `json:"url,omitempty"`
-	RouteKey string                 `json:"route_key,omitempty"`
-	Name     string                 `json:"name,omitempty"`
-	Params   map[string]interface{} `json:"params,omitempty"`
+type NavigationTarget struct {
+	Type   string                 `json:"type"`
+	Name   string                 `json:"name,omitempty"`
+	Params map[string]interface{} `json:"params,omitempty"`
 }
 
 type RenderFunc func(c *gin.Context, base renderer.Universal) (renderer.Universal, error)
@@ -47,7 +46,7 @@ type BaseModule struct {
 	RoleBeforeHook []actions.RoleHook         `json:"-"`
 	RoleAfterHook  []actions.RoleAfterHook    `json:"-"`
 	EntityName     string                     `json:"-"`
-	MenuItems      []MenuItem                 `json:"menu_items,omitempty"`
+	Navigation     []NavigationEntry          `json:"navigation,omitempty"`
 	Render         renderer.Universal         `json:"-"`
 	RenderFunc     RenderFunc                 `json:"-"`
 }

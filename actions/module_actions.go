@@ -24,6 +24,16 @@ type ModuleAction interface {
 	GetColumns(c *gin.Context) []pg.Column
 }
 
+type WidgetConfig struct {
+	ID        string                 `json:"id"`
+	Type      string                 `json:"type"`
+	Placement string                 `json:"placement"`
+	Order     int                    `json:"order,omitempty"`
+	Renderer  string                 `json:"renderer,omitempty"`
+	Config    map[string]interface{} `json:"config,omitempty"`
+	Params    map[string]interface{} `json:"params,omitempty"`
+}
+
 type JoinType string
 
 const (

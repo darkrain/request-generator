@@ -268,8 +268,8 @@ func TestUniversalRendererMetadata_RenderFuncBuildsTypedRuntimeMetadata(t *testi
 			}
 			return base, nil
 		},
-		MenuItems: []module.MenuItem{
-			{ActionName: "list", Title: "Dynamic", Group: "Admin", Order: 1, Show: true},
+		Navigation: []module.NavigationEntry{
+			{ActionName: "list", Title: "Dynamic", Group: "Admin", Order: 1, Show: true, Path: "/admin/dynamic-renderer-items"},
 		},
 		Actions: []actions.ModuleAction{
 			actions.ListModuleAction{
@@ -312,9 +312,16 @@ func TestUniversalRendererMetadata_RenderFuncBuildsTypedRuntimeMetadata(t *testi
 
 	var configResponse module.ConfigResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &configResponse))
-	route := configResponse.Routes["/admin/dynamic-renderer-items"]
-	require.NotNil(t, route.Renderer)
-	assert.Equal(t, renderer.PageTypeList, route.PageType)
+	var entry *module.ConfigNavigationEntry
+	for i := range configResponse.Navigation {
+		if configResponse.Navigation[i].Path == "/admin/dynamic-renderer-items" {
+			entry = &configResponse.Navigation[i]
+			break
+		}
+	}
+	require.NotNil(t, entry)
+	require.NotNil(t, entry.Target.Renderer)
+	assert.Equal(t, renderer.PageTypeList, entry.Target.PageType)
 }
 
 func TestUniversalRendererMetadata_RenderFuncResultIsValidated(t *testing.T) {
