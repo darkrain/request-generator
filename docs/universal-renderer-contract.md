@@ -616,7 +616,7 @@ Core renderer package owns only stable universal values:
 
 - renderer keys: `RendererUniversalDisplay`, `RendererUniversalSection`, `RendererUniversalFilters`, `RendererUniversalPagination`, `RendererMediaGallery`, `RendererCollectionManager`;
 - record layout slots: `LayoutSlotLeft`, `LayoutSlotCenter`, `LayoutSlotRight`;
-- display component types: `DisplayMediaGallery`, `DisplayActions`, `DisplayIdentity`, `DisplayStatList`, `DisplayDataList`, `DisplayBadgeList`, `DisplayRateGroups`, `DisplayAccordionGroups`;
+- display component types: `DisplayMediaGallery`, `DisplayActions`, `DisplayIdentity`, `DisplayDataList`, `DisplayBadgeList`, `DisplayAccordionGroups`;
 - generic tokens: spacing, inset, radius, alignment, semantic tones, separator appearance.
 
 Application-specific values, especially visual color names such as `cyan`, `violet`, `magenta`, shell variants, section IDs, business IDs and translation keys, must be declared by the application as typed constants when reused. The renderer package should not try to maintain every project's color or shell catalog.
@@ -746,22 +746,28 @@ Conditions отвечают только за отображение. Любое
         "order": 10,
         "block": {"type": "panel", "inset": "md"},
         "stack": {"gap": "md"},
-        "components": []
+        "components": [
+          {
+            "id": "identity",
+            "type": "identity",
+            "fields": ["avatar", "name", "status"]
+          },
+          {
+            "id": "facts",
+            "type": "data_list",
+            "fields": ["created_at", "updated_at"],
+            "display_type": "key_value_grid"
+          }
+        ]
       }
     ],
-    "display_data": {
-      "gallery": {"items": [], "current": 0},
-      "hero": {"identity": {}, "stats": []},
-      "details": {"items": []}
-    },
     "theme": {
-      "profile": {
-        "panels": {},
-        "headings": {},
-        "badges": {},
-        "buttons": {},
-        "avatar": {}
-      }
+      "surfaces": {},
+      "headings": {},
+      "badges": {},
+      "buttons": {},
+      "media": {},
+      "components": {}
     },
     "actions": [],
     "context": {}
@@ -802,7 +808,7 @@ Stable renderer names:
 | Renderer | Expected metadata |
 |----------|-------------------|
 | `universal.section` | Section metadata: `id`, `title`, `panel_title`, `block`, related fields. |
-| `universal.display` | Display section metadata: `components`, `display_data`, layout fields. |
+| `universal.display` | Display section metadata: `components`, `components[].fields`, layout fields. |
 | `universal.filters` | `filters`, `levels`, `primary`, `secondary`, `more`, `nested`, `reset`. |
 | `universal.pagination` | `mode`, pagination response fields. |
 | `universal.preferences` | `preferences` config directly in section. |

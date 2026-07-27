@@ -260,34 +260,11 @@ const (
 	DisplayMediaGallery    DisplayComponentType = "media_gallery"
 	DisplayActions         DisplayComponentType = "actions"
 	DisplayIdentity        DisplayComponentType = "identity"
-	DisplayStatList        DisplayComponentType = "stat_list"
 	DisplayDataList        DisplayComponentType = "data_list"
 	DisplayBadgeGroupBlock DisplayComponentType = "badge_group_block"
 	DisplayText            DisplayComponentType = "text"
 	DisplayBadgeList       DisplayComponentType = "badge_list"
-	DisplayRateGroups      DisplayComponentType = "rate_groups"
 	DisplayAccordionGroups DisplayComponentType = "accordion_groups"
-)
-
-type DataPath string
-
-const (
-	DataGalleryItems       DataPath = "gallery.items"
-	DataGalleryCurrent     DataPath = "gallery.current"
-	DataGalleryOverlays    DataPath = "gallery.overlays"
-	DataGalleryActions     DataPath = "gallery.actions"
-	DataHeroIdentity       DataPath = "hero.identity"
-	DataHeroStats          DataPath = "hero.stats"
-	DataDetailsItems       DataPath = "details.items"
-	DataDetailsCommercial  DataPath = "details.commercial"
-	DataAboutDescription   DataPath = "about.description"
-	DataMeetingsItems      DataPath = "meetings.items"
-	DataMeetingsCommission DataPath = "meetings.commission"
-	DataMeetingsWorkArea   DataPath = "meetings.workArea"
-	DataMeetingsPayments   DataPath = "meetings.payments"
-	DataRatesGroups        DataPath = "rates.groups"
-	DataServicesGroups     DataPath = "services.groups"
-	DataContactsItems      DataPath = "contacts.items"
 )
 
 type ComponentAction string
