@@ -421,6 +421,7 @@ type RecordPage struct {
 	Layout        *Layout                `json:"layout,omitempty"`
 	Sections      []RecordSection        `json:"sections,omitempty"`
 	DisplayData   *RecordDisplayData     `json:"display_data,omitempty"`
+	CardSchema    *CardSchema            `json:"card_schema,omitempty"`
 	Theme         *RecordTheme           `json:"theme,omitempty"`
 	Actions       []Action               `json:"actions,omitempty"`
 	Context       map[string]interface{} `json:"context,omitempty"`

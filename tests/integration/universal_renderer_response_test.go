@@ -97,6 +97,13 @@ func setupUniversalRendererRouter(t *testing.T) *gin.Engine {
 			},
 			Record: &renderer.RecordPage{
 				Layout: &renderer.Layout{Type: renderer.LayoutThreeColumn},
+				CardSchema: &renderer.CardSchema{
+					Media: &renderer.Media{Field: "avatar", Renderer: renderer.RendererAvatar},
+					Title: &renderer.TextBinding{Field: "name"},
+					Badges: []renderer.Badge{
+						{ID: "status", Field: "status", Tone: "success"},
+					},
+				},
 			},
 		},
 		Actions: []actions.ModuleAction{
@@ -195,6 +202,13 @@ func TestUniversalRendererMetadata_ViewResponse(t *testing.T) {
 	assert.Equal(t, renderer.Version, response.Renderer.Version)
 	require.NotNil(t, response.RecordPage)
 	assert.Equal(t, renderer.LayoutThreeColumn, response.RecordPage.Layout.Type)
+	require.NotNil(t, response.RecordPage.CardSchema)
+	require.NotNil(t, response.RecordPage.CardSchema.Media)
+	assert.Equal(t, "avatar", response.RecordPage.CardSchema.Media.Field)
+	require.NotNil(t, response.RecordPage.CardSchema.Title)
+	assert.Equal(t, "name", response.RecordPage.CardSchema.Title.Field)
+	require.Len(t, response.RecordPage.CardSchema.Badges, 1)
+	assert.Equal(t, "status", response.RecordPage.CardSchema.Badges[0].Field)
 }
 
 func TestUniversalRendererMetadata_ListAndResourceGridAreMutuallyExclusive(t *testing.T) {

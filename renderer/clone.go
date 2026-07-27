@@ -48,6 +48,7 @@ func cloneRecordPage(v *RecordPage) *RecordPage {
 	cp.Layout = cloneLayout(v.Layout)
 	cp.Sections = cloneRecordSections(v.Sections)
 	cp.DisplayData = cloneRecordDisplayData(v.DisplayData)
+	cp.CardSchema = cloneCardSchema(v.CardSchema)
 	cp.Theme = cloneRecordTheme(v.Theme)
 	cp.Actions = cloneActions(v.Actions)
 	cp.Context = cloneMap(v.Context)
