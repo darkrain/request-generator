@@ -770,12 +770,61 @@ Conditions отвечают только за отображение. Любое
       "components": {}
     },
     "actions": [],
-    "context": {}
+    "account_dropdown": {
+      "namespace": "shell.profile",
+      "renderer": "account_dropdown",
+      "profile_id_field": "id",
+      "avatar_field": "avatar",
+      "title_field": "name",
+      "handle_field": "nick",
+      "tags": [
+        {
+          "id": "verification",
+          "field": "verify_status",
+          "tone_map": {
+            "verified": "success",
+            "onverify": "warning",
+            "rejected": "danger"
+          }
+        },
+        { "id": "role", "field": "profile_type", "tone": "neutral" }
+      ],
+      "stats": [
+        {
+          "id": "deals",
+          "label": "Deals",
+          "value_field": "deals_count",
+          "target": {
+            "type": "page",
+            "path": "/deals",
+            "query": { "tab": "deals" }
+          }
+        }
+      ],
+      "availability": {
+        "visible_field": "availability_visible",
+        "state_field": "availability_state",
+        "label": "Availability",
+        "state_label_field": "availability_state_label",
+        "note_field": "availability_note",
+        "target": { "type": "action", "name": "profile.availability.toggle" }
+      },
+      "actions": [
+        {
+          "id": "view_profile",
+          "label": "View profile",
+          "icon": "user",
+          "target": { "type": "page", "path": "/profile/{nick}" }
+        }
+      ]
+    }
   }
 }
 ```
 
 `record_page.sections[].components` и `record_page.sections[].stack` являются canonical metadata для display renderer. Не кладите layout/display metadata в `section.extra`: такого поля нет в UniversalRenderer contract.
+
+`record_page.account_dropdown` описывает глобальный виджет аккаунта. Схема содержит только биндинги к полям `item` и targets для действий; значения, enum labels и локализация приходят в `item`/options обычного ответа action.
 
 ## View Groups
 

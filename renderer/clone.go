@@ -49,7 +49,73 @@ func cloneRecordPage(v *RecordPage) *RecordPage {
 	cp.Sections = cloneRecordSections(v.Sections)
 	cp.Theme = cloneRecordTheme(v.Theme)
 	cp.Actions = cloneActions(v.Actions)
-	cp.Context = cloneMap(v.Context)
+	cp.AccountDropdown = cloneAccountDropdownConfig(v.AccountDropdown)
+	return &cp
+}
+
+func cloneAccountDropdownConfig(v *AccountDropdownConfig) *AccountDropdownConfig {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.Tags = cloneAccountDropdownTags(v.Tags)
+	cp.Stats = cloneAccountDropdownStats(v.Stats)
+	cp.Availability = cloneAccountDropdownAvailability(v.Availability)
+	cp.Actions = cloneAccountDropdownActions(v.Actions)
+	return &cp
+}
+
+func cloneAccountDropdownTags(values []AccountDropdownTag) []AccountDropdownTag {
+	if values == nil {
+		return nil
+	}
+	out := make([]AccountDropdownTag, len(values))
+	for i, v := range values {
+		out[i] = v
+		out[i].ToneMap = cloneMap(v.ToneMap)
+	}
+	return out
+}
+
+func cloneAccountDropdownStats(values []AccountDropdownStat) []AccountDropdownStat {
+	if values == nil {
+		return nil
+	}
+	out := make([]AccountDropdownStat, len(values))
+	for i, v := range values {
+		out[i] = v
+		out[i].Target = cloneInteractionTarget(v.Target)
+	}
+	return out
+}
+
+func cloneAccountDropdownAvailability(v *AccountDropdownAvailability) *AccountDropdownAvailability {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.Target = cloneInteractionTarget(v.Target)
+	return &cp
+}
+
+func cloneAccountDropdownActions(values []AccountDropdownAction) []AccountDropdownAction {
+	if values == nil {
+		return nil
+	}
+	out := make([]AccountDropdownAction, len(values))
+	for i, v := range values {
+		out[i] = v
+		out[i].Target = cloneInteractionTarget(v.Target)
+	}
+	return out
+}
+
+func cloneInteractionTarget(v *InteractionTarget) *InteractionTarget {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.Query = cloneMap(v.Query)
 	return &cp
 }
 
