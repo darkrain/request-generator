@@ -398,70 +398,18 @@ type DisplayComponent struct {
 }
 
 type RecordPage struct {
-	ID              string                 `json:"id,omitempty"`
-	Title           string                 `json:"title,omitempty"`
-	Subtitle        string                 `json:"subtitle,omitempty"`
-	ShowHeader      *bool                  `json:"show_header,omitempty"`
-	Badge           string                 `json:"badge,omitempty"`
-	BadgeTone       string                 `json:"badge_tone,omitempty"`
-	BadgeTeleport   string                 `json:"badge_teleport,omitempty"`
-	Navigation      *RecordNavigation      `json:"navigation,omitempty"`
-	Layout          *Layout                `json:"layout,omitempty"`
-	Sections        []RecordSection        `json:"sections,omitempty"`
-	Theme           *RecordTheme           `json:"theme,omitempty"`
-	Actions         []Action               `json:"actions,omitempty"`
-	AccountDropdown *AccountDropdownConfig `json:"account_dropdown,omitempty"`
-}
-
-type AccountDropdownConfig struct {
-	Namespace      string                       `json:"namespace,omitempty"`
-	Renderer       string                       `json:"renderer,omitempty"`
-	ProfileIDField string                       `json:"profile_id_field,omitempty"`
-	AvatarField    string                       `json:"avatar_field,omitempty"`
-	TitleField     string                       `json:"title_field,omitempty"`
-	HandleField    string                       `json:"handle_field,omitempty"`
-	Tags           []AccountDropdownTag         `json:"tags,omitempty"`
-	Stats          []AccountDropdownStat        `json:"stats,omitempty"`
-	Availability   *AccountDropdownAvailability `json:"availability,omitempty"`
-	Actions        []AccountDropdownAction      `json:"actions,omitempty"`
-}
-
-type AccountDropdownTag struct {
-	ID      string            `json:"id,omitempty"`
-	Field   string            `json:"field,omitempty"`
-	Tone    string            `json:"tone,omitempty"`
-	ToneMap map[string]string `json:"tone_map,omitempty"`
-}
-
-type AccountDropdownStat struct {
-	ID         string             `json:"id,omitempty"`
-	Label      string             `json:"label,omitempty"`
-	ValueField string             `json:"value_field,omitempty"`
-	Target     *InteractionTarget `json:"target,omitempty"`
-}
-
-type AccountDropdownAvailability struct {
-	VisibleField    string             `json:"visible_field,omitempty"`
-	StateField      string             `json:"state_field,omitempty"`
-	Label           string             `json:"label,omitempty"`
-	StateLabelField string             `json:"state_label_field,omitempty"`
-	NoteField       string             `json:"note_field,omitempty"`
-	Target          *InteractionTarget `json:"target,omitempty"`
-}
-
-type AccountDropdownAction struct {
-	ID     string             `json:"id,omitempty"`
-	Label  string             `json:"label,omitempty"`
-	Icon   string             `json:"icon,omitempty"`
-	Tone   string             `json:"tone,omitempty"`
-	Target *InteractionTarget `json:"target,omitempty"`
-}
-
-type InteractionTarget struct {
-	Type  string                 `json:"type,omitempty"`
-	Path  string                 `json:"path,omitempty"`
-	Name  string                 `json:"name,omitempty"`
-	Query map[string]interface{} `json:"query,omitempty"`
+	ID            string            `json:"id,omitempty"`
+	Title         string            `json:"title,omitempty"`
+	Subtitle      string            `json:"subtitle,omitempty"`
+	ShowHeader    *bool             `json:"show_header,omitempty"`
+	Badge         string            `json:"badge,omitempty"`
+	BadgeTone     string            `json:"badge_tone,omitempty"`
+	BadgeTeleport string            `json:"badge_teleport,omitempty"`
+	Navigation    *RecordNavigation `json:"navigation,omitempty"`
+	Layout        *Layout           `json:"layout,omitempty"`
+	Sections      []RecordSection   `json:"sections,omitempty"`
+	Theme         *RecordTheme      `json:"theme,omitempty"`
+	Actions       []Action          `json:"actions,omitempty"`
 }
 
 type RecordNavigation struct {
