@@ -985,6 +985,9 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			if len(options) > 0 {
 				for i, opt := range options {
 					options[i].Label = generator.Translate(lang, opt.Label)
+					if optionValueMatches(value, opt.Value) {
+						fieldItem["label"] = options[i].Label
+					}
 				}
 				fieldItem["options"] = options
 			}
@@ -1021,6 +1024,13 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 
 		action.AfterRequest(c)
 	}
+}
+
+func optionValueMatches(value interface{}, optionValue interface{}) bool {
+	if value == nil || optionValue == nil {
+		return value == optionValue
+	}
+	return fmt.Sprint(value) == fmt.Sprint(optionValue)
 }
 
 func (generator *Generator) actionUpdate(module *BaseModule, action actions.UpdateModuleAction) func(c *gin.Context) {

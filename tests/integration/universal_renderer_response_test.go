@@ -80,7 +80,16 @@ func setupUniversalRendererRouter(t *testing.T) *gin.Engine {
 		PrimaryKey: id,
 		Fields: []fields.ModuleField{
 			{Column: id, Title: "ID", Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeNumber},
-			{Column: status, Title: "Status", Type: fields.ModuleFieldTypeString, FormType: fields.ModuleFieldFormTypeSelect},
+			{
+				Column:   status,
+				Title:    "Status",
+				Type:     fields.ModuleFieldTypeString,
+				FormType: fields.ModuleFieldFormTypeSelect,
+				Options: []fields.ModuleFieldOptions{
+					{Value: "active", Label: "Active"},
+					{Value: "archived", Label: "Archived"},
+				},
+			},
 		},
 		Render: renderer.Universal{
 			List: &renderer.ListPage{
@@ -187,6 +196,10 @@ func TestUniversalRendererMetadata_ViewResponse(t *testing.T) {
 	var response struct {
 		Renderer   *renderer.Identity   `json:"renderer"`
 		RecordPage *renderer.RecordPage `json:"record_page"`
+		Item       map[string]struct {
+			Value interface{} `json:"value"`
+			Label string      `json:"label"`
+		} `json:"item"`
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
 
@@ -195,6 +208,8 @@ func TestUniversalRendererMetadata_ViewResponse(t *testing.T) {
 	assert.Equal(t, renderer.Version, response.Renderer.Version)
 	require.NotNil(t, response.RecordPage)
 	assert.Equal(t, renderer.LayoutThreeColumn, response.RecordPage.Layout.Type)
+	assert.Equal(t, "active", response.Item["status"].Value)
+	assert.Equal(t, "Active", response.Item["status"].Label)
 }
 
 func TestUniversalRendererMetadata_ListAndResourceGridAreMutuallyExclusive(t *testing.T) {
