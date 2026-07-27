@@ -162,7 +162,7 @@ type CardSchema struct {
 	Description      *TextBinding   `json:"description,omitempty"`
 	Status           *StatusBinding `json:"status,omitempty"`
 	Badges           []Badge        `json:"badges,omitempty"`
-	Stats            []Stat         `json:"stats,omitempty"`
+	Stats            []Badge        `json:"stats,omitempty"`
 	Actions          []Action       `json:"actions,omitempty"`
 }
 
@@ -200,10 +200,13 @@ type Badge struct {
 	Type      string            `json:"type,omitempty"`
 	Field     string            `json:"field,omitempty"`
 	IfField   string            `json:"if_field,omitempty"`
+	Value     *TextBinding      `json:"value,omitempty"`
 	Option    string            `json:"option,omitempty"`
 	Placement string            `json:"placement,omitempty"`
 	Label     string            `json:"label,omitempty"`
 	LabelKey  string            `json:"label_key,omitempty"`
+	Icon      string            `json:"icon,omitempty"`
+	Size      SizeToken         `json:"size,omitempty"`
 	Tone      string            `json:"tone,omitempty"`
 	ToneMap   map[string]string `json:"tone_map,omitempty"`
 	Marker    *bool             `json:"marker,omitempty"`
@@ -217,18 +220,6 @@ type BadgeState struct {
 	LabelKey string `json:"label_key,omitempty"`
 	Tone     string `json:"tone,omitempty"`
 	Marker   *bool  `json:"marker,omitempty"`
-}
-
-type Stat struct {
-	ID       string       `json:"id,omitempty"`
-	Type     string       `json:"type,omitempty"`
-	Label    string       `json:"label,omitempty"`
-	LabelKey string       `json:"label_key,omitempty"`
-	Field    string       `json:"field,omitempty"`
-	Icon     string       `json:"icon,omitempty"`
-	Size     SizeToken    `json:"size,omitempty"`
-	Tone     string       `json:"tone,omitempty"`
-	Value    *TextBinding `json:"value,omitempty"`
 }
 
 type FormPage struct {
@@ -366,13 +357,10 @@ type Stack struct {
 type DisplayComponent struct {
 	ID                  string                   `json:"id,omitempty"`
 	Type                DisplayComponentType     `json:"type,omitempty"`
-	Data                DataPath                 `json:"data,omitempty"`
+	Fields              []string                 `json:"fields,omitempty"`
 	Value               interface{}              `json:"value,omitempty"`
 	Default             interface{}              `json:"default,omitempty"`
 	Visible             *bool                    `json:"visible,omitempty"`
-	ModelValue          DataPath                 `json:"model_value,omitempty"`
-	Overlays            DataPath                 `json:"overlays,omitempty"`
-	OverlayData         DataPath                 `json:"overlay_data,omitempty"`
 	UpdateAction        ComponentAction          `json:"update_action,omitempty"`
 	MainRatio           ComponentRatio           `json:"main_ratio,omitempty"`
 	MainRadius          ComponentRadiusToken     `json:"main_radius,omitempty"`
@@ -410,20 +398,18 @@ type DisplayComponent struct {
 }
 
 type RecordPage struct {
-	ID            string                 `json:"id,omitempty"`
-	Title         string                 `json:"title,omitempty"`
-	Subtitle      string                 `json:"subtitle,omitempty"`
-	ShowHeader    *bool                  `json:"show_header,omitempty"`
-	Badge         string                 `json:"badge,omitempty"`
-	BadgeTone     string                 `json:"badge_tone,omitempty"`
-	BadgeTeleport string                 `json:"badge_teleport,omitempty"`
-	Navigation    *RecordNavigation      `json:"navigation,omitempty"`
-	Layout        *Layout                `json:"layout,omitempty"`
-	Sections      []RecordSection        `json:"sections,omitempty"`
-	DisplayData   *RecordDisplayData     `json:"display_data,omitempty"`
-	Theme         *RecordTheme           `json:"theme,omitempty"`
-	Actions       []Action               `json:"actions,omitempty"`
-	Context       map[string]interface{} `json:"context,omitempty"`
+	ID            string            `json:"id,omitempty"`
+	Title         string            `json:"title,omitempty"`
+	Subtitle      string            `json:"subtitle,omitempty"`
+	ShowHeader    *bool             `json:"show_header,omitempty"`
+	Badge         string            `json:"badge,omitempty"`
+	BadgeTone     string            `json:"badge_tone,omitempty"`
+	BadgeTeleport string            `json:"badge_teleport,omitempty"`
+	Navigation    *RecordNavigation `json:"navigation,omitempty"`
+	Layout        *Layout           `json:"layout,omitempty"`
+	Sections      []RecordSection   `json:"sections,omitempty"`
+	Theme         *RecordTheme      `json:"theme,omitempty"`
+	Actions       []Action          `json:"actions,omitempty"`
 }
 
 type RecordNavigation struct {
@@ -432,229 +418,12 @@ type RecordNavigation struct {
 }
 
 type RecordTheme struct {
-	Profile *ProfileRecordTheme `json:"profile,omitempty"`
-}
-
-type ProfileRecordTheme struct {
-	Panels   ProfilePanelTheme   `json:"panels,omitempty"`
-	Headings ProfileHeadingTheme `json:"headings,omitempty"`
-	Badges   ProfileBadgeTheme   `json:"badges,omitempty"`
-	Buttons  ProfileButtonTheme  `json:"buttons,omitempty"`
-	Avatar   ProfileAvatarTheme  `json:"avatar,omitempty"`
-}
-
-type ProfilePanelTheme struct {
-	DefaultVariant string `json:"default_variant,omitempty"`
-	GalleryVariant string `json:"gallery_variant,omitempty"`
-	HeroVariant    string `json:"hero_variant,omitempty"`
-	NestedVariant  string `json:"nested_variant,omitempty"`
-}
-
-type ProfileHeadingTheme struct {
-	TitleDecor     TitleDecorToken `json:"title_decor,omitempty"`
-	TitleBar       ToneToken       `json:"title_bar,omitempty"`
-	TitleUnderline ToneToken       `json:"title_underline,omitempty"`
-}
-
-type ProfileBadgeTheme struct {
-	VerifiedTone  string `json:"verified_tone,omitempty"`
-	RoleTone      string `json:"role_tone,omitempty"`
-	StatusOnline  string `json:"status_online,omitempty"`
-	StatusOffline string `json:"status_offline,omitempty"`
-	LanguageTone  string `json:"language_tone,omitempty"`
-	WorkIncall    string `json:"work_incall,omitempty"`
-	WorkOutcall   string `json:"work_outcall,omitempty"`
-	TourStatus    string `json:"tour_status,omitempty"`
-}
-
-type ProfileButtonTheme struct {
-	DefaultVariant      ActionVariant    `json:"default_variant,omitempty"`
-	DefaultAppearance   ActionAppearance `json:"default_appearance,omitempty"`
-	SecondaryVariant    ActionVariant    `json:"secondary_variant,omitempty"`
-	SecondaryAppearance ActionAppearance `json:"secondary_appearance,omitempty"`
-	PrimaryVariant      ActionVariant    `json:"primary_variant,omitempty"`
-	PrimaryAppearance   ActionAppearance `json:"primary_appearance,omitempty"`
-	WarningVariant      ActionVariant    `json:"warning_variant,omitempty"`
-	MutedVariant        ActionVariant    `json:"muted_variant,omitempty"`
-	LightVariant        ActionVariant    `json:"light_variant,omitempty"`
-}
-
-type ProfileAvatarTheme struct {
-	Glow string `json:"glow,omitempty"`
-}
-
-type RecordDisplayData struct {
-	Gallery  *DisplayGallery  `json:"gallery,omitempty"`
-	Hero     *DisplayHero     `json:"hero,omitempty"`
-	Details  *DisplayDetails  `json:"details,omitempty"`
-	About    *DisplayAbout    `json:"about,omitempty"`
-	Meetings *DisplayMeetings `json:"meetings,omitempty"`
-	Rates    *DisplayRates    `json:"rates,omitempty"`
-	Services *DisplayServices `json:"services,omitempty"`
-	Contacts *DisplayContacts `json:"contacts,omitempty"`
-}
-
-type DisplayGallery struct {
-	Items    []MediaItem     `json:"items,omitempty"`
-	Current  int             `json:"current"`
-	Actions  []DisplayAction `json:"actions,omitempty"`
-	Overlays []OverlayGroup  `json:"overlays,omitempty"`
-}
-
-type MediaItem struct {
-	ID        interface{} `json:"id,omitempty"`
-	Kind      string      `json:"kind,omitempty"`
-	Src       string      `json:"src,omitempty"`
-	Thumbnail string      `json:"thumbnail,omitempty"`
-	Title     string      `json:"title,omitempty"`
-	Alt       string      `json:"alt,omitempty"`
-}
-
-type OverlayGroup struct {
-	ID       string         `json:"id,omitempty"`
-	Position string         `json:"position,omitempty"`
-	Items    []DisplayBadge `json:"items,omitempty"`
-}
-
-type DisplayHero struct {
-	Identity *HeroIdentity `json:"identity,omitempty"`
-	Stats    []DisplayStat `json:"stats,omitempty"`
-}
-
-type HeroIdentity struct {
-	Avatar       *HeroAvatar    `json:"avatar,omitempty"`
-	Name         string         `json:"name,omitempty"`
-	Handle       string         `json:"handle,omitempty"`
-	CornerBadges []DisplayBadge `json:"cornerBadges,omitempty"`
-	Location     *LocationValue `json:"location,omitempty"`
-	StatusText   string         `json:"statusText,omitempty"`
-}
-
-type HeroAvatar struct {
-	Src  string `json:"src,omitempty"`
-	Name string `json:"name,omitempty"`
-	Size string `json:"size,omitempty"`
-	Glow string `json:"glow,omitempty"`
-}
-
-type LocationValue struct {
-	Country string `json:"country,omitempty"`
-	City    string `json:"city,omitempty"`
-}
-
-type DisplayStat struct {
-	ID       string      `json:"id,omitempty"`
-	Icon     string      `json:"icon,omitempty"`
-	Value    interface{} `json:"value,omitempty"`
-	Label    string      `json:"label,omitempty"`
-	LabelKey string      `json:"label_key,omitempty"`
-}
-
-type DisplayDetails struct {
-	Items      []DetailItem      `json:"items,omitempty"`
-	Commercial []CommercialGroup `json:"commercial,omitempty"`
-}
-
-type DetailItem struct {
-	ID        string      `json:"id,omitempty"`
-	Label     string      `json:"label,omitempty"`
-	LabelKey  string      `json:"label_key,omitempty"`
-	Fallback  string      `json:"fallback,omitempty"`
-	Value     interface{} `json:"value,omitempty"`
-	ValueKey  string      `json:"value_key,omitempty"`
-	ValueType string      `json:"value_type,omitempty"`
-	Span      string      `json:"span,omitempty"`
-}
-
-type CommercialGroup struct {
-	ID       string         `json:"id,omitempty"`
-	Label    string         `json:"label,omitempty"`
-	LabelKey string         `json:"label_key,omitempty"`
-	Items    []DisplayBadge `json:"items,omitempty"`
-}
-
-type DisplayAbout struct {
-	Description string `json:"description,omitempty"`
-}
-
-type DisplayMeetings struct {
-	Items      []DisplayBadge `json:"items,omitempty"`
-	Commission []DisplayBadge `json:"commission,omitempty"`
-	WorkArea   []DisplayBadge `json:"workArea,omitempty"`
-	Payments   []DisplayBadge `json:"payments,omitempty"`
-}
-
-type DisplayRates struct {
-	Items  []RateItem  `json:"items,omitempty"`
-	Groups []RateGroup `json:"groups,omitempty"`
-}
-
-type RateGroup struct {
-	ID       string     `json:"id,omitempty"`
-	Label    string     `json:"label,omitempty"`
-	LabelKey string     `json:"label_key,omitempty"`
-	Tone     ToneToken  `json:"tone,omitempty"`
-	Items    []RateItem `json:"items,omitempty"`
-}
-
-type RateItem struct {
-	ID            string `json:"id,omitempty"`
-	Label         string `json:"label,omitempty"`
-	LabelKey      string `json:"label_key,omitempty"`
-	DurationCount int    `json:"duration_count,omitempty"`
-	DurationUnit  string `json:"duration_unit,omitempty"`
-	Value         string `json:"value,omitempty"`
-	Featured      bool   `json:"featured,omitempty"`
-}
-
-type DisplayServices struct {
-	Included []ServiceItem  `json:"included,omitempty"`
-	Extra    []ServiceItem  `json:"extra,omitempty"`
-	Groups   []ServiceGroup `json:"groups,omitempty"`
-}
-
-type ServiceGroup struct {
-	ID         string        `json:"id,omitempty"`
-	Label      string        `json:"label,omitempty"`
-	LabelKey   string        `json:"label_key,omitempty"`
-	Count      int           `json:"count"`
-	CountKey   string        `json:"count_key,omitempty"`
-	CountLabel string        `json:"count_label,omitempty"`
-	Tone       string        `json:"tone,omitempty"`
-	Open       bool          `json:"open"`
-	Items      []ServiceItem `json:"items,omitempty"`
-}
-
-type ServiceItem struct {
-	ID       interface{} `json:"id,omitempty"`
-	Label    string      `json:"label,omitempty"`
-	LabelKey string      `json:"label_key,omitempty"`
-	Price    string      `json:"price,omitempty"`
-}
-
-type DisplayContacts struct {
-	Items []DetailItem `json:"items,omitempty"`
-}
-
-type DisplayBadge struct {
-	ID       string            `json:"id,omitempty"`
-	Label    string            `json:"label,omitempty"`
-	LabelKey string            `json:"label_key,omitempty"`
-	Tone     string            `json:"tone,omitempty"`
-	Marker   *bool             `json:"marker,omitempty"`
-	Icon     string            `json:"icon,omitempty"`
-	Style    map[string]string `json:"style,omitempty"`
-}
-
-type DisplayAction struct {
-	ID         string           `json:"id,omitempty"`
-	Label      string           `json:"label,omitempty"`
-	LabelKey   string           `json:"label_key,omitempty"`
-	Variant    ActionVariant    `json:"variant,omitempty"`
-	Appearance ActionAppearance `json:"appearance,omitempty"`
-	Icon       string           `json:"icon,omitempty"`
-	Block      bool             `json:"block,omitempty"`
-	Route      interface{}      `json:"route,omitempty"`
+	Surfaces   map[string]string      `json:"surfaces,omitempty"`
+	Headings   map[string]interface{} `json:"headings,omitempty"`
+	Badges     map[string]string      `json:"badges,omitempty"`
+	Buttons    map[string]interface{} `json:"buttons,omitempty"`
+	Media      map[string]string      `json:"media,omitempty"`
+	Components map[string]interface{} `json:"components,omitempty"`
 }
 
 type RecordSection struct {

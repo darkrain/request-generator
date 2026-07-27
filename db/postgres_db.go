@@ -55,6 +55,64 @@ func (db *DB) Begin() (*Tx, error) {
 	return &Tx{tx}, nil
 }
 
+func moduleFieldResultValue(field fields.ModuleField, value interface{}) interface{} {
+	if field.ResultValueConverter != nil {
+		return field.ResultValueConverter(value)
+	}
+
+	raw := value
+	if valuer, ok := value.(driver.Valuer); ok {
+		resolved, err := valuer.Value()
+		if err != nil {
+			return nil
+		}
+		raw = resolved
+	}
+
+	if raw == nil {
+		return nil
+	}
+
+	if field.Type == fields.ModuleFieldTypeArray || field.Type == fields.ModuleFieldTypeObject {
+		if parsed, ok := parseJSONResultValue(raw, field.Type); ok {
+			return parsed
+		}
+	}
+
+	return raw
+}
+
+func parseJSONResultValue(value interface{}, fieldType fields.ModuleFieldType) (interface{}, bool) {
+	var raw string
+	switch typed := value.(type) {
+	case string:
+		raw = typed
+	case []byte:
+		raw = string(typed)
+	case json.RawMessage:
+		raw = string(typed)
+	default:
+		return nil, false
+	}
+
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, false
+	}
+	if fieldType == fields.ModuleFieldTypeArray && !strings.HasPrefix(raw, "[") {
+		return nil, false
+	}
+	if fieldType == fields.ModuleFieldTypeObject && !strings.HasPrefix(raw, "{") {
+		return nil, false
+	}
+
+	var parsed interface{}
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return nil, false
+	}
+	return parsed, true
+}
+
 func (db *DB) RowExists(query string, args ...interface{}) bool {
 	var exists bool
 	query = fmt.Sprintf("SELECT exists (%s)", query)
@@ -508,20 +566,7 @@ func (db *DB) List(
 				}
 			} else {
 				field := moduleFields[index]
-				value, ok := columnValues[index+offset].(driver.Valuer)
-				if ok {
-					if field.ResultValueConverter != nil {
-						currentResult[meta.name] = field.ResultValueConverter(value)
-					} else {
-						currentResult[meta.name], _ = value.Value()
-					}
-				} else {
-					if field.ResultValueConverter != nil {
-						currentResult[meta.name] = field.ResultValueConverter(value)
-					} else {
-						currentResult[meta.name] = value
-					}
-				}
+				currentResult[meta.name] = moduleFieldResultValue(field, columnValues[index+offset])
 			}
 		}
 
@@ -734,20 +779,7 @@ func (db *DB) View(
 				}
 			} else {
 				field := moduleFields[index]
-				value, ok := columnValues[index+offset].(driver.Valuer)
-				if ok {
-					if field.ResultValueConverter != nil {
-						currentResult[meta.name] = field.ResultValueConverter(value)
-					} else {
-						currentResult[meta.name], _ = value.Value()
-					}
-				} else {
-					if field.ResultValueConverter != nil {
-						currentResult[meta.name] = field.ResultValueConverter(value)
-					} else {
-						currentResult[meta.name] = value
-					}
-				}
+				currentResult[meta.name] = moduleFieldResultValue(field, columnValues[index+offset])
 			}
 		}
 
