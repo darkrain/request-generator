@@ -1008,11 +1008,13 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 		output := struct {
 			Renderer   *renderer.Identity     `json:"renderer,omitempty"`
 			RecordPage *renderer.RecordPage   `json:"record_page,omitempty"`
+			FormPage   *renderer.FormPage     `json:"form_page,omitempty"`
 			Extra      interface{}            `json:"extra,omitempty"`
 			Item       map[string]interface{} `json:"item"`
 		}{
 			Renderer:   render.RecordIdentity(),
 			RecordPage: render.Record,
+			FormPage:   render.Form,
 			Extra:      extra,
 			Item:       item,
 		}
