@@ -33,6 +33,7 @@ func cloneFormPage(v *FormPage) *FormPage {
 	cp := *v
 	cp.Actions = cloneActions(v.Actions)
 	cp.Sections = cloneFormSections(v.Sections)
+	cp.Groups = cloneFormGroups(v.Groups)
 	cp.Fields = cloneSlice(v.Fields)
 	cp.Context = cloneMap(v.Context)
 	return &cp
@@ -277,6 +278,48 @@ func cloneFormSections(values []FormSection) []FormSection {
 		out[i].ListPage = cloneListPage(v.ListPage)
 		out[i].Collection = cloneCollectionConfig(v.Collection)
 		out[i].Preferences = clonePreferencesConfig(v.Preferences)
+	}
+	return out
+}
+
+func cloneFormGroups(values []FormGroup) []FormGroup {
+	if values == nil {
+		return nil
+	}
+	out := make([]FormGroup, len(values))
+	for i, v := range values {
+		out[i] = v
+		out[i].Heads = cloneFormMatrixColumns(v.Heads)
+		out[i].Columns = cloneFormMatrixColumns(v.Columns)
+		out[i].Rows = cloneFormMatrixRows(v.Rows)
+		out[i].Values = cloneMap(v.Values)
+	}
+	return out
+}
+
+func cloneFormMatrixColumns(values []FormMatrixColumn) []FormMatrixColumn {
+	if values == nil {
+		return nil
+	}
+	out := make([]FormMatrixColumn, len(values))
+	copy(out, values)
+	return out
+}
+
+func cloneFormMatrixRows(values []FormMatrixRow) []FormMatrixRow {
+	if values == nil {
+		return nil
+	}
+	out := make([]FormMatrixRow, len(values))
+	for i, v := range values {
+		out[i] = v
+		out[i].Values = cloneMap(v.Values)
+		if v.ValueTypes != nil {
+			out[i].ValueTypes = make(map[string]string, len(v.ValueTypes))
+			for key, value := range v.ValueTypes {
+				out[i].ValueTypes[key] = value
+			}
+		}
 	}
 	return out
 }

@@ -229,8 +229,48 @@ type FormPage struct {
 	Layout   LayoutType             `json:"layout,omitempty"`
 	Actions  []Action               `json:"actions,omitempty"`
 	Sections []FormSection          `json:"sections,omitempty"`
+	Groups   []FormGroup            `json:"groups,omitempty"`
 	Fields   []string               `json:"fields,omitempty"`
 	Context  map[string]interface{} `json:"context,omitempty"`
+}
+
+type FormGroup struct {
+	ID                  string                 `json:"id,omitempty"`
+	Section             string                 `json:"section,omitempty"`
+	Title               string                 `json:"title,omitempty"`
+	Layout              string                 `json:"layout,omitempty"`
+	MatrixType          string                 `json:"matrix_type,omitempty"`
+	MatrixStyle         string                 `json:"matrix_style,omitempty"`
+	Label               string                 `json:"label,omitempty"`
+	LabelIcon           string                 `json:"label_icon,omitempty"`
+	Underline           string                 `json:"underline,omitempty"`
+	Compact             bool                   `json:"compact,omitempty"`
+	Readonly            bool                   `json:"readonly,omitempty"`
+	ReadonlyColumns     int                    `json:"readonly_columns,omitempty"`
+	SeparatorVariant    ToneToken              `json:"separator_variant,omitempty"`
+	SeparatorAppearance SeparatorAppearance    `json:"separator_appearance,omitempty"`
+	Heads               []FormMatrixColumn     `json:"heads,omitempty"`
+	Rows                []FormMatrixRow        `json:"rows,omitempty"`
+	Columns             []FormMatrixColumn     `json:"columns,omitempty"`
+	Values              map[string]interface{} `json:"values,omitempty"`
+}
+
+type FormMatrixColumn struct {
+	ID     string `json:"id,omitempty"`
+	Label  string `json:"label,omitempty"`
+	Icon   string `json:"icon,omitempty"`
+	Prefix string `json:"prefix,omitempty"`
+}
+
+type FormMatrixRow struct {
+	ID         string                 `json:"id,omitempty"`
+	Label      string                 `json:"label,omitempty"`
+	Span       string                 `json:"span,omitempty"`
+	Column     string                 `json:"column,omitempty"`
+	Value      interface{}            `json:"value,omitempty"`
+	ValueType  string                 `json:"value_type,omitempty"`
+	Values     map[string]interface{} `json:"values,omitempty"`
+	ValueTypes map[string]string      `json:"value_types,omitempty"`
 }
 
 type FormSection struct {

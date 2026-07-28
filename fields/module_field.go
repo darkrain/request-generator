@@ -103,6 +103,21 @@ type FieldExtra struct {
 	Defrec interface{} `json:"-"`
 }
 
+type ModuleFieldMatrixBinding struct {
+	Row    string `json:"row,omitempty"`
+	Column string `json:"column,omitempty"`
+}
+
+type ModuleFieldLocationPicker struct {
+	CountryLabel       string   `json:"country_label,omitempty"`
+	CityLabel          string   `json:"city_label,omitempty"`
+	CountryPlaceholder string   `json:"country_placeholder,omitempty"`
+	CityPlaceholder    string   `json:"city_placeholder,omitempty"`
+	CityMode           string   `json:"city_mode,omitempty"`
+	HideInnerLabels    bool     `json:"hide_inner_labels,omitempty"`
+	AllowedCountries   []string `json:"allowed_countries,omitempty"`
+}
+
 type ModuleField struct {
 	Column           pg.Column                                       `json:"-"`
 	SelectExpression pg.Projection                                   `json:"-"`
@@ -134,6 +149,31 @@ type ModuleField struct {
 	Section              string                                                       `json:"section,omitempty"`
 	RoleSection          map[string]string                                            `json:"-"`
 	RoleFormType         map[string]ModuleFieldFormType                               `json:"-"`
+	RoleLocationPicker   map[string]ModuleFieldLocationPicker                         `json:"-"`
+	VisualKind           string                                                       `json:"visual_kind,omitempty"`
+	Width                string                                                       `json:"width,omitempty"`
+	Span                 string                                                       `json:"span,omitempty"`
+	HideLabel            bool                                                         `json:"hide_label,omitempty"`
+	Hint                 string                                                       `json:"hint,omitempty"`
+	Description          string                                                       `json:"description,omitempty"`
+	Meta                 string                                                       `json:"meta,omitempty"`
+	Prefix               string                                                       `json:"prefix,omitempty"`
+	Suffix               string                                                       `json:"suffix,omitempty"`
+	Icon                 string                                                       `json:"icon,omitempty"`
+	IconSVG              string                                                       `json:"icon_svg,omitempty"`
+	Glow                 string                                                       `json:"glow,omitempty"`
+	MaxLength            int                                                          `json:"max_length,omitempty"`
+	Rows                 int                                                          `json:"rows,omitempty"`
+	Searchable           *bool                                                        `json:"searchable,omitempty"`
+	OptionIcons          map[string]string                                            `json:"option_icons,omitempty"`
+	OptionsParams        map[string]interface{}                                       `json:"options_params,omitempty"`
+	VisibleWhen          map[string]interface{}                                       `json:"visible_when,omitempty"`
+	Matrix               *ModuleFieldMatrixBinding                                    `json:"matrix,omitempty"`
+	LocationPicker       *ModuleFieldLocationPicker                                   `json:"location_picker,omitempty"`
+	UploadLabel          string                                                       `json:"upload_label,omitempty"`
+	UploadingLabel       string                                                       `json:"uploading_label,omitempty"`
+	RecenterLabel        string                                                       `json:"recenter_label,omitempty"`
+	RemoveLabel          string                                                       `json:"remove_label,omitempty"`
 }
 
 // ColumnName returns the database column name from the Jet column.
@@ -151,6 +191,98 @@ func (f ModuleField) Name() string {
 		return f.FieldName
 	}
 	return f.ColumnName()
+}
+
+func (f ModuleField) UIMap() map[string]interface{} {
+	return f.UIMapForRole("")
+}
+
+func (f ModuleField) UIMapForRole(role string) map[string]interface{} {
+	item := map[string]interface{}{}
+	if f.VisualKind != "" {
+		item["visual_kind"] = f.VisualKind
+	}
+	if f.Width != "" {
+		item["width"] = f.Width
+	}
+	if f.Span != "" {
+		item["span"] = f.Span
+	}
+	if f.HideLabel {
+		item["hide_label"] = true
+	}
+	if f.Hint != "" {
+		item["hint"] = f.Hint
+	}
+	if f.Description != "" {
+		item["description"] = f.Description
+	}
+	if f.Meta != "" {
+		item["meta"] = f.Meta
+	}
+	if f.Prefix != "" {
+		item["prefix"] = f.Prefix
+	}
+	if f.Suffix != "" {
+		item["suffix"] = f.Suffix
+	}
+	if f.Icon != "" {
+		item["icon"] = f.Icon
+	}
+	if f.IconSVG != "" {
+		item["icon_svg"] = f.IconSVG
+	}
+	if f.Glow != "" {
+		item["glow"] = f.Glow
+	}
+	if f.MaxLength > 0 {
+		item["max_length"] = f.MaxLength
+	}
+	if f.Rows > 0 {
+		item["rows"] = f.Rows
+	}
+	if f.Searchable != nil {
+		item["searchable"] = *f.Searchable
+	}
+	if f.OptionsURL != "" {
+		item["options_url"] = f.OptionsURL
+	}
+	if len(f.OptionIcons) > 0 {
+		item["option_icons"] = f.OptionIcons
+	}
+	if len(f.OptionsParams) > 0 {
+		item["options_params"] = f.OptionsParams
+	}
+	if len(f.VisibleWhen) > 0 {
+		item["visible_when"] = f.VisibleWhen
+	}
+	if f.Matrix != nil {
+		item["matrix"] = f.Matrix
+	}
+	if role != "" && f.RoleLocationPicker != nil {
+		if locationPicker, ok := f.RoleLocationPicker[role]; ok {
+			item["location_picker"] = locationPicker
+		}
+	}
+	if _, ok := item["location_picker"]; !ok && f.LocationPicker != nil {
+		item["location_picker"] = f.LocationPicker
+	}
+	if f.UploadLabel != "" {
+		item["upload_label"] = f.UploadLabel
+	}
+	if f.UploadingLabel != "" {
+		item["uploading_label"] = f.UploadingLabel
+	}
+	if f.RecenterLabel != "" {
+		item["recenter_label"] = f.RecenterLabel
+	}
+	if f.RemoveLabel != "" {
+		item["remove_label"] = f.RemoveLabel
+	}
+	if len(item) == 0 {
+		return nil
+	}
+	return item
 }
 
 // GetProjection returns the SELECT expression for this field.

@@ -950,8 +950,30 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 		generator.setTranslationContext(c, lang)
 		roleStr := string(role)
 
+		render, err := module.RenderFor(c)
+		if err != nil {
+			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			return
+		}
+		metadataRoleStr := roleStr
+		if pageType == renderer.PageTypeForm && render.Form != nil && render.Form.Context != nil {
+			if targetProfileType, ok := render.Form.Context["target_profile_type"].(string); ok && targetProfileType != "" {
+				metadataRoleStr = targetProfileType
+			}
+		}
+
 		item := make(map[string]interface{}, len(realFields))
 		for _, field := range realFields {
+			if field.RoleSection != nil {
+				if s, ok := field.RoleSection[metadataRoleStr]; ok {
+					field.Section = s
+				}
+			}
+			if field.RoleFormType != nil {
+				if ft, ok := field.RoleFormType[metadataRoleStr]; ok {
+					field.FormType = ft
+				}
+			}
 			fieldKey := field.ColumnName()
 			if field.Translatable {
 				fieldKey = field.Name()
@@ -965,9 +987,21 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 				"value":     value,
 				"edit":      containsColumn(editableColumns, field.Column),
 			}
+			if field.Section != "" {
+				fieldItem["section"] = field.Section
+			}
+			if field.Group != "" {
+				fieldItem["group"] = field.Group
+			}
+			if field.Order != 0 {
+				fieldItem["order"] = field.Order
+			}
 
-			if field.Extra != nil && field.Extra.View != nil {
+			if pageType != renderer.PageTypeForm && field.Extra != nil && field.Extra.View != nil {
 				fieldItem["extra"] = field.Extra.View
+			}
+			for key, value := range field.UIMapForRole(metadataRoleStr) {
+				fieldItem[key] = value
 			}
 
 			// Collect options
@@ -999,12 +1033,6 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			extra = action.ExtraFunc(c)
 		} else {
 			extra = action.Extra
-		}
-
-		render, err := module.RenderFor(c)
-		if err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
-			return
 		}
 
 		output := struct {

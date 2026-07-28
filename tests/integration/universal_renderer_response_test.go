@@ -81,7 +81,19 @@ func setupUniversalRendererRouter(t *testing.T) *gin.Engine {
 		PrimaryKey: id,
 		Fields: []fields.ModuleField{
 			{Column: id, Title: "ID", Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeNumber},
-			{Column: status, Title: "Status", Type: fields.ModuleFieldTypeString, FormType: fields.ModuleFieldFormTypeSelect},
+			{
+				Column:      status,
+				Title:       "Status",
+				Type:        fields.ModuleFieldTypeString,
+				FormType:    fields.ModuleFieldFormTypeSelect,
+				VisualKind:  "select",
+				Width:       "full",
+				Hint:        "status hint",
+				Prefix:      "#",
+				OptionsURL:  "/options/statuses",
+				OptionIcons: map[string]string{"active": "check"},
+				Matrix:      &fields.ModuleFieldMatrixBinding{Row: "status", Column: "value"},
+			},
 		},
 		Render: renderer.Universal{
 			List: &renderer.ListPage{
@@ -166,8 +178,9 @@ func TestUniversalRendererMetadata_DefrecResponse(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 
 	var response struct {
-		Renderer *renderer.Identity `json:"renderer"`
-		FormPage *renderer.FormPage `json:"form_page"`
+		Renderer *renderer.Identity                `json:"renderer"`
+		FormPage *renderer.FormPage                `json:"form_page"`
+		Fields   map[string]map[string]interface{} `json:"fields"`
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
 
@@ -177,6 +190,15 @@ func TestUniversalRendererMetadata_DefrecResponse(t *testing.T) {
 	require.NotNil(t, response.FormPage)
 	assert.Equal(t, "renderer-items-form", response.FormPage.ID)
 	assert.Equal(t, renderer.LayoutTwoColumn, response.FormPage.Layout)
+	require.Contains(t, response.Fields, "status")
+	assert.NotContains(t, response.Fields["status"], "extra")
+	assert.Equal(t, "select", response.Fields["status"]["visual_kind"])
+	assert.Equal(t, "full", response.Fields["status"]["width"])
+	assert.Equal(t, "status hint", response.Fields["status"]["hint"])
+	assert.Equal(t, "#", response.Fields["status"]["prefix"])
+	assert.Equal(t, "/options/statuses", response.Fields["status"]["options_url"])
+	assert.Equal(t, map[string]interface{}{"active": "check"}, response.Fields["status"]["option_icons"])
+	assert.Equal(t, map[string]interface{}{"row": "status", "column": "value"}, response.Fields["status"]["matrix"])
 }
 
 func TestUniversalRendererMetadata_ViewResponse(t *testing.T) {
@@ -212,12 +234,28 @@ func TestUniversalRendererMetadata_ViewFormPageResponse(t *testing.T) {
 		PrimaryKey: id,
 		Fields: []fields.ModuleField{
 			{Column: id, Title: "ID", Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeNumber},
-			{Column: status, Title: "Status", Type: fields.ModuleFieldTypeString, FormType: fields.ModuleFieldFormTypeText},
+			{
+				Column:     status,
+				Title:      "Status",
+				Type:       fields.ModuleFieldTypeString,
+				FormType:   fields.ModuleFieldFormTypeSelect,
+				VisualKind: "location_picker",
+				Width:      "full",
+				Section:    "profile",
+				Group:      "main",
+				Order:      2,
+				RoleFormType: map[string]fields.ModuleFieldFormType{
+					"model": fields.ModuleFieldFormTypeMultiselect,
+				},
+				LocationPicker:     &fields.ModuleFieldLocationPicker{CityMode: "single"},
+				RoleLocationPicker: map[string]fields.ModuleFieldLocationPicker{"model": {CityMode: "multiple"}},
+			},
 		},
 		Render: renderer.Universal{
 			Form: &renderer.FormPage{
-				ID:     "renderer-settings-form",
-				Layout: renderer.LayoutTwoColumn,
+				ID:      "renderer-settings-form",
+				Layout:  renderer.LayoutTwoColumn,
+				Context: map[string]interface{}{"target_profile_type": "model"},
 			},
 			Record: &renderer.RecordPage{
 				ID:     "renderer-settings-record",
@@ -280,27 +318,39 @@ func TestUniversalRendererMetadata_ViewFormPageResponse(t *testing.T) {
 	assert.Equal(t, renderer.PageTypeForm, config.Navigation[0].Target.PageType)
 	require.NotNil(t, config.Navigation[0].Target.Query)
 	assert.Equal(t, "/api/admin/renderer-settings/view/:bykey/:value", config.Navigation[0].Target.Query.Url)
+	assert.Equal(t, map[string]interface{}{"bykey": "current", "value": "current"}, config.Navigation[0].Target.Query.Params)
 
 	w = executeRequest(engine, http.MethodGet, "/admin/renderer-settings/view/id/1?settings=1", nil)
 	require.Equal(t, http.StatusOK, w.Code)
 
 	var response struct {
-		Renderer   *renderer.Identity   `json:"renderer"`
-		FormPage   *renderer.FormPage   `json:"form_page"`
-		RecordPage *renderer.RecordPage `json:"record_page"`
+		Renderer   *renderer.Identity                `json:"renderer"`
+		FormPage   *renderer.FormPage                `json:"form_page"`
+		RecordPage *renderer.RecordPage              `json:"record_page"`
+		Item       map[string]map[string]interface{} `json:"item"`
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
 	require.NotNil(t, response.Renderer)
 	require.NotNil(t, response.FormPage)
 	assert.Equal(t, "renderer-settings-form", response.FormPage.ID)
 	assert.Nil(t, response.RecordPage)
+	require.Contains(t, response.Item, "status")
+	assert.Equal(t, "location_picker", response.Item["status"]["visual_kind"])
+	assert.Equal(t, "full", response.Item["status"]["width"])
+	assert.Equal(t, "profile", response.Item["status"]["section"])
+	assert.Equal(t, "main", response.Item["status"]["group"])
+	assert.Equal(t, float64(2), response.Item["status"]["order"])
+	assert.Equal(t, "multiselect", response.Item["status"]["form_type"])
+	assert.Equal(t, map[string]interface{}{"city_mode": "multiple"}, response.Item["status"]["location_picker"])
+	assert.NotContains(t, response.Item["status"], "extra")
 
 	w = executeRequest(engine, http.MethodGet, "/admin/renderer-settings/view/id/1", nil)
 	require.Equal(t, http.StatusOK, w.Code)
 	response = struct {
-		Renderer   *renderer.Identity   `json:"renderer"`
-		FormPage   *renderer.FormPage   `json:"form_page"`
-		RecordPage *renderer.RecordPage `json:"record_page"`
+		Renderer   *renderer.Identity                `json:"renderer"`
+		FormPage   *renderer.FormPage                `json:"form_page"`
+		RecordPage *renderer.RecordPage              `json:"record_page"`
+		Item       map[string]map[string]interface{} `json:"item"`
 	}{}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
 	require.NotNil(t, response.RecordPage)

@@ -29,6 +29,9 @@ func NewDefrecResponse(extra interface{}, fields []f.ModuleField) DefrecResponse
 		if field.Extra != nil && field.Extra.Defrec != nil {
 			item["extra"] = field.Extra.Defrec
 		}
+		for key, value := range field.UIMap() {
+			item[key] = value
+		}
 		if field.Section != "" {
 			item["section"] = field.Section
 		}

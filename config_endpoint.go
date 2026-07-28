@@ -216,8 +216,8 @@ func (generator *Generator) buildNavigation(c *gin.Context, role string, lang lo
 				target.Query = route.Query
 				target.Data = route.Data
 				target.Children = route.Children
-				if target.Query != nil && entry.Query != nil {
-					target.Query.Params = entry.Query
+				if target.Query != nil {
+					target.Query.Params = mergeRouteParams(entry.Target.Params, entry.Query)
 				}
 			}
 
@@ -243,6 +243,20 @@ func (generator *Generator) buildNavigation(c *gin.Context, role string, lang lo
 	})
 
 	return result, nil
+}
+
+func mergeRouteParams(params map[string]interface{}, query map[string]interface{}) map[string]interface{} {
+	if len(params) == 0 && len(query) == 0 {
+		return nil
+	}
+	result := make(map[string]interface{}, len(params)+len(query))
+	for key, value := range params {
+		result[key] = value
+	}
+	for key, value := range query {
+		result[key] = value
+	}
+	return result
 }
 
 func navigationRoleAllowed(entry NavigationEntry, role string) bool {
