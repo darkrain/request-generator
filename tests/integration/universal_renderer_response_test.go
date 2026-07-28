@@ -3,6 +3,7 @@ package integration
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -304,6 +305,66 @@ func TestUniversalRendererMetadata_ViewFormPageResponse(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
 	require.NotNil(t, response.RecordPage)
 	assert.Nil(t, response.FormPage)
+}
+
+func TestCheckRequest_ValidatesSubmittedFieldsOutsideActionColumns(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	id := postgres.IntegerColumn("id")
+	status := postgres.StringColumn("status")
+	table := postgres.NewTable("public", "guarded_items", "", id, status)
+
+	testModule := &module.BaseModule{
+		Name:       "guarded-items",
+		Path:       "/admin",
+		Table:      table,
+		PrimaryKey: id,
+		Fields: []fields.ModuleField{
+			{Column: id, Title: "ID", Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeNumber},
+			{
+				Column:   status,
+				Title:    "Status",
+				Type:     fields.ModuleFieldTypeString,
+				FormType: fields.ModuleFieldFormTypeSelect,
+				Check: []fields.CheckRules{
+					fields.DataRule(func(_ *gin.Context, _ *sql.DB, data map[string]interface{}, _ string) error {
+						if _, exists := data["status"]; exists {
+							return fmt.Errorf("status is read-only")
+						}
+						return nil
+					}, []fields.Scenario{fields.ScenarioUpdate}),
+				},
+			},
+		},
+		Actions: []actions.ModuleAction{
+			actions.UpdateModuleAction{
+				Columns:    []pg.Column{id},
+				By:         []pg.Column{id},
+				Permission: []actions.Role{actions.RoleAll},
+				Auth:       true,
+				Label:      "Update",
+			},
+		},
+	}
+
+	engine := gin.New()
+	group := engine.Group("")
+	generator := module.NewGenerator(
+		func(_ *module.BaseModule) dbpkg.DBExecutor { return fakeRendererDB{} },
+		*group,
+		[]*module.BaseModule{testModule},
+		func(_ actions.ModuleAction, _ []actions.Role) gin.HandlerFunc {
+			return func(c *gin.Context) { c.Next() }
+		},
+		createMockAuthMiddleware(&icontext.UserInfo{ID: 1, Role: "admin"}),
+	)
+	generator.Run()
+
+	w := executeJSONRequest(engine, http.MethodPost, "/admin/guarded-items/id/1", map[string]interface{}{
+		"status": "verified",
+	})
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "status is read-only")
 }
 
 func TestUniversalRendererMetadata_ListAndResourceGridAreMutuallyExclusive(t *testing.T) {
