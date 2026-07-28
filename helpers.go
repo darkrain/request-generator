@@ -1,6 +1,7 @@
 package module
 
 import (
+	"database/sql"
 	"fmt"
 	"strconv"
 	"strings"
@@ -80,6 +81,7 @@ func (generator *Generator) checkRequest(
 ) map[string]string {
 	errs := make(map[string]string)
 	actionColumns := action.GetColumns(context)
+	checked := make(map[string]struct{}, len(actionColumns))
 
 	for _, col := range actionColumns {
 		colName := col.Name()
@@ -87,57 +89,124 @@ func (generator *Generator) checkRequest(
 		if field == nil {
 			continue
 		}
-
+		fieldKey := field.ColumnName()
 		if field.Translatable {
-			// For translatable fields, look up by FieldName and validate each language
-			value := data[field.Name()]
-			rules := module.GetRules(context, *field, scenario)
+			fieldKey = field.Name()
+		}
+		checked[fieldKey] = struct{}{}
+		validateRequestField(context, data, *field, scenario, lang, generator.db(module).RawDB(), errs)
+	}
 
-			if langMap, ok := value.(map[string]interface{}); ok {
-				for langKey, langVal := range langMap {
-					for _, rule := range rules {
-						err := rule.Validate(langVal, string(lang))
-						if err != nil {
-							errs[field.Name()+"."+langKey] = err.Error()
-						}
-					}
-				}
-			} else {
-				for _, rule := range rules {
-					err := rule.Validate(value, string(lang))
-					if err != nil {
-						errs[field.Name()] = err.Error()
-					}
-				}
-			}
+	for key := range data {
+		if _, ok := checked[key]; ok {
 			continue
 		}
-
-		value := data[colName]
-		rules := module.GetRules(context, *field, scenario)
-
-		for _, rule := range rules {
-			if dr, ok := rule.(fields.DataCheckRule); ok {
-				if err := dr.ValidateData(context, generator.db(module).RawDB(), data, string(lang)); err != nil {
-					errs[colName] = err.Error()
-				}
-				continue
-			}
-			err := rule.Validate(value, string(lang))
-			if err != nil {
-				errs[colName] = err.Error()
-			}
+		field := module.GetField(key)
+		if field == nil {
+			continue
 		}
-
-		if field.Convert != nil && value != nil {
-			_, err := field.Convert(context, value)
-			if err != nil {
-				errs[colName] = err.Error()
-			}
+		if len(module.GetRules(context, *field, scenario)) == 0 {
+			continue
 		}
+		validateRequestField(context, data, *field, scenario, lang, generator.db(module).RawDB(), errs)
 	}
 
 	return errs
+}
+
+func validateRequestField(
+	context *gin.Context,
+	data map[string]interface{},
+	field fields.ModuleField,
+	scenario fields.Scenario,
+	lang locale.Lang,
+	rawDB *sql.DB,
+	errs map[string]string,
+) {
+	if field.Translatable {
+		value := data[field.Name()]
+		rules := contextFieldRules(context, field, scenario)
+		if langMap, ok := value.(map[string]interface{}); ok {
+			for langKey, langVal := range langMap {
+				for _, rule := range rules {
+					err := rule.Validate(langVal, string(lang))
+					if err != nil {
+						errs[field.Name()+"."+langKey] = err.Error()
+					}
+				}
+			}
+		} else {
+			for _, rule := range rules {
+				err := rule.Validate(value, string(lang))
+				if err != nil {
+					errs[field.Name()] = err.Error()
+				}
+			}
+		}
+		return
+	}
+
+	colName := field.ColumnName()
+	value := data[colName]
+	rules := contextFieldRules(context, field, scenario)
+	for _, rule := range rules {
+		if dr, ok := rule.(fields.DataCheckRule); ok {
+			if err := dr.ValidateData(context, rawDB, data, string(lang)); err != nil {
+				errs[colName] = err.Error()
+			}
+			continue
+		}
+		err := rule.Validate(value, string(lang))
+		if err != nil {
+			errs[colName] = err.Error()
+		}
+	}
+
+	if field.Convert != nil && value != nil {
+		_, err := field.Convert(context, value)
+		if err != nil {
+			errs[colName] = err.Error()
+		}
+	}
+}
+
+func contextFieldRules(context *gin.Context, field fields.ModuleField, scenario fields.Scenario) []fields.CheckRules {
+	rules := make([]fields.CheckRules, 0, 10)
+	if field.Check != nil {
+		for _, rule := range field.Check {
+			if scenarioMatches(rule.GetScenarios(), scenario) {
+				rules = append(rules, rule)
+			}
+		}
+	}
+	if field.CheckFunc != nil {
+		for _, rule := range field.CheckFunc(context) {
+			if scenarioMatches(rule.GetScenarios(), scenario) {
+				rules = append(rules, rule)
+			}
+		}
+	}
+	role := actions.GetRoleFromContext(context)
+	for _, rc := range field.RoleCheck {
+		if rc.Role == string(role) || rc.Role == string(actions.RoleAll) {
+			for _, rule := range rc.Rules {
+				if scenarioMatches(rule.GetScenarios(), scenario) {
+					rules = append(rules, rule)
+				}
+			}
+			break
+		}
+	}
+	return rules
+}
+
+func scenarioMatches(scenarios []fields.Scenario, scenario fields.Scenario) bool {
+	for _, current := range scenarios {
+		if current == scenario {
+			return true
+		}
+	}
+	return false
 }
 
 func (generator *Generator) mapRequestInput(

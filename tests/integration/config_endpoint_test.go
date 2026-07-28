@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -113,6 +114,15 @@ func executeRequest(engine *gin.Engine, method, path string, headers map[string]
 	for key, value := range headers {
 		req.Header.Set(key, value)
 	}
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+	return w
+}
+
+func executeJSONRequest(engine *gin.Engine, method, path string, body interface{}) *httptest.ResponseRecorder {
+	data, _ := json.Marshal(body)
+	req := httptest.NewRequest(method, path, bytes.NewReader(data))
+	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)
 	return w
