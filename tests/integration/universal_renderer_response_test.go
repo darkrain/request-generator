@@ -197,6 +197,115 @@ func TestUniversalRendererMetadata_ViewResponse(t *testing.T) {
 	assert.Equal(t, renderer.LayoutThreeColumn, response.RecordPage.Layout.Type)
 }
 
+func TestUniversalRendererMetadata_ViewFormPageResponse(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	id := postgres.IntegerColumn("id")
+	status := postgres.StringColumn("status")
+	table := postgres.NewTable("public", "renderer_settings", "", id, status)
+
+	testModule := &module.BaseModule{
+		Name:       "renderer-settings",
+		Path:       "/admin",
+		Table:      table,
+		PrimaryKey: id,
+		Fields: []fields.ModuleField{
+			{Column: id, Title: "ID", Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeNumber},
+			{Column: status, Title: "Status", Type: fields.ModuleFieldTypeString, FormType: fields.ModuleFieldFormTypeText},
+		},
+		Render: renderer.Universal{
+			Form: &renderer.FormPage{
+				ID:     "renderer-settings-form",
+				Layout: renderer.LayoutTwoColumn,
+			},
+			Record: &renderer.RecordPage{
+				ID:     "renderer-settings-record",
+				Layout: &renderer.Layout{Type: renderer.LayoutThreeColumn},
+			},
+		},
+		Actions: []actions.ModuleAction{
+			actions.ViewModuleAction{
+				Columns:    []pg.Column{id, status},
+				By:         []pg.Column{id},
+				Permission: []actions.Role{actions.RoleAll},
+				Auth:       true,
+				Label:      "Settings",
+				PageTypeFunc: func(c *gin.Context) renderer.PageType {
+					if c.Query("settings") == "1" {
+						return renderer.PageTypeForm
+					}
+					return renderer.PageTypeRecord
+				},
+			},
+		},
+		Navigation: []module.NavigationEntry{
+			{
+				ActionName: "view",
+				Title:      "Settings",
+				Group:      "settings",
+				Show:       true,
+				Path:       "/settings",
+				Target: module.NavigationTarget{
+					Type:     "page",
+					PageType: renderer.PageTypeForm,
+					Params: map[string]interface{}{
+						"bykey": "current",
+						"value": "current",
+					},
+				},
+			},
+		},
+	}
+
+	engine := gin.New()
+	group := engine.Group("")
+	generator := module.NewGenerator(
+		func(_ *module.BaseModule) dbpkg.DBExecutor { return fakeRendererDB{} },
+		*group,
+		[]*module.BaseModule{testModule},
+		func(_ actions.ModuleAction, _ []actions.Role) gin.HandlerFunc {
+			return func(c *gin.Context) { c.Next() }
+		},
+		createMockAuthMiddleware(&icontext.UserInfo{ID: 1, Role: "admin"}),
+	)
+	generator.Run()
+
+	w := executeRequest(engine, http.MethodGet, "/api/config", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var config module.ConfigResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &config))
+	require.Len(t, config.Navigation, 1)
+	assert.Equal(t, renderer.PageTypeForm, config.Navigation[0].Target.PageType)
+	require.NotNil(t, config.Navigation[0].Target.Query)
+	assert.Equal(t, "/api/admin/renderer-settings/view/:bykey/:value", config.Navigation[0].Target.Query.Url)
+
+	w = executeRequest(engine, http.MethodGet, "/admin/renderer-settings/view/id/1?settings=1", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var response struct {
+		Renderer   *renderer.Identity   `json:"renderer"`
+		FormPage   *renderer.FormPage   `json:"form_page"`
+		RecordPage *renderer.RecordPage `json:"record_page"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	require.NotNil(t, response.Renderer)
+	require.NotNil(t, response.FormPage)
+	assert.Equal(t, "renderer-settings-form", response.FormPage.ID)
+	assert.Nil(t, response.RecordPage)
+
+	w = executeRequest(engine, http.MethodGet, "/admin/renderer-settings/view/id/1", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	response = struct {
+		Renderer   *renderer.Identity   `json:"renderer"`
+		FormPage   *renderer.FormPage   `json:"form_page"`
+		RecordPage *renderer.RecordPage `json:"record_page"`
+	}{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	require.NotNil(t, response.RecordPage)
+	assert.Nil(t, response.FormPage)
+}
+
 func TestUniversalRendererMetadata_ListAndResourceGridAreMutuallyExclusive(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
