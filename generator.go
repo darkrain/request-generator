@@ -862,6 +862,8 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			}
 		}()
 
+		pageType := viewActionPageTypeForContext(action, c)
+
 		err := action.BeforeRequest(c)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
@@ -1012,11 +1014,15 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			Extra      interface{}            `json:"extra,omitempty"`
 			Item       map[string]interface{} `json:"item"`
 		}{
-			Renderer:   render.RecordIdentity(),
-			RecordPage: render.Record,
-			FormPage:   render.Form,
-			Extra:      extra,
-			Item:       item,
+			Renderer: viewRouteIdentity(render, pageType),
+			Extra:    extra,
+			Item:     item,
+		}
+		switch pageType {
+		case renderer.PageTypeForm:
+			output.FormPage = render.Form
+		case renderer.PageTypeRecord:
+			output.RecordPage = render.Record
 		}
 
 		response.Response(l, c, output)

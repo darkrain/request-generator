@@ -1,6 +1,7 @@
 package actions
 
 import (
+	"github.com/darkrain/request-generator/renderer"
 	"github.com/gin-gonic/gin"
 	pg "github.com/go-jet/jet/v2/postgres"
 )
@@ -21,6 +22,8 @@ type ViewModuleAction struct {
 	ExtraFunc    func(c *gin.Context) interface{} `json:"-"`
 	Fields       []RoleContext                    `json:"-"`
 	Widget       *WidgetConfig                    `json:"widget,omitempty"`
+	PageType     renderer.PageType                `json:"page_type,omitempty"`
+	PageTypeFunc func(c *gin.Context) renderer.PageType
 }
 
 func (action ViewModuleAction) Action() ModuleActionName {

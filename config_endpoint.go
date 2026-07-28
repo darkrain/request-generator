@@ -207,6 +207,10 @@ func (generator *Generator) buildNavigation(c *gin.Context, role string, lang lo
 					return nil, err
 				}
 				route := generator.buildRouteForAction(module, render, action, role)
+				if entry.Target.PageType != "" {
+					route.Renderer = viewRouteIdentity(render, entry.Target.PageType)
+					route.PageType = viewRoutePageType(render, entry.Target.PageType)
+				}
 				target.Renderer = route.Renderer
 				target.PageType = route.PageType
 				target.Query = route.Query
@@ -404,11 +408,12 @@ func (generator *Generator) buildViewRoute(module *BaseModule, render renderer.U
 	if adapter, exists := generator.ViewAdapters["view"]; exists {
 		viewAdapter = adapter
 	}
+	pageType := viewActionPageType(action)
 
 	return RouteConfig{
 		Title:    action.Label,
-		Renderer: render.RecordIdentity(),
-		PageType: render.RecordRoutePageType(),
+		Renderer: viewRouteIdentity(render, pageType),
+		PageType: viewRoutePageType(render, pageType),
 		Query: &RouteQuery{
 			Url:    apiQueryURL(module.Path + "/" + module.Name + "/view/:bykey/:value"),
 			Method: "GET",
@@ -416,6 +421,44 @@ func (generator *Generator) buildViewRoute(module *BaseModule, render renderer.U
 		Data: map[string]interface{}{
 			"view_adapter": viewAdapter,
 		},
+	}
+}
+
+func viewActionPageType(action actions.ViewModuleAction) renderer.PageType {
+	if action.PageType != "" {
+		return action.PageType
+	}
+	return renderer.PageTypeRecord
+}
+
+func viewActionPageTypeForContext(action actions.ViewModuleAction, c *gin.Context) renderer.PageType {
+	if action.PageTypeFunc != nil {
+		if pageType := action.PageTypeFunc(c); pageType != "" {
+			return pageType
+		}
+	}
+	return viewActionPageType(action)
+}
+
+func viewRouteIdentity(render renderer.Universal, pageType renderer.PageType) *renderer.Identity {
+	switch pageType {
+	case renderer.PageTypeForm:
+		return render.FormIdentity()
+	case renderer.PageTypeRecord:
+		return render.RecordIdentity()
+	default:
+		return nil
+	}
+}
+
+func viewRoutePageType(render renderer.Universal, pageType renderer.PageType) renderer.PageType {
+	switch pageType {
+	case renderer.PageTypeForm:
+		return render.FormRoutePageType()
+	case renderer.PageTypeRecord:
+		return render.RecordRoutePageType()
+	default:
+		return ""
 	}
 }
 
@@ -549,8 +592,8 @@ func (generator *Generator) buildViewChild(module *BaseModule, render renderer.U
 
 	return RouteConfig{
 		Title:    a.Label,
-		Renderer: render.RecordIdentity(),
-		PageType: render.RecordRoutePageType(),
+		Renderer: viewRouteIdentity(render, viewActionPageType(a)),
+		PageType: viewRoutePageType(render, viewActionPageType(a)),
 		Query: &RouteQuery{
 			Url:    apiQueryURL(module.Path + "/" + module.Name + "/view/:bykey/:value"),
 			Method: "GET",

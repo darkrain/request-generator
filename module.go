@@ -24,9 +24,10 @@ type NavigationEntry struct {
 }
 
 type NavigationTarget struct {
-	Type   string                 `json:"type"`
-	Name   string                 `json:"name,omitempty"`
-	Params map[string]interface{} `json:"params,omitempty"`
+	Type     string                 `json:"type"`
+	Name     string                 `json:"name,omitempty"`
+	Params   map[string]interface{} `json:"params,omitempty"`
+	PageType renderer.PageType      `json:"page_type,omitempty"`
 }
 
 type RenderFunc func(c *gin.Context, base renderer.Universal) (renderer.Universal, error)
