@@ -199,14 +199,13 @@ const (
 type RendererKey string
 
 const (
-	RendererUniversalDisplay     RendererKey = "universal.display"
-	RendererUniversalSection     RendererKey = "universal.section"
-	RendererUniversalPreferences RendererKey = "universal.preferences"
-	RendererUniversalFilters     RendererKey = "universal.filters"
-	RendererUniversalPagination  RendererKey = "universal.pagination"
-	RendererMediaGallery         RendererKey = "media.gallery"
-	RendererCollectionManager    RendererKey = "collection.manager"
-	RendererAvatar               RendererKey = "avatar"
+	RendererUniversalDisplay    RendererKey = "universal.display"
+	RendererUniversalSection    RendererKey = "universal.section"
+	RendererUniversalFilters    RendererKey = "universal.filters"
+	RendererUniversalPagination RendererKey = "universal.pagination"
+	RendererMediaGallery        RendererKey = "media.gallery"
+	RendererCollectionManager   RendererKey = "collection.manager"
+	RendererAvatar              RendererKey = "avatar"
 )
 
 type RecordSectionRenderer = RendererKey

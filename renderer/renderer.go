@@ -263,7 +263,6 @@ type FormSection struct {
 	Fields       []string             `json:"fields,omitempty"`
 	ListPage     *ListPage            `json:"list_page,omitempty"`
 	Collection   *CollectionConfig    `json:"collection,omitempty"`
-	Preferences  *PreferencesConfig   `json:"preferences,omitempty"`
 	MediaUpload  *MediaUploadConfig   `json:"media_upload,omitempty"`
 	MediaItems   []MediaGalleryItem   `json:"media_items,omitempty"`
 	MediaLabels  *MediaGalleryLabels  `json:"media_labels,omitempty"`
@@ -364,32 +363,6 @@ type CollectionModal struct {
 	TakenLabel          string `json:"taken_label,omitempty"`
 	CancelLabel         string `json:"cancel_label,omitempty"`
 	ConfirmLoadingLabel string `json:"confirm_loading_label,omitempty"`
-}
-
-type PreferencesConfig struct {
-	Resource          string                        `json:"resource,omitempty"`
-	ListEndpoint      string                        `json:"list_endpoint,omitempty"`
-	SaveEndpoint      string                        `json:"save_endpoint,omitempty"`
-	Channels          []string                      `json:"channels,omitempty"`
-	Blocks            []PreferencesBlock            `json:"blocks,omitempty"`
-	ConnectionPrompts []PreferencesConnectionPrompt `json:"connection_prompts,omitempty"`
-}
-
-type PreferencesBlock struct {
-	ID       string `json:"id,omitempty"`
-	Title    string `json:"title,omitempty"`
-	Subtitle string `json:"subtitle,omitempty"`
-}
-
-type PreferencesConnectionPrompt struct {
-	ID               string           `json:"id,omitempty"`
-	Channel          string           `json:"channel,omitempty"`
-	Icon             string           `json:"icon,omitempty"`
-	Tone             string           `json:"tone,omitempty"`
-	Text             string           `json:"text,omitempty"`
-	ActionLabel      string           `json:"action_label,omitempty"`
-	ActionVariant    ActionVariant    `json:"action_variant,omitempty"`
-	ActionAppearance ActionAppearance `json:"action_appearance,omitempty"`
 }
 
 type Block struct {
