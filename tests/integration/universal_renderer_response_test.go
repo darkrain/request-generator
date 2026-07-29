@@ -179,6 +179,122 @@ func TestUniversalRendererMetadata_DefrecResponse(t *testing.T) {
 	assert.Equal(t, renderer.LayoutTwoColumn, response.FormPage.Layout)
 }
 
+func TestUniversalRendererMetadata_FormSectionMediaGallery(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	id := postgres.IntegerColumn("id")
+	table := postgres.NewTable("public", "media_renderer_items", "", id)
+
+	testModule := &module.BaseModule{
+		Name:       "media-renderer-items",
+		Path:       "/admin",
+		Table:      table,
+		PrimaryKey: id,
+		Fields: []fields.ModuleField{
+			{Column: id, Title: "ID", Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeNumber},
+		},
+		Render: renderer.Universal{
+			Form: &renderer.FormPage{
+				ID:     "media-renderer-items-form",
+				Layout: renderer.LayoutTwoColumn,
+				Sections: []renderer.FormSection{
+					{
+						ID:       "media",
+						Renderer: renderer.RendererMediaGallery,
+						MediaUpload: &renderer.MediaUploadConfig{
+							Title:        "Upload media",
+							Subtitle:     "Images and videos",
+							LoadingTitle: "Uploading",
+							Accept:       "image/jpeg,video/mp4",
+							Multiple:     true,
+						},
+						MediaItems: []renderer.MediaGalleryItem{
+							{
+								ID:         "media-link-1",
+								MediaID:    10,
+								LinkID:     1,
+								Kind:       renderer.MediaKindVideo,
+								Src:        "ipfs://video",
+								Poster:     "ipfs://poster",
+								Visibility: renderer.MediaVisibilityPublic,
+								Usage:      renderer.MediaUsageGallery,
+								SortOrder:  1,
+							},
+						},
+						MediaLabels: &renderer.MediaGalleryLabels{
+							Public:     "Public",
+							Private:    "Private",
+							Empty:      "No media yet",
+							CoverBadge: "Cover",
+						},
+						MediaActions: &renderer.MediaGalleryActions{
+							Upload: &renderer.Action{
+								ID:   "upload",
+								Type: renderer.ActionAPI,
+								API:  &renderer.APIAction{Method: "PUT", Endpoint: "/media_assets"},
+							},
+							Remove: &renderer.Action{
+								ID:   "remove",
+								Type: renderer.ActionAPI,
+								API:  &renderer.APIAction{Method: "DELETE", Endpoint: "/media_links/:id"},
+							},
+						},
+					},
+				},
+			},
+		},
+		Defrec: actions.DefrecModuleAction{
+			Permission: []actions.Role{actions.RoleAll},
+			Auth:       true,
+			Label:      "Defrec",
+		},
+		Actions: []actions.ModuleAction{
+			actions.AddModuleAction{
+				Columns:    []pg.Column{id},
+				Permission: []actions.Role{actions.RoleAll},
+				Auth:       true,
+				Label:      "Add",
+			},
+		},
+	}
+
+	engine := gin.New()
+	group := engine.Group("")
+	generator := module.NewGenerator(
+		func(_ *module.BaseModule) dbpkg.DBExecutor { return fakeRendererDB{} },
+		*group,
+		[]*module.BaseModule{testModule},
+		func(_ actions.ModuleAction, _ []actions.Role) gin.HandlerFunc {
+			return func(c *gin.Context) { c.Next() }
+		},
+		createMockAuthMiddleware(&icontext.UserInfo{ID: 1, Role: "admin"}),
+	)
+	generator.Run()
+
+	w := executeRequest(engine, http.MethodGet, "/admin/media-renderer-items/defrec/", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var response struct {
+		FormPage *renderer.FormPage `json:"form_page"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	require.NotNil(t, response.FormPage)
+	require.Len(t, response.FormPage.Sections, 1)
+
+	section := response.FormPage.Sections[0]
+	require.NotNil(t, section.MediaUpload)
+	assert.Equal(t, "Upload media", section.MediaUpload.Title)
+	require.Len(t, section.MediaItems, 1)
+	assert.Equal(t, renderer.MediaKindVideo, section.MediaItems[0].Kind)
+	assert.Equal(t, renderer.MediaVisibilityPublic, section.MediaItems[0].Visibility)
+	assert.Equal(t, renderer.MediaUsageGallery, section.MediaItems[0].Usage)
+	require.NotNil(t, section.MediaLabels)
+	assert.Equal(t, "No media yet", section.MediaLabels.Empty)
+	require.NotNil(t, section.MediaActions)
+	require.NotNil(t, section.MediaActions.Upload)
+	assert.Equal(t, "/media_assets", section.MediaActions.Upload.API.Endpoint)
+}
+
 func TestUniversalRendererMetadata_ViewResponse(t *testing.T) {
 	engine := setupUniversalRendererRouter(t)
 

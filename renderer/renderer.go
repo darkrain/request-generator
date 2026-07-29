@@ -234,21 +234,65 @@ type FormPage struct {
 }
 
 type FormSection struct {
-	ID          string             `json:"id,omitempty"`
-	Title       string             `json:"title,omitempty"`
-	PanelTitle  string             `json:"panel_title,omitempty"`
-	Subtitle    string             `json:"subtitle,omitempty"`
-	Renderer    RendererKey        `json:"renderer,omitempty"`
-	Group       string             `json:"group,omitempty"`
-	GroupTitle  string             `json:"group_title,omitempty"`
-	Icon        string             `json:"icon,omitempty"`
-	Action      string             `json:"action,omitempty"`
-	Mode        string             `json:"mode,omitempty"`
-	Block       *Block             `json:"block,omitempty"`
-	Fields      []string           `json:"fields,omitempty"`
-	ListPage    *ListPage          `json:"list_page,omitempty"`
-	Collection  *CollectionConfig  `json:"collection,omitempty"`
-	Preferences *PreferencesConfig `json:"preferences,omitempty"`
+	ID           string               `json:"id,omitempty"`
+	Title        string               `json:"title,omitempty"`
+	PanelTitle   string               `json:"panel_title,omitempty"`
+	Subtitle     string               `json:"subtitle,omitempty"`
+	Renderer     RendererKey          `json:"renderer,omitempty"`
+	Group        string               `json:"group,omitempty"`
+	GroupTitle   string               `json:"group_title,omitempty"`
+	Icon         string               `json:"icon,omitempty"`
+	Action       string               `json:"action,omitempty"`
+	Mode         string               `json:"mode,omitempty"`
+	Block        *Block               `json:"block,omitempty"`
+	Fields       []string             `json:"fields,omitempty"`
+	ListPage     *ListPage            `json:"list_page,omitempty"`
+	Collection   *CollectionConfig    `json:"collection,omitempty"`
+	Preferences  *PreferencesConfig   `json:"preferences,omitempty"`
+	MediaUpload  *MediaUploadConfig   `json:"media_upload,omitempty"`
+	MediaItems   []MediaGalleryItem   `json:"media_items,omitempty"`
+	MediaLabels  *MediaGalleryLabels  `json:"media_labels,omitempty"`
+	MediaActions *MediaGalleryActions `json:"media_actions,omitempty"`
+}
+
+type MediaUploadConfig struct {
+	Title        string `json:"title,omitempty"`
+	Subtitle     string `json:"subtitle,omitempty"`
+	LoadingTitle string `json:"loading_title,omitempty"`
+	Accept       string `json:"accept,omitempty"`
+	Multiple     bool   `json:"multiple"`
+}
+
+type MediaGalleryItem struct {
+	ID          string          `json:"id,omitempty"`
+	MediaID     int64           `json:"media_id,omitempty"`
+	LinkID      int64           `json:"link_id,omitempty"`
+	Kind        MediaKind       `json:"kind,omitempty"`
+	Src         string          `json:"src,omitempty"`
+	Poster      string          `json:"poster,omitempty"`
+	Visibility  MediaVisibility `json:"visibility,omitempty"`
+	Usage       MediaUsage      `json:"usage,omitempty"`
+	SortOrder   int             `json:"sort_order"`
+	Title       string          `json:"title,omitempty"`
+	Description string          `json:"description,omitempty"`
+}
+
+type MediaGalleryLabels struct {
+	Public       string `json:"public,omitempty"`
+	Private      string `json:"private,omitempty"`
+	Empty        string `json:"empty,omitempty"`
+	CoverBadge   string `json:"cover_badge,omitempty"`
+	Remove       string `json:"remove,omitempty"`
+	Reorder      string `json:"reorder,omitempty"`
+	FirstIsCover string `json:"first_is_cover,omitempty"`
+	PrivateHint  string `json:"private_hint,omitempty"`
+}
+
+type MediaGalleryActions struct {
+	Upload  *Action `json:"upload,omitempty"`
+	Link    *Action `json:"link,omitempty"`
+	Reorder *Action `json:"reorder,omitempty"`
+	Remove  *Action `json:"remove,omitempty"`
 }
 
 type CollectionConfig struct {

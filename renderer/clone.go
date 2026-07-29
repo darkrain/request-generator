@@ -277,8 +277,24 @@ func cloneFormSections(values []FormSection) []FormSection {
 		out[i].ListPage = cloneListPage(v.ListPage)
 		out[i].Collection = cloneCollectionConfig(v.Collection)
 		out[i].Preferences = clonePreferencesConfig(v.Preferences)
+		out[i].MediaUpload = clonePtr(v.MediaUpload)
+		out[i].MediaItems = cloneSlice(v.MediaItems)
+		out[i].MediaLabels = clonePtr(v.MediaLabels)
+		out[i].MediaActions = cloneMediaGalleryActions(v.MediaActions)
 	}
 	return out
+}
+
+func cloneMediaGalleryActions(v *MediaGalleryActions) *MediaGalleryActions {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.Upload = cloneAction(v.Upload)
+	cp.Link = cloneAction(v.Link)
+	cp.Reorder = cloneAction(v.Reorder)
+	cp.Remove = cloneAction(v.Remove)
+	return &cp
 }
 
 func cloneCollectionConfig(v *CollectionConfig) *CollectionConfig {
