@@ -285,6 +285,22 @@ func cloneFormSections(values []FormSection) []FormSection {
 	return out
 }
 
+func CloneFieldPresentation(v *FieldPresentation) *FieldPresentation {
+	return clonePtr(v)
+}
+
+func CloneFieldMediaConfig(v *FieldMediaConfig) *FieldMediaConfig {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.Item = clonePtr(v.Item)
+	cp.Upload = clonePtr(v.Upload)
+	cp.Labels = clonePtr(v.Labels)
+	cp.Actions = cloneMediaGalleryActions(v.Actions)
+	return &cp
+}
+
 func cloneMediaGalleryActions(v *MediaGalleryActions) *MediaGalleryActions {
 	if v == nil {
 		return nil
@@ -293,6 +309,8 @@ func cloneMediaGalleryActions(v *MediaGalleryActions) *MediaGalleryActions {
 	cp.Upload = cloneAction(v.Upload)
 	cp.Link = cloneAction(v.Link)
 	cp.Reorder = cloneAction(v.Reorder)
+	cp.Recenter = cloneAction(v.Recenter)
+	cp.Crop = cloneAction(v.Crop)
 	cp.Remove = cloneAction(v.Remove)
 	return &cp
 }

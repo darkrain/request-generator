@@ -29,6 +29,12 @@ func NewDefrecResponse(extra interface{}, fields []f.ModuleField) DefrecResponse
 		if field.Extra != nil && field.Extra.Defrec != nil {
 			item["extra"] = field.Extra.Defrec
 		}
+		if field.Presentation != nil {
+			item["presentation"] = field.Presentation
+		}
+		if field.Media != nil {
+			item["media"] = field.Media
+		}
 		if field.Section != "" {
 			item["section"] = field.Section
 		}

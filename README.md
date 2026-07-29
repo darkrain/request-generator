@@ -55,9 +55,9 @@ BaseModule
   │     ├── Type/FormType
   │     ├── Options/OptionsFunc
   │     ├── Check/DefaultFunc/Convert
-  │     └── Extra
-  │           ├── Defrec  -> форма и universal field props
-  │           └── View    -> отображение в списках/detail/card view
+  │     ├── Presentation  -> typed metadata визуального представления поля
+  │     ├── Media         -> typed metadata одиночного media-поля
+  │     └── Extra         -> legacy escape hatch
   │
   ├── ListModuleAction
   │     ├── Filter/Search/Sort/SortDefault
@@ -65,7 +65,7 @@ BaseModule
   │     └── ExtraFunc -> legacy/dynamic app-specific metadata
   │
   ├── ViewModuleAction
-  │     └── Extra -> custom view/detail metadata
+  │     └── Extra -> legacy custom view/detail metadata
   │
   ├── DefrecModuleAction
   │     └── schema for add/edit forms
@@ -92,7 +92,8 @@ BaseModule
 - ключи переводов;
 - ключи иконок;
 - typed metadata для UniversalRenderer через `BaseModule.Render`;
-- legacy/application-specific metadata через `extra`, если typed contract еще не покрывает сценарий.
+- typed metadata одиночных полей через `ModuleField.Presentation` и специализированные typed blocks вроде `ModuleField.Media`;
+- legacy/application-specific metadata через `extra` только для старого кода. Новые возможности UniversalRenderer нужно добавлять в typed contract.
 
 Frontend должен получать готовую схему и рендерить ее своими универсальными компонентами. Frontend не должен угадывать, что поле `status` нужно показать badge, что `category_ids` является multiselect, а `owner_id` нужно скрыть от определенной роли.
 
@@ -100,8 +101,8 @@ Frontend должен получать готовую схему и рендер
 
 | Что нужно описать | Где описывать |
 |---|---|
-| Поле формы add/edit | `ModuleField.Extra.Defrec` |
-| Поле detail/list/card view | `ModuleField.Extra.View` |
+| Поле формы add/edit | Базово `ModuleField`; расширения через typed поля `Presentation`, `Media` и т.п. |
+| Поле detail/list/card view | Базово `ModuleField`; расширения через typed поля `Presentation`, `Media` и т.п. |
 | Полный список с фильтрами и карточками | `BaseModule.Render.List` |
 | Универсальная form/edit page | `BaseModule.Render.Form` |
 | Страница просмотра записи | `BaseModule.Render.Record` |
@@ -113,9 +114,51 @@ Frontend должен получать готовую схему и рендер
 | Права на строки | `Where`, `RoleWhere`, `BeforeAction`, `DataCheckRule` |
 | Options из базы | `OptionsFunc` или `Extra.Defrec.options_url` |
 
+Подробная спецификация UniversalRenderer: [docs/universal-renderer-contract.md](docs/universal-renderer-contract.md).
+
+### Typed field metadata
+
+Для новых UI-возможностей нельзя заставлять frontend угадывать поведение по имени поля и нельзя добавлять ad-hoc `extra`. Если поле требует явного renderer contract, используйте typed поля `ModuleField`.
+
+Пример одиночного media-поля:
+
+```go
+{
+    Column:   table.Profiles.Avatar,
+    Title:    "profiles.fields.avatar",
+    Type:     fields.ModuleFieldTypeString,
+    FormType: fields.ModuleFieldFormTypeText,
+    Presentation: &renderer.FieldPresentation{
+        Renderer: renderer.RendererAvatar,
+        Variant:  "avatar",
+        Size:     renderer.MediaSizeThumb,
+        Ratio:    renderer.MediaRatioSquare,
+    },
+    Media: &renderer.FieldMediaConfig{
+        Item: &renderer.MediaGalleryItem{
+            Kind:       renderer.MediaKindPhoto,
+            Visibility: renderer.MediaVisibilityPublic,
+            Usage:      renderer.MediaUsageAvatar,
+        },
+        Upload: &renderer.MediaUploadConfig{
+            Title:        "settings.profile.avatar_title",
+            LoadingTitle: "settings.profile.uploading",
+            Accept:       "image/jpeg,image/png,image/webp",
+            Multiple:     false,
+        },
+        Actions: &renderer.MediaGalleryActions{
+            Upload: &renderer.Action{ID: "upload", Label: "settings.profile.upload_new", Type: renderer.ActionEmit},
+            Remove: &renderer.Action{ID: "remove", Label: "settings.profile.remove_avatar", Type: renderer.ActionEmit},
+        },
+    },
+}
+```
+
+В `defrec.fields[field]` и `view.item[field]` эти blocks приходят как `presentation` и `media`. Labels в media/action metadata переводятся request-generator по текущему языку. В `view` `media.item.src` может быть автоматически заполнен из `item[field].value`, если producer не указал `src`.
+
 ### Extra.Defrec
 
-`Extra.Defrec` описывает, каким контролом клиентское приложение должно редактировать поле.
+`Extra.Defrec` является legacy-механизмом. Его можно использовать только для существующих модулей или временной совместимости, пока нужный UI contract еще не типизирован.
 
 ```go
 {

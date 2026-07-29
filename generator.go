@@ -109,6 +109,53 @@ func (generator *Generator) FeaturesMiddleware() gin.HandlerFunc {
 	}
 }
 
+func (generator *Generator) localizeFieldPresentation(_ locale.Lang, v *renderer.FieldPresentation) *renderer.FieldPresentation {
+	return renderer.CloneFieldPresentation(v)
+}
+
+func (generator *Generator) localizeFieldMedia(lang locale.Lang, v *renderer.FieldMediaConfig, value interface{}) *renderer.FieldMediaConfig {
+	cp := renderer.CloneFieldMediaConfig(v)
+	if cp == nil {
+		return nil
+	}
+	if cp.Item != nil && cp.Item.Src == "" {
+		if src, ok := value.(string); ok {
+			cp.Item.Src = src
+		}
+	}
+	if cp.Upload != nil {
+		cp.Upload.Title = generator.Translate(lang, cp.Upload.Title)
+		cp.Upload.Subtitle = generator.Translate(lang, cp.Upload.Subtitle)
+		cp.Upload.LoadingTitle = generator.Translate(lang, cp.Upload.LoadingTitle)
+	}
+	if cp.Labels != nil {
+		cp.Labels.Public = generator.Translate(lang, cp.Labels.Public)
+		cp.Labels.Private = generator.Translate(lang, cp.Labels.Private)
+		cp.Labels.Empty = generator.Translate(lang, cp.Labels.Empty)
+		cp.Labels.CoverBadge = generator.Translate(lang, cp.Labels.CoverBadge)
+		cp.Labels.Remove = generator.Translate(lang, cp.Labels.Remove)
+		cp.Labels.Reorder = generator.Translate(lang, cp.Labels.Reorder)
+		cp.Labels.FirstIsCover = generator.Translate(lang, cp.Labels.FirstIsCover)
+		cp.Labels.PrivateHint = generator.Translate(lang, cp.Labels.PrivateHint)
+	}
+	if cp.Actions != nil {
+		generator.localizeRendererAction(lang, cp.Actions.Upload)
+		generator.localizeRendererAction(lang, cp.Actions.Link)
+		generator.localizeRendererAction(lang, cp.Actions.Reorder)
+		generator.localizeRendererAction(lang, cp.Actions.Recenter)
+		generator.localizeRendererAction(lang, cp.Actions.Crop)
+		generator.localizeRendererAction(lang, cp.Actions.Remove)
+	}
+	return cp
+}
+
+func (generator *Generator) localizeRendererAction(lang locale.Lang, action *renderer.Action) {
+	if action == nil {
+		return
+	}
+	action.Label = generator.Translate(lang, action.Label)
+}
+
 func (generator *Generator) Run() {
 
 	featuresGroup := generator.group.Group("/api")
@@ -812,6 +859,8 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 			field.Title = generator.Translate(lang, field.Title)
 			field.Options = optionItems
 			field.Check = checkItems
+			field.Presentation = generator.localizeFieldPresentation(lang, field.Presentation)
+			field.Media = generator.localizeFieldMedia(lang, field.Media, nil)
 
 			if field.RoleSection != nil {
 				if s, ok := field.RoleSection[role]; ok {
@@ -968,6 +1017,12 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 
 			if field.Extra != nil && field.Extra.View != nil {
 				fieldItem["extra"] = field.Extra.View
+			}
+			if field.Presentation != nil {
+				fieldItem["presentation"] = generator.localizeFieldPresentation(lang, field.Presentation)
+			}
+			if field.Media != nil {
+				fieldItem["media"] = generator.localizeFieldMedia(lang, field.Media, value)
 			}
 
 			// Collect options
