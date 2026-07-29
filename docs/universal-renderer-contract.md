@@ -28,6 +28,7 @@ flowchart TD
     B --> X["legacy response.extra"]
 
     C --> F["field.extra"]
+    C --> Y["field.presentation / field.media"]
     D --> F
 
     T --> G["list_page"]
@@ -39,6 +40,8 @@ flowchart TD
     F --> L["form metadata"]
     F --> M["list metadata"]
     F --> N["view metadata"]
+    Y --> Q
+    Y --> R
 
     G --> O["List renderer"]
     H --> P["Resource grid renderer"]
@@ -53,7 +56,7 @@ flowchart TD
 
 ## Где Лежит Metadata
 
-UniversalRenderer читает canonical metadata только из typed top-level response fields. `response.extra` остается legacy/deprecated escape hatch для старых модулей и application-specific compatibility, но не является частью UniversalRenderer metadata.
+UniversalRenderer читает canonical metadata из typed response fields. `response.extra` и `field.extra` остаются legacy/deprecated escape hatch для старых модулей и application-specific compatibility. Новые UI-возможности должны добавляться в typed contract генератора, а не в ad-hoc `extra`.
 
 Каждый response с typed page metadata должен содержать renderer identity:
 
@@ -178,11 +181,9 @@ Closed enums должны использовать typed constants из package 
       "required": true,
       "options": [],
       "section": "main",
-      "extra": {
-        "visual_kind": "select",
-        "section": "main",
-        "group": "general",
-        "order": 20
+      "presentation": {
+        "renderer": "universal.section",
+        "variant": "default"
       }
     }
   }
@@ -197,7 +198,9 @@ Closed enums должны использовать typed constants из package 
 | `fields[field].required` | Required marker для UI. |
 | `fields[field].options` | Static options. |
 | `fields[field].section` | Базовая секция поля. |
-| `fields[field].extra` | UI metadata формы. |
+| `fields[field].presentation` | Typed metadata визуального представления одиночного поля. |
+| `fields[field].media` | Typed media metadata одиночного поля, если поле является media value. |
+| `fields[field].extra` | Legacy metadata формы. Не использовать для новых UniversalRenderer capabilities. |
 | `renderer` | Renderer identity/version, добавляется request-generator. |
 | `form_page` | Typed metadata универсальной form/edit страницы из `BaseModule.Render.Form`. |
 
@@ -218,8 +221,9 @@ Closed enums должны использовать typed constants из package 
       "value": "active",
       "edit": true,
       "options": [],
-      "extra": {
-        "display": {"type": "badge"}
+      "presentation": {
+        "renderer": "universal.display",
+        "variant": "badge"
       }
     }
   }
@@ -233,7 +237,9 @@ Closed enums должны использовать typed constants из package 
 | `item[field].value` | Значение поля. |
 | `item[field].edit` | Можно ли редактировать поле в UI. |
 | `item[field].options` | Options для значения. |
-| `item[field].extra` | Metadata отображения поля. |
+| `item[field].presentation` | Typed metadata визуального представления одиночного поля. |
+| `item[field].media` | Typed media metadata одиночного поля, если поле является media value. |
+| `item[field].extra` | Legacy metadata отображения поля. Не использовать для новых UniversalRenderer capabilities. |
 | `renderer` | Renderer identity/version, добавляется request-generator. |
 | `record_page` | Typed metadata страницы просмотра из `BaseModule.Render.Record`. |
 
@@ -316,7 +322,150 @@ Renderer discovery происходит через `/api/config`: frontend мо�
 
 ## Field Metadata
 
-Поле может иметь metadata в трех контекстах:
+Поле может иметь typed metadata, которая приходит вместе с самим field object в `defrec.fields[field]` и `view.item[field]`.
+
+Typed field metadata нужна для одиночных полей, где базовых `type/form_type/options/checks` недостаточно, но вводить module-specific frontend код нельзя. Пример: поле с одним media value. Frontend не должен проверять `field.id == "avatar"` или другой application-specific ключ. API должен явно сказать, что значение поля является media item и каким renderer presentation его показывать.
+
+### Field Presentation
+
+`presentation` описывает только визуальное представление поля. Оно не описывает данные и не содержит бизнес-смысл.
+
+```json
+{
+  "presentation": {
+    "renderer": "avatar",
+    "variant": "avatar",
+    "style": "avatar",
+    "size": "thumb",
+    "ratio": "square"
+  }
+}
+```
+
+Поля:
+
+| Path | Назначение |
+|------|------------|
+| `presentation.renderer` | Renderer/component key, например `avatar`, `universal.display`, `universal.section`. |
+| `presentation.variant` | Вариант компонента внутри renderer. |
+| `presentation.style` | Optional style token, если renderer поддерживает несколько визуальных стилей. |
+| `presentation.size` | Media size token: `thumb`, `card`, `hero`. |
+| `presentation.ratio` | Media ratio token: `square`, `portrait`, `landscape`, `wide`. |
+
+### Field Media
+
+`media` описывает одиночное media-поле через существующие универсальные media-структуры. Это не gallery section и не application-specific avatar contract. Это один media item, optional upload config, labels и actions.
+
+```json
+{
+  "media": {
+    "item": {
+      "kind": "photo",
+      "usage": "avatar",
+      "visibility": "public",
+      "src": "ipfs://..."
+    },
+    "upload": {
+      "title": "Ваш аватар",
+      "subtitle": "Загрузите фото. Мы поможем вам правильно обрезать его по кругу.",
+      "loading_title": "Загрузка…",
+      "accept": "image/jpeg,image/png,image/webp",
+      "multiple": false
+    },
+    "labels": {
+      "empty": "Аватар не загружен",
+      "remove": "Удалить"
+    },
+    "actions": {
+      "upload": {
+        "id": "upload",
+        "type": "emit",
+        "label": "Загрузить",
+        "icon": "upload"
+      },
+      "recenter": {
+        "id": "recenter",
+        "type": "emit",
+        "label": "Центрировать",
+        "icon": "crosshair"
+      },
+      "crop": {
+        "id": "crop",
+        "type": "emit",
+        "label": "Обрезать",
+        "icon": "crop"
+      },
+      "remove": {
+        "id": "remove",
+        "type": "emit",
+        "label": "Удалить",
+        "icon": "trash",
+        "variant": "danger"
+      }
+    }
+  }
+}
+```
+
+Поля:
+
+| Path | Назначение |
+|------|------------|
+| `media.item` | `MediaGalleryItem` для одиночного значения. |
+| `media.item.kind` | Тип media: `photo`, `video`, `file`. |
+| `media.item.usage` | Назначение media: `gallery`, `avatar`, `poster`. |
+| `media.item.src` | URI значения. В `view` request-generator может подставить сюда `item[field].value`, если producer не указал `src` явно. |
+| `media.upload` | `MediaUploadConfig`: ограничения upload UI и localized labels. |
+| `media.labels` | `MediaGalleryLabels`, переиспользуется для одиночного media field. |
+| `media.actions` | `MediaGalleryActions`: стандартные действия `upload`, `link`, `reorder`, `recenter`, `crop`, `remove`. |
+
+Producer задает labels как translation keys. Request-generator возвращает во внешнем JSON уже локализованные labels согласно `lang`/`Accept-Language`.
+
+### Go API
+
+```go
+{
+    Column:   table.Profiles.Avatar,
+    Title:    "profiles.fields.avatar",
+    Type:     fields.ModuleFieldTypeString,
+    FormType: fields.ModuleFieldFormTypeText,
+    Presentation: &renderer.FieldPresentation{
+        Renderer: renderer.RendererAvatar,
+        Variant:  "avatar",
+        Style:    "avatar",
+        Size:     renderer.MediaSizeThumb,
+        Ratio:    renderer.MediaRatioSquare,
+    },
+    Media: &renderer.FieldMediaConfig{
+        Item: &renderer.MediaGalleryItem{
+            Kind:       renderer.MediaKindPhoto,
+            Visibility: renderer.MediaVisibilityPublic,
+            Usage:      renderer.MediaUsageAvatar,
+        },
+        Upload: &renderer.MediaUploadConfig{
+            Title:        "settings.profile.avatar_title",
+            Subtitle:     "settings.profile.avatar_desc",
+            LoadingTitle: "settings.profile.uploading",
+            Accept:       "image/jpeg,image/png,image/webp",
+            Multiple:     false,
+        },
+        Labels: &renderer.MediaGalleryLabels{
+            Empty:  "settings.profile.avatar_empty",
+            Remove: "settings.profile.remove_avatar",
+        },
+        Actions: &renderer.MediaGalleryActions{
+            Upload:   &renderer.Action{ID: "upload", Label: "settings.profile.upload_new", Type: renderer.ActionEmit},
+            Recenter: &renderer.Action{ID: "recenter", Label: "settings.profile.recenter", Type: renderer.ActionEmit},
+            Crop:     &renderer.Action{ID: "crop", Label: "settings.profile.crop", Type: renderer.ActionEmit},
+            Remove:   &renderer.Action{ID: "remove", Label: "settings.profile.remove_avatar", Type: renderer.ActionEmit, Variant: renderer.ActionVariantDanger},
+        },
+    },
+}
+```
+
+### Legacy Extra
+
+`extra` пока остается в трех контекстах для старых модулей:
 
 | Контекст | Где задается producer-side | Где приходит frontend |
 |----------|-----------------------------|-----------------------|
@@ -324,7 +473,9 @@ Renderer discovery происходит через `/api/config`: frontend мо�
 | List | `ModuleField.Extra.List` | `list.heads[field].extra`, `list.filters[field].extra` |
 | View | `ModuleField.Extra.View` | `view.item[field].extra` |
 
-Канонический shape:
+Для нового UniversalRenderer metadata `extra` использовать нельзя. Если нужной структуры нет, надо добавить typed поле в `renderer` package, тест response contract и обновить эту спецификацию.
+
+Legacy shape:
 
 ```json
 {

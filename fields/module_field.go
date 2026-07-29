@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/darkrain/request-generator/locale"
+	"github.com/darkrain/request-generator/renderer"
 	"github.com/gin-gonic/gin"
 	pg "github.com/go-jet/jet/v2/postgres"
 	validation "github.com/go-ozzo/ozzo-validation/v4"
@@ -112,6 +113,8 @@ type ModuleField struct {
 	FormType         ModuleFieldFormType                             `json:"form_type,omitempty"`
 	Example          string                                          `json:"example,omitempty"`
 	AllLabel         string                                          `json:"all_label,omitempty"`
+	Presentation     *renderer.FieldPresentation                     `json:"presentation,omitempty"`
+	Media            *renderer.FieldMediaConfig                      `json:"media,omitempty"`
 	Extra            *FieldExtra                                     `json:"-"`
 	Options          []ModuleFieldOptions                            `json:"options,omitempty"`
 	OptionsURL       string                                          `json:"options_url,omitempty"`

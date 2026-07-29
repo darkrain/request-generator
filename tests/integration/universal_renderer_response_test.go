@@ -43,7 +43,7 @@ func (fakeRendererDB) List(
 }
 
 func (fakeRendererDB) View(_ *log.Entry, _ pg.Table, _ pg.Column, _ []fields.ModuleField, _ pg.BoolExpression, _ []actions.ModuleActionJoin, _ *dbpkg.TranslationContext) (interface{}, error) {
-	return map[string]interface{}{"id": 1, "status": "active"}, nil
+	return map[string]interface{}{"id": 1, "status": "active", "avatar": "ipfs://avatar"}, nil
 }
 
 func (fakeRendererDB) Add(_ *log.Entry, _ pg.Table, _ pg.Column, _ []fields.ModuleField, _ map[string]interface{}, _ *dbpkg.TranslationContext) (interface{}, error) {
@@ -72,7 +72,8 @@ func setupUniversalRendererRouter(t *testing.T) *gin.Engine {
 
 	id := postgres.IntegerColumn("id")
 	status := postgres.StringColumn("status")
-	table := postgres.NewTable("public", "renderer_items", "", id, status)
+	avatar := postgres.StringColumn("avatar")
+	table := postgres.NewTable("public", "renderer_items", "", id, status, avatar)
 
 	testModule := &module.BaseModule{
 		Name:       "renderer-items",
@@ -82,6 +83,39 @@ func setupUniversalRendererRouter(t *testing.T) *gin.Engine {
 		Fields: []fields.ModuleField{
 			{Column: id, Title: "ID", Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeNumber},
 			{Column: status, Title: "Status", Type: fields.ModuleFieldTypeString, FormType: fields.ModuleFieldFormTypeSelect},
+			{
+				Column:   avatar,
+				Title:    "Avatar",
+				Type:     fields.ModuleFieldTypeString,
+				FormType: fields.ModuleFieldFormTypeText,
+				Presentation: &renderer.FieldPresentation{
+					Renderer: renderer.RendererAvatar,
+					Variant:  "avatar",
+					Size:     renderer.MediaSizeThumb,
+					Ratio:    renderer.MediaRatioSquare,
+				},
+				Media: &renderer.FieldMediaConfig{
+					Item: &renderer.MediaGalleryItem{
+						Kind:       renderer.MediaKindPhoto,
+						Visibility: renderer.MediaVisibilityPublic,
+						Usage:      renderer.MediaUsageAvatar,
+					},
+					Upload: &renderer.MediaUploadConfig{
+						Title:        "Upload avatar",
+						LoadingTitle: "Uploading avatar",
+						Accept:       "image/jpeg,image/png,image/webp",
+					},
+					Labels: &renderer.MediaGalleryLabels{
+						Empty:  "No avatar",
+						Remove: "Remove avatar",
+					},
+					Actions: &renderer.MediaGalleryActions{
+						Upload: &renderer.Action{ID: "upload", Label: "Upload", Type: renderer.ActionEmit, Icon: "upload"},
+						Crop:   &renderer.Action{ID: "crop", Label: "Crop", Type: renderer.ActionEmit, Icon: "crop"},
+						Remove: &renderer.Action{ID: "remove", Label: "Remove", Type: renderer.ActionAPI, API: &renderer.APIAction{Method: "POST", Endpoint: "/profiles/avatar/remove"}},
+					},
+				},
+			},
 		},
 		Render: renderer.Universal{
 			List: &renderer.ListPage{
@@ -108,13 +142,13 @@ func setupUniversalRendererRouter(t *testing.T) *gin.Engine {
 				Label:      "List",
 			},
 			actions.AddModuleAction{
-				Columns:    []pg.Column{status},
+				Columns:    []pg.Column{status, avatar},
 				Permission: []actions.Role{actions.RoleAll},
 				Auth:       true,
 				Label:      "Add",
 			},
 			actions.ViewModuleAction{
-				Columns:    []pg.Column{id, status},
+				Columns:    []pg.Column{id, status, avatar},
 				By:         []pg.Column{id},
 				Permission: []actions.Role{actions.RoleAll},
 				Auth:       true,
@@ -168,6 +202,10 @@ func TestUniversalRendererMetadata_DefrecResponse(t *testing.T) {
 	var response struct {
 		Renderer *renderer.Identity `json:"renderer"`
 		FormPage *renderer.FormPage `json:"form_page"`
+		Fields   map[string]struct {
+			Presentation *renderer.FieldPresentation `json:"presentation"`
+			Media        *renderer.FieldMediaConfig  `json:"media"`
+		} `json:"fields"`
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
 
@@ -177,6 +215,20 @@ func TestUniversalRendererMetadata_DefrecResponse(t *testing.T) {
 	require.NotNil(t, response.FormPage)
 	assert.Equal(t, "renderer-items-form", response.FormPage.ID)
 	assert.Equal(t, renderer.LayoutTwoColumn, response.FormPage.Layout)
+	avatarField := response.Fields["avatar"]
+	require.NotNil(t, avatarField.Presentation)
+	assert.Equal(t, renderer.RendererAvatar, avatarField.Presentation.Renderer)
+	assert.Equal(t, "avatar", avatarField.Presentation.Variant)
+	require.NotNil(t, avatarField.Media)
+	require.NotNil(t, avatarField.Media.Item)
+	assert.Equal(t, renderer.MediaUsageAvatar, avatarField.Media.Item.Usage)
+	require.NotNil(t, avatarField.Media.Upload)
+	assert.Equal(t, "Upload avatar", avatarField.Media.Upload.Title)
+	require.NotNil(t, avatarField.Media.Actions)
+	require.NotNil(t, avatarField.Media.Actions.Crop)
+	assert.Equal(t, "Crop", avatarField.Media.Actions.Crop.Label)
+	require.NotNil(t, avatarField.Media.Actions.Remove)
+	assert.Equal(t, "/profiles/avatar/remove", avatarField.Media.Actions.Remove.API.Endpoint)
 }
 
 func TestUniversalRendererMetadata_FormSectionMediaGallery(t *testing.T) {
@@ -304,6 +356,11 @@ func TestUniversalRendererMetadata_ViewResponse(t *testing.T) {
 	var response struct {
 		Renderer   *renderer.Identity   `json:"renderer"`
 		RecordPage *renderer.RecordPage `json:"record_page"`
+		Item       map[string]struct {
+			Value        interface{}                 `json:"value"`
+			Presentation *renderer.FieldPresentation `json:"presentation"`
+			Media        *renderer.FieldMediaConfig  `json:"media"`
+		} `json:"item"`
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
 
@@ -312,6 +369,16 @@ func TestUniversalRendererMetadata_ViewResponse(t *testing.T) {
 	assert.Equal(t, renderer.Version, response.Renderer.Version)
 	require.NotNil(t, response.RecordPage)
 	assert.Equal(t, renderer.LayoutThreeColumn, response.RecordPage.Layout.Type)
+	avatarField := response.Item["avatar"]
+	assert.Equal(t, "ipfs://avatar", avatarField.Value)
+	require.NotNil(t, avatarField.Presentation)
+	assert.Equal(t, renderer.RendererAvatar, avatarField.Presentation.Renderer)
+	require.NotNil(t, avatarField.Media)
+	require.NotNil(t, avatarField.Media.Item)
+	assert.Equal(t, renderer.MediaUsageAvatar, avatarField.Media.Item.Usage)
+	assert.Equal(t, "ipfs://avatar", avatarField.Media.Item.Src)
+	require.NotNil(t, avatarField.Media.Actions)
+	assert.Equal(t, "Remove", avatarField.Media.Actions.Remove.Label)
 }
 
 func TestUniversalRendererMetadata_ViewFormPageResponse(t *testing.T) {

@@ -179,6 +179,21 @@ type Media struct {
 	Fallback     string      `json:"fallback,omitempty"`
 }
 
+type FieldPresentation struct {
+	Renderer RendererKey `json:"renderer,omitempty"`
+	Variant  string      `json:"variant,omitempty"`
+	Style    string      `json:"style,omitempty"`
+	Size     MediaSize   `json:"size,omitempty"`
+	Ratio    MediaRatio  `json:"ratio,omitempty"`
+}
+
+type FieldMediaConfig struct {
+	Item    *MediaGalleryItem    `json:"item,omitempty"`
+	Upload  *MediaUploadConfig   `json:"upload,omitempty"`
+	Labels  *MediaGalleryLabels  `json:"labels,omitempty"`
+	Actions *MediaGalleryActions `json:"actions,omitempty"`
+}
+
 type TextBinding struct {
 	Field    string `json:"field,omitempty"`
 	Template string `json:"template,omitempty"`
@@ -289,10 +304,12 @@ type MediaGalleryLabels struct {
 }
 
 type MediaGalleryActions struct {
-	Upload  *Action `json:"upload,omitempty"`
-	Link    *Action `json:"link,omitempty"`
-	Reorder *Action `json:"reorder,omitempty"`
-	Remove  *Action `json:"remove,omitempty"`
+	Upload   *Action `json:"upload,omitempty"`
+	Link     *Action `json:"link,omitempty"`
+	Reorder  *Action `json:"reorder,omitempty"`
+	Recenter *Action `json:"recenter,omitempty"`
+	Crop     *Action `json:"crop,omitempty"`
+	Remove   *Action `json:"remove,omitempty"`
 }
 
 type CollectionConfig struct {
