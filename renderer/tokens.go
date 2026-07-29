@@ -254,6 +254,31 @@ const (
 	ActionAppearanceLink    ActionAppearance = "link"
 )
 
+type MediaKind string
+
+const (
+	MediaKindPhoto MediaKind = "photo"
+	MediaKindVideo MediaKind = "video"
+	MediaKindFile  MediaKind = "file"
+)
+
+type MediaVisibility string
+
+const (
+	MediaVisibilityPublic   MediaVisibility = "public"
+	MediaVisibilityPrivate  MediaVisibility = "private"
+	MediaVisibilityPaid     MediaVisibility = "paid"
+	MediaVisibilityInternal MediaVisibility = "internal"
+)
+
+type MediaUsage string
+
+const (
+	MediaUsageGallery MediaUsage = "gallery"
+	MediaUsageAvatar  MediaUsage = "avatar"
+	MediaUsagePoster  MediaUsage = "poster"
+)
+
 type DisplayComponentType string
 
 const (
