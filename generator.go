@@ -169,6 +169,9 @@ func (generator *Generator) Run() {
 			}
 			panic(fmt.Sprintf("invalid renderer config in module %s: %v", module.Name, err))
 		}
+		if err := generator.validateCollectionRelations(module); err != nil {
+			panic(fmt.Sprintf("invalid collection config in module %s: %v", module.Name, err))
+		}
 
 		featuresModule := Features{
 			ModuleName:       module.Label,
@@ -345,6 +348,42 @@ func (generator *Generator) Run() {
 			c.Data(http.StatusOK, "application/json; charset=utf-8", specJSON)
 		})
 	}
+}
+
+func (generator *Generator) validateCollectionRelations(owner *BaseModule) error {
+	if owner.Render.Form == nil {
+		return nil
+	}
+	moduleByName := make(map[string]*BaseModule, len(generator.Modules))
+	for _, candidate := range generator.Modules {
+		moduleByName[candidate.Name] = candidate
+	}
+	for _, section := range owner.Render.Form.Sections {
+		if section.Collection == nil {
+			continue
+		}
+		collectionModule, ok := moduleByName[section.Collection.Module]
+		if !ok {
+			return fmt.Errorf("collection section %q references unknown module %q", section.ID, section.Collection.Module)
+		}
+		if section.Collection.Target == nil || section.Collection.Target.Module == "" {
+			continue
+		}
+		if _, ok := moduleByName[section.Collection.Target.Module]; !ok {
+			return fmt.Errorf("collection section %q references unknown target module %q", section.ID, section.Collection.Target.Module)
+		}
+		relationFound := false
+		for _, relation := range collectionModule.Relations {
+			if relation.TargetModule == section.Collection.Target.Module {
+				relationFound = true
+				break
+			}
+		}
+		if !relationFound {
+			return fmt.Errorf("collection module %q must declare relation to target module %q", section.Collection.Module, section.Collection.Target.Module)
+		}
+	}
+	return nil
 }
 
 func (generator *Generator) actionList(module *BaseModule, action actions.ListModuleAction) func(c *gin.Context) {

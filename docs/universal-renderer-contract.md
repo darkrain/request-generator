@@ -802,6 +802,107 @@ Supported operators:
 
 Conditions отвечают только за отображение. Любое действие, скрытое или выключенное UI-условием, должно иметь server-side проверку в endpoint/action.
 
+## Collection Manager
+
+`collection.manager` описывает универсальную коллекцию записей одного модуля в контексте текущей target-записи. Контракт не содержит бизнес-понятий владельца, профиля, цены или специальных endpoint-ов.
+
+Разделение ответственности:
+
+- `actor` определяется только auth token текущего запроса;
+- `target` является текущей записью страницы, например открытый record/form;
+- `module relation` задается в producer module через `BaseModule.Relations`, а не в renderer metadata;
+- client не передает owner foreign key в body create/update/delete actions;
+- server-side policy и relation filtering остаются ответственностью backend/generator integration.
+
+Минимальная коллекция без дополнительных редактируемых полей:
+
+```json
+{
+  "renderer": "collection.manager",
+  "collection": {
+    "module": "tags",
+    "target": {
+      "module": "profiles",
+      "id": {"type": "number", "number": 123}
+    },
+    "item": {
+      "label_field": "title"
+    },
+    "buckets": [
+      {
+        "id": "all",
+        "title": "All",
+        "block_id": "collection.default"
+      }
+    ]
+  }
+}
+```
+
+Коллекция с несколькими редактируемыми полями и bucket predicate/defaults:
+
+```json
+{
+  "renderer": "collection.manager",
+  "collection": {
+    "module": "services",
+    "edit_fields": ["price", "note", "available"],
+    "item": {
+      "label_field": "title",
+      "meta_fields": ["price", "note"]
+    },
+    "buckets": [
+      {
+        "id": "included",
+        "title": "Included",
+        "block_id": "collection.included",
+        "edit_fields": ["note"],
+        "predicate": {
+          "field": "price",
+          "operator": "eq",
+          "value": {"type": "number", "number": 0}
+        },
+        "defaults": [
+          {"field": "price", "value": {"type": "number", "number": 0}},
+          {"field": "available", "value": {"type": "bool", "bool": true}}
+        ]
+      }
+    ]
+  }
+}
+```
+
+Канонические поля:
+
+| Path | Назначение |
+|------|------------|
+| `collection.module` | Имя модуля request-generator. Client строит стандартные list/defrec/action endpoints из имени модуля. |
+| `collection.target` | Typed context текущей target-записи. |
+| `collection.target.module` | Модуль target-записи. |
+| `collection.target.id` | TypedValue идентификатора target-записи. |
+| `collection.item.label_field` | Поле модуля коллекции для основного текста элемента. |
+| `collection.item.meta_fields` | Дополнительные поля элемента. |
+| `collection.edit_fields` | Идентификаторы редактируемых полей. Типы, labels, options, validation и permissions берутся из `defrec` модуля коллекции. |
+| `collection.buckets[].block_id` | Stable id универсального блока/варианта оформления bucket. |
+| `collection.buckets[].predicate` | Typed predicate по произвольному полю. |
+| `collection.buckets[].defaults` | Typed default values для bucket. |
+| `collection.buckets[].edit_fields` | Optional override списка редактируемых полей внутри конкретного bucket. |
+
+`collection` не должен содержать `list_endpoint`, `defrec_endpoint`, `profile_field`, `price_field`, `price_prefix`, `price_enabled`, `default_price`, `tone` или другие business-specific поля.
+
+Go relation declaration:
+
+```go
+Relations: []module.ModuleRelation{
+    {
+        Name:         "target",
+        TargetModule: "profiles",
+        SourceField:  table.Services.ProfileID,
+        TargetField:  table.Profiles.ID,
+    },
+}
+```
+
 ## Resource Grid Page
 
 `resource_grid_page` описывает рабочую страницу управления сущностями. В Go API это `renderer.Universal.ResourceGrid`.

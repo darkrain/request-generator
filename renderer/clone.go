@@ -319,8 +319,55 @@ func cloneCollectionConfig(v *CollectionConfig) *CollectionConfig {
 		return nil
 	}
 	cp := *v
-	cp.Collections = cloneSlice(v.Collections)
+	cp.Target = cloneCollectionTarget(v.Target)
+	cp.Item = cloneCollectionItem(v.Item)
+	cp.Buckets = cloneCollectionBuckets(v.Buckets)
+	cp.EditFields = cloneSlice(v.EditFields)
 	cp.Modal = cloneCollectionModal(v.Modal)
+	cp.Actions = cloneActions(v.Actions)
+	return &cp
+}
+
+func cloneCollectionTarget(v *CollectionTarget) *CollectionTarget {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.ID = clonePtr(v.ID)
+	return &cp
+}
+
+func cloneCollectionItem(v *CollectionItem) *CollectionItem {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.MetaFields = cloneSlice(v.MetaFields)
+	return &cp
+}
+
+func cloneCollectionBuckets(values []CollectionBucket) []CollectionBucket {
+	if values == nil {
+		return nil
+	}
+	out := make([]CollectionBucket, len(values))
+	for i, v := range values {
+		out[i] = v
+		out[i].Predicate = cloneCollectionPredicate(v.Predicate)
+		out[i].Defaults = cloneSlice(v.Defaults)
+		out[i].EditFields = cloneSlice(v.EditFields)
+		out[i].Actions = cloneActions(v.Actions)
+	}
+	return out
+}
+
+func cloneCollectionPredicate(v *CollectionPredicate) *CollectionPredicate {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.Value = clonePtr(v.Value)
+	cp.Values = cloneSlice(v.Values)
 	return &cp
 }
 
