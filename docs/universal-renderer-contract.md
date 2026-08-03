@@ -961,11 +961,12 @@ Stable renderer names:
 | `universal.display` | Display section metadata: `components`, `components[].fields`, layout fields. |
 | `universal.filters` | `filters`, `levels`, `primary`, `secondary`, `more`, `nested`, `reset`. |
 | `universal.pagination` | `mode`, pagination response fields. |
-| `universal.preferences` | `preferences` config directly in section. |
 | `media.gallery` | Media fields/config in section metadata. |
 | `collection.manager` | `collection` config directly in section. |
 
 Unknown renderer names must degrade to a generic block or produce a visible unsupported-renderer state. Producer services should not introduce custom renderer names unless the target frontend registers them.
+
+Renderer registry должен описывать универсальные UI primitives. Business-specific renderer names не допускаются в core contract. Например, настройки уведомлений не должны оформляться как `universal.preferences` с полями `global_channels`, `type_prefs`, `quiet_hours` и `connections`; такие экраны должны раскладываться на обычные sections, fields, matrices/lists и typed actions.
 
 Renderer behavior changes are versioned through this specification process, not through per-renderer object versions.
 

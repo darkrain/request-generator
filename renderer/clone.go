@@ -276,7 +276,6 @@ func cloneFormSections(values []FormSection) []FormSection {
 		out[i].Fields = cloneSlice(v.Fields)
 		out[i].ListPage = cloneListPage(v.ListPage)
 		out[i].Collection = cloneCollectionConfig(v.Collection)
-		out[i].Preferences = clonePreferencesConfig(v.Preferences)
 		out[i].MediaUpload = clonePtr(v.MediaUpload)
 		out[i].MediaItems = cloneSlice(v.MediaItems)
 		out[i].MediaLabels = clonePtr(v.MediaLabels)
@@ -330,17 +329,6 @@ func cloneCollectionModal(v *CollectionModal) *CollectionModal {
 		return nil
 	}
 	cp := *v
-	return &cp
-}
-
-func clonePreferencesConfig(v *PreferencesConfig) *PreferencesConfig {
-	if v == nil {
-		return nil
-	}
-	cp := *v
-	cp.Channels = cloneSlice(v.Channels)
-	cp.Blocks = cloneSlice(v.Blocks)
-	cp.ConnectionPrompts = cloneSlice(v.ConnectionPrompts)
 	return &cp
 }
 
