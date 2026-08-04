@@ -804,27 +804,23 @@ Conditions отвечают только за отображение. Любое
 
 ## Collection Manager
 
-`collection.manager` описывает универсальную коллекцию записей одного модуля в контексте текущей target-записи. Контракт не содержит бизнес-понятий владельца, профиля, цены или специальных endpoint-ов.
+`collection.manager` описывает универсальную коллекцию записей одного самостоятельного модуля. Контракт не содержит business-specific полей владельца, target module/id, цены или специальных endpoint-ов.
 
 Разделение ответственности:
 
 - `actor` определяется только auth token текущего запроса;
-- `target` является текущей записью страницы, например открытый record/form;
 - `module relation` задается в producer module через `BaseModule.Relations`, а не в renderer metadata;
-- client не передает owner foreign key в body create/update/delete actions;
-- server-side policy и relation filtering остаются ответственностью backend/generator integration.
+- если коллекция scoped, renderer передает только stable relation name через `collection.relation`;
+- client передает `scope[relation]` и `scope[id]` в query, но не передает owner foreign key в body create/update/delete actions;
+- server-side permission, `ScopeCheck` и relation filtering остаются ответственностью backend/generator integration.
 
-Минимальная коллекция без дополнительных редактируемых полей:
+Минимальная коллекция без relation scope:
 
 ```json
 {
   "renderer": "collection.manager",
   "collection": {
     "module": "tags",
-    "target": {
-      "module": "profiles",
-      "id": {"type": "number", "number": 123}
-    },
     "item": {
       "label_field": "title"
     },
@@ -839,17 +835,18 @@ Conditions отвечают только за отображение. Любое
 }
 ```
 
-Коллекция с несколькими редактируемыми полями и bucket predicate/defaults:
+Коллекция с relation scope, несколькими редактируемыми полями и bucket predicate/defaults:
 
 ```json
 {
   "renderer": "collection.manager",
   "collection": {
-    "module": "services",
-    "edit_fields": ["price", "note", "available"],
+    "module": "related_records",
+    "relation": "owner",
+    "edit_fields": ["amount", "note", "enabled"],
     "item": {
-      "label_field": "title",
-      "meta_fields": ["price", "note"]
+      "label_field": "kind",
+      "meta_fields": ["amount", "note"]
     },
     "buckets": [
       {
@@ -858,13 +855,13 @@ Conditions отвечают только за отображение. Любое
         "block_id": "collection.included",
         "edit_fields": ["note"],
         "predicate": {
-          "field": "price",
+          "field": "amount",
           "operator": "eq",
           "value": {"type": "number", "number": 0}
         },
         "defaults": [
-          {"field": "price", "value": {"type": "number", "number": 0}},
-          {"field": "available", "value": {"type": "bool", "bool": true}}
+          {"field": "amount", "value": {"type": "number", "number": 0}},
+          {"field": "enabled", "value": {"type": "bool", "bool": true}}
         ]
       }
     ]
@@ -877,9 +874,7 @@ Conditions отвечают только за отображение. Любое
 | Path | Назначение |
 |------|------------|
 | `collection.module` | Имя модуля request-generator. Client строит стандартные list/defrec/action endpoints из имени модуля. |
-| `collection.target` | Typed context текущей target-записи. |
-| `collection.target.module` | Модуль target-записи. |
-| `collection.target.id` | TypedValue идентификатора target-записи. |
+| `collection.relation` | Optional stable technical name relation из `BaseModule.Relations`. Если задан, client передает `scope[relation]` и `scope[id]` в query стандартных actions. |
 | `collection.item.label_field` | Поле модуля коллекции для основного текста элемента. |
 | `collection.item.meta_fields` | Дополнительные поля элемента. |
 | `collection.edit_fields` | Идентификаторы редактируемых полей. Типы, labels, options, validation и permissions берутся из `defrec` модуля коллекции. |
@@ -888,20 +883,40 @@ Conditions отвечают только за отображение. Любое
 | `collection.buckets[].defaults` | Typed default values для bucket. |
 | `collection.buckets[].edit_fields` | Optional override списка редактируемых полей внутри конкретного bucket. |
 
-`collection` не должен содержать `list_endpoint`, `defrec_endpoint`, `profile_field`, `price_field`, `price_prefix`, `price_enabled`, `default_price`, `tone` или другие business-specific поля.
+`collection` не должен содержать `target`, `list_endpoint`, `defrec_endpoint`, `profile_field`, `price_field`, `price_prefix`, `price_enabled`, `default_price`, `tone` или другие business-specific поля.
 
 Go relation declaration:
 
 ```go
 Relations: []module.ModuleRelation{
     {
-        Name:         "target",
-        TargetModule: "profiles",
-        SourceField:  table.Services.ProfileID,
-        TargetField:  table.Profiles.ID,
+        Name:         "owner",
+        TargetModule: "records",
+        SourceField:  table.RelatedRecords.RecordID,
+        TargetField:  table.Records.ID,
+        ScopeCheck: func(c *gin.Context, scope module.RelationScope) error {
+            return checkActorCanUseRecord(c, scope.ID)
+        },
     },
 }
 ```
+
+Scoped transport:
+
+```http
+GET /api/related_records?scope[relation]=owner&scope[id]=123&size=200
+PUT /api/related_records?scope[relation]=owner&scope[id]=123
+POST /api/related_records/id/88?scope[relation]=owner&scope[id]=123
+DELETE /api/related_records/delete/id/88?scope[relation]=owner&scope[id]=123
+```
+
+Generator behavior:
+
+- без `scope[...]` стандартные actions работают как раньше;
+- с `scope[...]` generator находит relation по имени, вызывает `ScopeCheck`, добавляет relation filter в `list`;
+- при `add` generator сам подставляет `SourceField = scope[id]`;
+- при `add/update` body с relation source field отклоняется;
+- при `update/delete` generator добавляет relation constraint к `WHERE`, поэтому запись из другого scope не изменяется и не удаляется.
 
 ## Resource Grid Page
 

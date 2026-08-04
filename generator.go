@@ -366,21 +366,18 @@ func (generator *Generator) validateCollectionRelations(owner *BaseModule) error
 		if !ok {
 			return fmt.Errorf("collection section %q references unknown module %q", section.ID, section.Collection.Module)
 		}
-		if section.Collection.Target == nil || section.Collection.Target.Module == "" {
+		if section.Collection.Relation == "" {
 			continue
 		}
-		if _, ok := moduleByName[section.Collection.Target.Module]; !ok {
-			return fmt.Errorf("collection section %q references unknown target module %q", section.ID, section.Collection.Target.Module)
+		relation, ok := findModuleRelation(collectionModule, section.Collection.Relation)
+		if !ok {
+			return fmt.Errorf("collection module %q must declare relation %q", section.Collection.Module, section.Collection.Relation)
 		}
-		relationFound := false
-		for _, relation := range collectionModule.Relations {
-			if relation.TargetModule == section.Collection.Target.Module {
-				relationFound = true
-				break
-			}
+		if relation.TargetModule != owner.Name {
+			return fmt.Errorf("collection module %q relation %q must target module %q", section.Collection.Module, section.Collection.Relation, owner.Name)
 		}
-		if !relationFound {
-			return fmt.Errorf("collection module %q must declare relation to target module %q", section.Collection.Module, section.Collection.Target.Module)
+		if relation.ScopeCheck == nil {
+			return fmt.Errorf("collection module %q relation %q must declare ScopeCheck", section.Collection.Module, section.Collection.Relation)
 		}
 	}
 	return nil
@@ -450,6 +447,12 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 				where = actionWhere
 			}
 		}
+		scope, status, err := generator.resolveRelationScope(c, module)
+		if err != nil {
+			response.ErrorResponse(l, c, status, err.Error(), nil)
+			return
+		}
+		where = appendRelationScopeWhere(module, where, scope)
 
 		joins := action.Join
 		if roleJoins := actions.ResolveRoleJoin(module.RoleJoin, role); roleJoins != nil {
@@ -768,6 +771,19 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 			})
 			return
 		}
+		scope, status, err := generator.resolveRelationScope(c, module)
+		if err != nil {
+			response.ErrorResponse(l, c, status, GeneratorErrorAdd, []string{err.Error()})
+			return
+		}
+		if err := rejectScopedSourceField(input, scope); err != nil {
+			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{err.Error()})
+			return
+		}
+		if _, err := injectRelationScopeInput(c, input, nil, nil, module, scope); err != nil {
+			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{err.Error()})
+			return
+		}
 
 		// Apply DefaultFunc for fields absent from the request body.
 		for _, field := range module.Fields {
@@ -806,6 +822,11 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 			if !containsColumn(columns, realField.Column) && realField.DefaultFunc != nil {
 				mapInput[realField.ColumnName()] = realField.DefaultFunc(c)
 			}
+		}
+		realFields, err = injectRelationScopeInput(c, input, mapInput, realFields, module, scope)
+		if err != nil {
+			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{err.Error()})
+			return
 		}
 		output, err := generator.db(module).Add(l, module.Table, module.PrimaryKey, realFields, mapInput, tc)
 		if err != nil {
@@ -1179,6 +1200,15 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, nil)
 			return
 		}
+		scope, status, err := generator.resolveRelationScope(c, module)
+		if err != nil {
+			response.ErrorResponse(l, c, status, GeneratorErrorUpdate, []string{err.Error()})
+			return
+		}
+		if err := rejectScopedSourceField(input, scope); err != nil {
+			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, []string{err.Error()})
+			return
+		}
 
 		errs := generator.checkRequest(c, input, module, action, fields.ScenarioUpdate, lang)
 		if len(errs) > 0 {
@@ -1217,6 +1247,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 				where = pg.AND(where, actionWhere)
 			}
 		}
+		where = appendRelationScopeWhere(module, where, scope)
 
 		_, err = generator.db(module).Update(l, module.Table, module.PrimaryKey, realFields, mapInput, where, tc)
 		if err != nil {
@@ -1329,6 +1360,12 @@ func (generator *Generator) actionDelete(module *BaseModule, action actions.Dele
 				where = pg.AND(where, actionWhere)
 			}
 		}
+		scope, status, err := generator.resolveRelationScope(c, module)
+		if err != nil {
+			response.ErrorResponse(l, c, status, GeneratorErrorDelete, []string{err.Error()})
+			return
+		}
+		where = appendRelationScopeWhere(module, where, scope)
 
 		err = generator.db(module).Delete(l, module.Table, where, tc)
 		if err != nil {

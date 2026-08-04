@@ -375,12 +375,9 @@ func TestUniversalRendererMetadata_FormSectionCollectionContract(t *testing.T) {
 						ID:       "simple_collection",
 						Renderer: renderer.RendererCollectionManager,
 						Collection: &renderer.CollectionConfig{
-							Module: "tags",
-							Target: &renderer.CollectionTarget{
-								Module: "profiles",
-								ID:     &renderer.TypedValue{Type: renderer.TypedValueNumber, Number: 123},
-							},
-							Item: &renderer.CollectionItem{LabelField: "title"},
+							Module:   "tags",
+							Relation: "owner",
+							Item:     &renderer.CollectionItem{LabelField: "title"},
 							Buckets: []renderer.CollectionBucket{
 								{ID: "all", Title: "All", BlockID: "collection.default"},
 							},
@@ -442,25 +439,30 @@ func TestUniversalRendererMetadata_FormSectionCollectionContract(t *testing.T) {
 
 	engine := gin.New()
 	group := engine.Group("")
-	profilesModule := &module.BaseModule{Name: "profiles", Path: "/admin", Table: profilesTable, PrimaryKey: id}
+	_ = profilesTable
 	tagsModule := &module.BaseModule{
 		Name:       "tags",
 		Path:       "/admin",
 		Table:      tagsTable,
 		PrimaryKey: id,
-		Relations:  []module.ModuleRelation{{Name: "target", TargetModule: "profiles", SourceField: profileID, TargetField: id}},
+		Relations: []module.ModuleRelation{{
+			Name:         "owner",
+			TargetModule: "collection-renderer-items",
+			SourceField:  profileID,
+			TargetField:  id,
+			ScopeCheck:   func(_ *gin.Context, _ module.RelationScope) error { return nil },
+		}},
 	}
 	servicesModule := &module.BaseModule{
 		Name:       "services",
 		Path:       "/admin",
 		Table:      servicesTable,
 		PrimaryKey: id,
-		Relations:  []module.ModuleRelation{{Name: "target", TargetModule: "profiles", SourceField: profileID, TargetField: id}},
 	}
 	generator := module.NewGenerator(
 		func(_ *module.BaseModule) dbpkg.DBExecutor { return fakeRendererDB{} },
 		*group,
-		[]*module.BaseModule{testModule, profilesModule, tagsModule, servicesModule},
+		[]*module.BaseModule{testModule, tagsModule, servicesModule},
 		func(_ actions.ModuleAction, _ []actions.Role) gin.HandlerFunc {
 			return func(c *gin.Context) { c.Next() }
 		},
@@ -482,11 +484,7 @@ func TestUniversalRendererMetadata_FormSectionCollectionContract(t *testing.T) {
 	require.NotNil(t, simple)
 	assert.Equal(t, "tags", simple.Module)
 	assert.Empty(t, simple.EditFields)
-	require.NotNil(t, simple.Target)
-	assert.Equal(t, "profiles", simple.Target.Module)
-	require.NotNil(t, simple.Target.ID)
-	assert.Equal(t, renderer.TypedValueNumber, simple.Target.ID.Type)
-	assert.Equal(t, float64(123), simple.Target.ID.Number)
+	assert.Equal(t, "owner", simple.Relation)
 	assert.Equal(t, "title", simple.Item.LabelField)
 	require.Len(t, simple.Buckets, 1)
 	assert.Equal(t, "collection.default", simple.Buckets[0].BlockID)
@@ -577,10 +575,9 @@ func TestUniversalRendererMetadata_CollectionRelationValidation(t *testing.T) {
 	id := postgres.IntegerColumn("id")
 	profileID := postgres.IntegerColumn("profile_id")
 	pageTable := postgres.NewTable("public", "collection_page", "", id)
-	profilesTable := postgres.NewTable("public", "profiles", "", id)
 	itemsTable := postgres.NewTable("public", "items", "", id, profileID)
 
-	newGenerator := func(collectionModule *module.BaseModule, collectionName string) *module.Generator {
+	newGenerator := func(collectionModule *module.BaseModule, collectionName string, relation string) *module.Generator {
 		pageModule := &module.BaseModule{
 			Name:       "collection-page",
 			Path:       "/admin",
@@ -593,16 +590,15 @@ func TestUniversalRendererMetadata_CollectionRelationValidation(t *testing.T) {
 							ID:       "items",
 							Renderer: renderer.RendererCollectionManager,
 							Collection: &renderer.CollectionConfig{
-								Module: collectionName,
-								Target: &renderer.CollectionTarget{Module: "profiles"},
+								Module:   collectionName,
+								Relation: relation,
 							},
 						},
 					},
 				},
 			},
 		}
-		profilesModule := &module.BaseModule{Name: "profiles", Path: "/admin", Table: profilesTable, PrimaryKey: id}
-		modules := []*module.BaseModule{pageModule, profilesModule}
+		modules := []*module.BaseModule{pageModule}
 		if collectionModule != nil {
 			modules = append(modules, collectionModule)
 		}
@@ -621,13 +617,43 @@ func TestUniversalRendererMetadata_CollectionRelationValidation(t *testing.T) {
 
 	assert.PanicsWithValue(t,
 		`invalid collection config in module collection-page: collection section "items" references unknown module "items"`,
-		func() { newGenerator(nil, "items").Run() },
+		func() { newGenerator(nil, "items", "owner").Run() },
 	)
 
 	itemsWithoutRelation := &module.BaseModule{Name: "items", Path: "/admin", Table: itemsTable, PrimaryKey: id}
 	assert.PanicsWithValue(t,
-		`invalid collection config in module collection-page: collection module "items" must declare relation to target module "profiles"`,
-		func() { newGenerator(itemsWithoutRelation, "items").Run() },
+		`invalid collection config in module collection-page: collection module "items" must declare relation "owner"`,
+		func() { newGenerator(itemsWithoutRelation, "items", "owner").Run() },
+	)
+
+	itemsWithRelationToWrongTarget := &module.BaseModule{
+		Name:       "items",
+		Path:       "/admin",
+		Table:      itemsTable,
+		PrimaryKey: id,
+		Relations: []module.ModuleRelation{{
+			Name:         "owner",
+			TargetModule: "profiles",
+			SourceField:  profileID,
+			TargetField:  id,
+			ScopeCheck:   func(_ *gin.Context, _ module.RelationScope) error { return nil },
+		}},
+	}
+	assert.PanicsWithValue(t,
+		`invalid collection config in module collection-page: collection module "items" relation "owner" must target module "collection-page"`,
+		func() { newGenerator(itemsWithRelationToWrongTarget, "items", "owner").Run() },
+	)
+
+	itemsWithoutScopeCheck := &module.BaseModule{
+		Name:       "items",
+		Path:       "/admin",
+		Table:      itemsTable,
+		PrimaryKey: id,
+		Relations:  []module.ModuleRelation{{Name: "owner", TargetModule: "collection-page", SourceField: profileID, TargetField: id}},
+	}
+	assert.PanicsWithValue(t,
+		`invalid collection config in module collection-page: collection module "items" relation "owner" must declare ScopeCheck`,
+		func() { newGenerator(itemsWithoutScopeCheck, "items", "owner").Run() },
 	)
 
 	itemsWithRelation := &module.BaseModule{
@@ -635,9 +661,18 @@ func TestUniversalRendererMetadata_CollectionRelationValidation(t *testing.T) {
 		Path:       "/admin",
 		Table:      itemsTable,
 		PrimaryKey: id,
-		Relations:  []module.ModuleRelation{{Name: "target", TargetModule: "profiles", SourceField: profileID, TargetField: id}},
+		Relations: []module.ModuleRelation{{
+			Name:         "owner",
+			TargetModule: "collection-page",
+			SourceField:  profileID,
+			TargetField:  id,
+			ScopeCheck:   func(_ *gin.Context, _ module.RelationScope) error { return nil },
+		}},
 	}
-	assert.NotPanics(t, func() { newGenerator(itemsWithRelation, "items").Run() })
+	assert.NotPanics(t, func() { newGenerator(itemsWithRelation, "items", "owner").Run() })
+
+	unscopedItems := &module.BaseModule{Name: "items", Path: "/admin", Table: itemsTable, PrimaryKey: id}
+	assert.NotPanics(t, func() { newGenerator(unscopedItems, "items", "").Run() })
 }
 
 func TestUniversalRendererMetadata_ViewResponse(t *testing.T) {

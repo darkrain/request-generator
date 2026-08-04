@@ -307,7 +307,7 @@ renderer.Action{
 
 ### Collection manager metadata
 
-`renderer.CollectionConfig` описывает универсальную коллекцию записей модуля в контексте текущей target-записи. Контракт не содержит owner foreign key, profile-specific полей, price-specific полей или endpoint-ов.
+`renderer.CollectionConfig` описывает универсальную коллекцию записей самостоятельного модуля. Контракт не содержит owner foreign key, target module/id, business-specific полей или endpoint-ов.
 
 ```go
 Render: renderer.Universal{
@@ -317,11 +317,12 @@ Render: renderer.Universal{
                 ID:       "services",
                 Renderer: renderer.RendererCollectionManager,
                 Collection: &renderer.CollectionConfig{
-                    Module:     "model_additional_services",
-                    EditFields: []string{"price", "note", "available"},
+                    Module:     "related_records",
+                    Relation:   "owner",
+                    EditFields: []string{"amount", "note", "enabled"},
                     Item: &renderer.CollectionItem{
-                        LabelField: "title",
-                        MetaFields: []string{"price", "note"},
+                        LabelField: "kind",
+                        MetaFields: []string{"amount", "note"},
                     },
                     Buckets: []renderer.CollectionBucket{
                         {
@@ -329,12 +330,12 @@ Render: renderer.Universal{
                             Title:   "ui.included",
                             BlockID: "collection.included",
                             Predicate: &renderer.CollectionPredicate{
-                                Field:    "price",
+                                Field:    "amount",
                                 Operator: renderer.CollectionPredicateEquals,
                                 Value:    &renderer.TypedValue{Type: renderer.TypedValueNumber, Number: 0},
                             },
                             Defaults: []renderer.CollectionFieldDefaultValue{
-                                {Field: "price", Value: renderer.TypedValue{Type: renderer.TypedValueNumber, Number: 0}},
+                                {Field: "amount", Value: renderer.TypedValue{Type: renderer.TypedValueNumber, Number: 0}},
                             },
                         },
                     },
@@ -345,20 +346,23 @@ Render: renderer.Universal{
 }
 ```
 
-Связь с target-модулем описывается в backend module, а не в renderer metadata:
+Если collection нужно ограничить текущей открытой записью, связь описывается в backend module, а renderer указывает только technical relation name:
 
 ```go
 Relations: []module.ModuleRelation{
     {
-        Name:         "target",
-        TargetModule: "profiles",
-        SourceField:  table.Services.ProfileID,
-        TargetField:  table.Profiles.ID,
+        Name:         "owner",
+        TargetModule: "records",
+        SourceField:  table.RelatedRecords.RecordID,
+        TargetField:  table.Records.ID,
+        ScopeCheck: func(c *gin.Context, scope module.RelationScope) error {
+            return checkActorCanUseRecord(c, scope.ID)
+        },
     },
 }
 ```
 
-Frontend строит стандартные list/defrec/action endpoints из `collection.module`, а типы, labels, options, валидацию и права для `edit_fields` берет из `defrec` этого модуля.
+Frontend строит стандартные list/defrec/action endpoints из `collection.module`. Если `collection.relation` задан, frontend передаёт `scope[relation]` и `scope[id]` в query. Body add/update содержит только обычные поля модуля; relation source field подставляет generator.
 
 ### Resource grid metadata
 
