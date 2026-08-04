@@ -1,6 +1,9 @@
 package renderer
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 type Universal struct {
 	List         *ListPage         `json:"list_page,omitempty"`
@@ -412,6 +415,28 @@ type TypedValue struct {
 	String string         `json:"string,omitempty"`
 	Number float64        `json:"number,omitempty"`
 	Bool   *bool          `json:"bool,omitempty"`
+}
+
+// MarshalJSON keeps a typed zero value on the wire. A plain omitempty tag on
+// Number makes number: 0 indistinguishable from an omitted value to clients.
+func (v TypedValue) MarshalJSON() ([]byte, error) {
+	type typedValueJSON struct {
+		Type   TypedValueType `json:"type"`
+		String *string        `json:"string,omitempty"`
+		Number *float64       `json:"number,omitempty"`
+		Bool   *bool          `json:"bool,omitempty"`
+	}
+
+	payload := typedValueJSON{Type: v.Type}
+	switch v.Type {
+	case TypedValueString:
+		payload.String = &v.String
+	case TypedValueNumber:
+		payload.Number = &v.Number
+	case TypedValueBool:
+		payload.Bool = v.Bool
+	}
+	return json.Marshal(payload)
 }
 
 type CollectionModal struct {
