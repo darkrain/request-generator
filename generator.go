@@ -156,6 +156,32 @@ func (generator *Generator) localizeRendererAction(lang locale.Lang, action *ren
 	action.Label = generator.Translate(lang, action.Label)
 }
 
+func (generator *Generator) localizeRenderer(lang locale.Lang, render renderer.Universal) renderer.Universal {
+	if render.Form == nil {
+		return render
+	}
+	for sectionIndex := range render.Form.Sections {
+		matrix := render.Form.Sections[sectionIndex].Matrix
+		if matrix == nil {
+			continue
+		}
+		if matrix.Table == nil {
+			continue
+		}
+		for headIndex := range matrix.Table.Heads {
+			matrix.Table.Heads[headIndex] = generator.Translate(lang, matrix.Table.Heads[headIndex])
+		}
+		for rowIndex := range matrix.Table.Rows {
+			row := &matrix.Table.Rows[rowIndex]
+			row.Label = generator.Translate(lang, row.Label)
+			for cellIndex := range row.Cells {
+				row.Cells[cellIndex].Text = generator.Translate(lang, row.Cells[cellIndex].Text)
+			}
+		}
+	}
+	return render
+}
+
 func (generator *Generator) Run() {
 
 	featuresGroup := generator.group.Group("/api")
@@ -168,6 +194,9 @@ func (generator *Generator) Run() {
 				panic(fmt.Sprintf("invalid base renderer config in module %s: %v", module.Name, err))
 			}
 			panic(fmt.Sprintf("invalid renderer config in module %s: %v", module.Name, err))
+		}
+		if err := module.validateFieldMatrices(module.Render); err != nil {
+			panic(fmt.Sprintf("invalid field matrix config in module %s: %v", module.Name, err))
 		}
 		if err := generator.validateCollectionRelations(module); err != nil {
 			panic(fmt.Sprintf("invalid collection config in module %s: %v", module.Name, err))
@@ -629,6 +658,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
+		render = generator.localizeRenderer(lang, render)
 
 		if len(heads) == 0 {
 			heads = make(map[string]interface{})
@@ -945,6 +975,7 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
+		render = generator.localizeRenderer(lang, render)
 		defrecResponse := response.NewDefrecResponse(extra, output)
 		defrecResponse.AttachRender(render)
 		response.Response(l, c, defrecResponse)
@@ -1121,6 +1152,7 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
+		render = generator.localizeRenderer(lang, render)
 
 		output := struct {
 			Renderer   *renderer.Identity     `json:"renderer,omitempty"`

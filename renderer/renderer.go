@@ -75,6 +75,17 @@ func (r Universal) Validate() error {
 	}
 	if r.Form != nil {
 		for _, section := range r.Form.Sections {
+			if section.Renderer == RendererFieldMatrix && section.Matrix == nil {
+				return fmt.Errorf("renderer.Universal: field matrix section %q must define matrix", section.ID)
+			}
+			if section.Renderer != RendererFieldMatrix && section.Matrix != nil {
+				return fmt.Errorf("renderer.Universal: section %q matrix requires renderer %q", section.ID, RendererFieldMatrix)
+			}
+			if section.Matrix != nil {
+				if err := section.Matrix.Validate(section.ID); err != nil {
+					return err
+				}
+			}
 			if section.Collection == nil {
 				continue
 			}
@@ -288,12 +299,100 @@ type FormSection struct {
 	Mode         string               `json:"mode,omitempty"`
 	Block        *Block               `json:"block,omitempty"`
 	Fields       []string             `json:"fields,omitempty"`
+	Matrix       *FieldMatrix         `json:"matrix,omitempty"`
 	ListPage     *ListPage            `json:"list_page,omitempty"`
 	Collection   *CollectionConfig    `json:"collection,omitempty"`
 	MediaUpload  *MediaUploadConfig   `json:"media_upload,omitempty"`
 	MediaItems   []MediaGalleryItem   `json:"media_items,omitempty"`
 	MediaLabels  *MediaGalleryLabels  `json:"media_labels,omitempty"`
 	MediaActions *MediaGalleryActions `json:"media_actions,omitempty"`
+}
+
+type FieldMatrixType string
+
+const (
+	FieldMatrixTypeTable FieldMatrixType = "table"
+	FieldMatrixTypeList  FieldMatrixType = "list"
+)
+
+type FieldMatrixColumnCount uint8
+
+const (
+	FieldMatrixColumnsOne   FieldMatrixColumnCount = 1
+	FieldMatrixColumnsTwo   FieldMatrixColumnCount = 2
+	FieldMatrixColumnsThree FieldMatrixColumnCount = 3
+	FieldMatrixColumnsFour  FieldMatrixColumnCount = 4
+)
+
+type FieldMatrix struct {
+	Type      FieldMatrixType   `json:"type,omitempty"`
+	Underline string            `json:"underline,omitempty"`
+	List      *FieldMatrixList  `json:"list,omitempty"`
+	Table     *FieldMatrixTable `json:"table,omitempty"`
+}
+
+type FieldMatrixList struct {
+	Fields  []string               `json:"fields,omitempty"`
+	Columns FieldMatrixColumnCount `json:"columns,omitempty"`
+}
+
+type FieldMatrixTable struct {
+	Heads []string         `json:"heads,omitempty"`
+	Rows  []FieldMatrixRow `json:"rows,omitempty"`
+}
+
+type FieldMatrixRow struct {
+	Label string            `json:"label,omitempty"`
+	Cells []FieldMatrixCell `json:"cells,omitempty"`
+}
+
+type FieldMatrixCell struct {
+	Field string `json:"field,omitempty"`
+	Text  string `json:"text,omitempty"`
+}
+
+func (matrix *FieldMatrix) Validate(sectionID string) error {
+	if matrix == nil {
+		return nil
+	}
+	switch matrix.Type {
+	case FieldMatrixTypeTable:
+		if matrix.Table == nil || matrix.List != nil {
+			return fmt.Errorf("renderer.Universal: matrix section %q table type must define only table", sectionID)
+		}
+		if len(matrix.Table.Heads) == 0 || len(matrix.Table.Rows) == 0 {
+			return fmt.Errorf("renderer.Universal: matrix section %q table must define heads and rows", sectionID)
+		}
+		for rowIndex, row := range matrix.Table.Rows {
+			expectedCells := len(matrix.Table.Heads)
+			if row.Label != "" {
+				expectedCells--
+			}
+			if len(row.Cells) != expectedCells {
+				return fmt.Errorf("renderer.Universal: matrix section %q row %d cells must match heads", sectionID, rowIndex)
+			}
+			for cellIndex, cell := range row.Cells {
+				if (cell.Field == "") == (cell.Text == "") {
+					return fmt.Errorf("renderer.Universal: matrix section %q row %d cell %d must define exactly one of field or text", sectionID, rowIndex, cellIndex)
+				}
+			}
+		}
+	case FieldMatrixTypeList:
+		if matrix.List == nil || matrix.Table != nil {
+			return fmt.Errorf("renderer.Universal: matrix section %q list type must define only list", sectionID)
+		}
+		if len(matrix.List.Fields) == 0 {
+			return fmt.Errorf("renderer.Universal: matrix section %q list must define fields", sectionID)
+		}
+		switch matrix.List.Columns {
+		case FieldMatrixColumnsOne, FieldMatrixColumnsTwo, FieldMatrixColumnsThree, FieldMatrixColumnsFour:
+		default:
+			return fmt.Errorf("renderer.Universal: matrix section %q list has unsupported columns", sectionID)
+		}
+	default:
+		return fmt.Errorf("renderer.Universal: matrix section %q has unsupported matrix type %q", sectionID, matrix.Type)
+	}
+	return nil
 }
 
 type MediaUploadConfig struct {

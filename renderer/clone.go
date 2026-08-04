@@ -274,6 +274,7 @@ func cloneFormSections(values []FormSection) []FormSection {
 		out[i] = v
 		out[i].Block = cloneBlock(v.Block)
 		out[i].Fields = cloneSlice(v.Fields)
+		out[i].Matrix = cloneFieldMatrix(v.Matrix)
 		out[i].ListPage = cloneListPage(v.ListPage)
 		out[i].Collection = cloneCollectionConfig(v.Collection)
 		out[i].MediaUpload = clonePtr(v.MediaUpload)
@@ -282,6 +283,23 @@ func cloneFormSections(values []FormSection) []FormSection {
 		out[i].MediaActions = cloneMediaGalleryActions(v.MediaActions)
 	}
 	return out
+}
+
+func cloneFieldMatrix(v *FieldMatrix) *FieldMatrix {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	if v.List != nil {
+		cp.List = &FieldMatrixList{Fields: cloneSlice(v.List.Fields), Columns: v.List.Columns}
+	}
+	if v.Table != nil {
+		cp.Table = &FieldMatrixTable{Heads: cloneSlice(v.Table.Heads), Rows: make([]FieldMatrixRow, len(v.Table.Rows))}
+		for i, row := range v.Table.Rows {
+			cp.Table.Rows[i] = FieldMatrixRow{Label: row.Label, Cells: cloneSlice(row.Cells)}
+		}
+	}
+	return &cp
 }
 
 func CloneFieldPresentation(v *FieldPresentation) *FieldPresentation {

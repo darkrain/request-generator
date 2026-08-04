@@ -204,6 +204,74 @@ Closed enums должны использовать typed constants из package 
 | `renderer` | Renderer identity/version, добавляется request-generator. |
 | `form_page` | Typed metadata универсальной form/edit страницы из `BaseModule.Render.Form`. |
 
+### Field Matrix
+
+`field.matrix` задает раскладку уже описанных typed полей формы. Matrix не
+дублирует значение, `type`, `form_type`, options, checks или presentation:
+renderer получает их из стандартных `fields` либо `item` response.
+
+```go
+renderer.FormSection{
+    ID:       "rates",
+    Renderer: renderer.RendererFieldMatrix,
+    Matrix: &renderer.FieldMatrix{
+        Type:      renderer.FieldMatrixTypeTable,
+        Underline: "rates",
+        Table: &renderer.FieldMatrixTable{
+            Heads: []string{
+                "settings.rates.duration",
+                "settings.rates.incall",
+                "settings.rates.outcall",
+            },
+            Rows: []renderer.FieldMatrixRow{
+                {
+                    Label: "settings.rates.1h",
+                    Cells: []renderer.FieldMatrixCell{
+                        {Field: "incall_1h_price"},
+                        {Field: "outcall_1h_price"},
+                    },
+                },
+            },
+        },
+    },
+}
+```
+
+`table` содержит `heads` и `rows`. У каждой ячейки должен быть ровно один
+источник: `field` (ссылка на поле модуля) или `text` (статический текст).
+Непустой `row.label` занимает первую ячейку строки, поэтому в этом случае
+количество `cells` на единицу меньше числа заголовков. Без `row.label` оно
+должно совпадать с числом заголовков.
+
+`list` содержит только упорядоченные `fields` и typed `columns` от одного до
+четырех. Каждый field выводится как самостоятельный item без описания строк,
+ячеек или колонок в producer metadata.
+
+```go
+renderer.FormSection{
+    ID:       "preferences",
+    Renderer: renderer.RendererFieldMatrix,
+    Matrix: &renderer.FieldMatrix{
+        Type:      renderer.FieldMatrixTypeList,
+        Underline: "settings",
+        List: &renderer.FieldMatrixList{
+            Fields:  []string{"email_enabled", "push_enabled", "quiet_hours"},
+            Columns: renderer.FieldMatrixColumnsTwo,
+        },
+    },
+}
+```
+
+`heads[]`, `rows[].label` и `cells[].text` producer задает translation
+keys. Перед ответом request-generator локализует их для выбранного `lang`; UI
+kit не получает ключи и не выполняет перевод. `underline` является opaque
+application-defined visual identifier: generator не знает его палитру и не
+валидирует как CSS value.
+
+Generator проверяет closed `type`, применимость `list`/`table`, допустимое
+число колонок list, структуру table и существование каждого referenced field
+в модуле.
+
 ### View/Record Response
 
 ```json
