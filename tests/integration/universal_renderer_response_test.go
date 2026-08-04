@@ -347,6 +347,299 @@ func TestUniversalRendererMetadata_FormSectionMediaGallery(t *testing.T) {
 	assert.Equal(t, "/media_assets", section.MediaActions.Upload.API.Endpoint)
 }
 
+func TestUniversalRendererMetadata_FormSectionCollectionContract(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	id := postgres.IntegerColumn("id")
+	table := postgres.NewTable("public", "collection_renderer_items", "", id)
+	profileID := postgres.IntegerColumn("profile_id")
+	profilesTable := postgres.NewTable("public", "profiles", "", id)
+	tagsTable := postgres.NewTable("public", "tags", "", id, profileID)
+	servicesTable := postgres.NewTable("public", "services", "", id, profileID)
+	active := true
+
+	testModule := &module.BaseModule{
+		Name:       "collection-renderer-items",
+		Path:       "/admin",
+		Table:      table,
+		PrimaryKey: id,
+		Fields: []fields.ModuleField{
+			{Column: id, Title: "ID", Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeNumber},
+		},
+		Render: renderer.Universal{
+			Form: &renderer.FormPage{
+				ID:     "collection-renderer-items-form",
+				Layout: renderer.LayoutTwoColumn,
+				Sections: []renderer.FormSection{
+					{
+						ID:       "simple_collection",
+						Renderer: renderer.RendererCollectionManager,
+						Collection: &renderer.CollectionConfig{
+							Module: "tags",
+							Target: &renderer.CollectionTarget{
+								Module: "profiles",
+								ID:     &renderer.TypedValue{Type: renderer.TypedValueNumber, Number: 123},
+							},
+							Item: &renderer.CollectionItem{LabelField: "title"},
+							Buckets: []renderer.CollectionBucket{
+								{ID: "all", Title: "All", BlockID: "collection.default"},
+							},
+						},
+					},
+					{
+						ID:       "editable_collection",
+						Renderer: renderer.RendererCollectionManager,
+						Collection: &renderer.CollectionConfig{
+							Module:     "services",
+							EditFields: []string{"price", "note", "available"},
+							Item:       &renderer.CollectionItem{LabelField: "title", MetaFields: []string{"price", "note"}},
+							Buckets: []renderer.CollectionBucket{
+								{
+									ID:         "included",
+									Title:      "Included",
+									BlockID:    "collection.included",
+									EditFields: []string{"note"},
+									Predicate: &renderer.CollectionPredicate{
+										Field:    "price",
+										Operator: renderer.CollectionPredicateEquals,
+										Value:    &renderer.TypedValue{Type: renderer.TypedValueNumber, Number: 0},
+									},
+									Defaults: []renderer.CollectionFieldDefaultValue{
+										{Field: "price", Value: renderer.TypedValue{Type: renderer.TypedValueNumber, Number: 0}},
+										{Field: "available", Value: renderer.TypedValue{Type: renderer.TypedValueBool, Bool: &active}},
+									},
+								},
+								{
+									ID:      "paid",
+									Title:   "Paid",
+									BlockID: "collection.paid",
+									Predicate: &renderer.CollectionPredicate{
+										Field:    "price",
+										Operator: renderer.CollectionPredicateGreaterThan,
+										Value:    &renderer.TypedValue{Type: renderer.TypedValueNumber, Number: 0},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		Defrec: actions.DefrecModuleAction{
+			Permission: []actions.Role{actions.RoleAll},
+			Auth:       true,
+			Label:      "Defrec",
+		},
+		Actions: []actions.ModuleAction{
+			actions.AddModuleAction{
+				Columns:    []pg.Column{id},
+				Permission: []actions.Role{actions.RoleAll},
+				Auth:       true,
+				Label:      "Add",
+			},
+		},
+	}
+
+	engine := gin.New()
+	group := engine.Group("")
+	profilesModule := &module.BaseModule{Name: "profiles", Path: "/admin", Table: profilesTable, PrimaryKey: id}
+	tagsModule := &module.BaseModule{
+		Name:       "tags",
+		Path:       "/admin",
+		Table:      tagsTable,
+		PrimaryKey: id,
+		Relations:  []module.ModuleRelation{{Name: "target", TargetModule: "profiles", SourceField: profileID, TargetField: id}},
+	}
+	servicesModule := &module.BaseModule{
+		Name:       "services",
+		Path:       "/admin",
+		Table:      servicesTable,
+		PrimaryKey: id,
+		Relations:  []module.ModuleRelation{{Name: "target", TargetModule: "profiles", SourceField: profileID, TargetField: id}},
+	}
+	generator := module.NewGenerator(
+		func(_ *module.BaseModule) dbpkg.DBExecutor { return fakeRendererDB{} },
+		*group,
+		[]*module.BaseModule{testModule, profilesModule, tagsModule, servicesModule},
+		func(_ actions.ModuleAction, _ []actions.Role) gin.HandlerFunc {
+			return func(c *gin.Context) { c.Next() }
+		},
+		createMockAuthMiddleware(&icontext.UserInfo{ID: 1, Role: "admin"}),
+	)
+	generator.Run()
+
+	w := executeRequest(engine, http.MethodGet, "/admin/collection-renderer-items/defrec/", nil)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var response struct {
+		FormPage *renderer.FormPage `json:"form_page"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	require.NotNil(t, response.FormPage)
+	require.Len(t, response.FormPage.Sections, 2)
+
+	simple := response.FormPage.Sections[0].Collection
+	require.NotNil(t, simple)
+	assert.Equal(t, "tags", simple.Module)
+	assert.Empty(t, simple.EditFields)
+	require.NotNil(t, simple.Target)
+	assert.Equal(t, "profiles", simple.Target.Module)
+	require.NotNil(t, simple.Target.ID)
+	assert.Equal(t, renderer.TypedValueNumber, simple.Target.ID.Type)
+	assert.Equal(t, float64(123), simple.Target.ID.Number)
+	assert.Equal(t, "title", simple.Item.LabelField)
+	require.Len(t, simple.Buckets, 1)
+	assert.Equal(t, "collection.default", simple.Buckets[0].BlockID)
+
+	editable := response.FormPage.Sections[1].Collection
+	require.NotNil(t, editable)
+	assert.Equal(t, "services", editable.Module)
+	assert.Equal(t, []string{"price", "note", "available"}, editable.EditFields)
+	assert.Equal(t, []string{"price", "note"}, editable.Item.MetaFields)
+	require.Len(t, editable.Buckets, 2)
+	included := editable.Buckets[0]
+	assert.Equal(t, "collection.included", included.BlockID)
+	assert.Equal(t, []string{"note"}, included.EditFields)
+	require.NotNil(t, included.Predicate)
+	assert.Equal(t, "price", included.Predicate.Field)
+	assert.Equal(t, renderer.CollectionPredicateEquals, included.Predicate.Operator)
+	require.NotNil(t, included.Predicate.Value)
+	assert.Equal(t, float64(0), included.Predicate.Value.Number)
+	require.Len(t, included.Defaults, 2)
+	assert.Equal(t, "price", included.Defaults[0].Field)
+	assert.Equal(t, renderer.TypedValueNumber, included.Defaults[0].Value.Type)
+	assert.Equal(t, "available", included.Defaults[1].Field)
+	require.NotNil(t, included.Defaults[1].Value.Bool)
+	assert.True(t, *included.Defaults[1].Value.Bool)
+}
+
+func TestUniversalRendererMetadata_CollectionValidation(t *testing.T) {
+	err := (renderer.Universal{
+		Form: &renderer.FormPage{
+			Sections: []renderer.FormSection{
+				{ID: "collection", Renderer: renderer.RendererCollectionManager, Collection: &renderer.CollectionConfig{}},
+			},
+		},
+	}).Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `collection section "collection" must define module`)
+
+	err = (renderer.Universal{
+		Form: &renderer.FormPage{
+			Sections: []renderer.FormSection{
+				{
+					ID:       "collection",
+					Renderer: renderer.RendererCollectionManager,
+					Collection: &renderer.CollectionConfig{
+						Module: "items",
+						Buckets: []renderer.CollectionBucket{
+							{ID: "bad", Predicate: &renderer.CollectionPredicate{Operator: renderer.CollectionPredicateEquals}},
+						},
+					},
+				},
+			},
+		},
+	}).Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `collection bucket "bad" predicate must define field`)
+
+	err = (renderer.Universal{
+		Form: &renderer.FormPage{
+			Sections: []renderer.FormSection{
+				{
+					ID:       "collection",
+					Renderer: renderer.RendererCollectionManager,
+					Collection: &renderer.CollectionConfig{
+						Module: "items",
+						Buckets: []renderer.CollectionBucket{
+							{
+								ID: "bad",
+								Predicate: &renderer.CollectionPredicate{
+									Field:    "status",
+									Operator: renderer.CollectionPredicateIn,
+									Value:    &renderer.TypedValue{Type: renderer.TypedValueString, String: "active"},
+									Values:   []renderer.TypedValue{{Type: renderer.TypedValueString, String: "draft"}},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}).Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `collection bucket "bad" predicate must not define both value and values`)
+}
+
+func TestUniversalRendererMetadata_CollectionRelationValidation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	id := postgres.IntegerColumn("id")
+	profileID := postgres.IntegerColumn("profile_id")
+	pageTable := postgres.NewTable("public", "collection_page", "", id)
+	profilesTable := postgres.NewTable("public", "profiles", "", id)
+	itemsTable := postgres.NewTable("public", "items", "", id, profileID)
+
+	newGenerator := func(collectionModule *module.BaseModule, collectionName string) *module.Generator {
+		pageModule := &module.BaseModule{
+			Name:       "collection-page",
+			Path:       "/admin",
+			Table:      pageTable,
+			PrimaryKey: id,
+			Render: renderer.Universal{
+				Form: &renderer.FormPage{
+					Sections: []renderer.FormSection{
+						{
+							ID:       "items",
+							Renderer: renderer.RendererCollectionManager,
+							Collection: &renderer.CollectionConfig{
+								Module: collectionName,
+								Target: &renderer.CollectionTarget{Module: "profiles"},
+							},
+						},
+					},
+				},
+			},
+		}
+		profilesModule := &module.BaseModule{Name: "profiles", Path: "/admin", Table: profilesTable, PrimaryKey: id}
+		modules := []*module.BaseModule{pageModule, profilesModule}
+		if collectionModule != nil {
+			modules = append(modules, collectionModule)
+		}
+		engine := gin.New()
+		group := engine.Group("")
+		return module.NewGenerator(
+			func(_ *module.BaseModule) dbpkg.DBExecutor { return fakeRendererDB{} },
+			*group,
+			modules,
+			func(_ actions.ModuleAction, _ []actions.Role) gin.HandlerFunc {
+				return func(c *gin.Context) { c.Next() }
+			},
+			createMockAuthMiddleware(&icontext.UserInfo{ID: 1, Role: "admin"}),
+		)
+	}
+
+	assert.PanicsWithValue(t,
+		`invalid collection config in module collection-page: collection section "items" references unknown module "items"`,
+		func() { newGenerator(nil, "items").Run() },
+	)
+
+	itemsWithoutRelation := &module.BaseModule{Name: "items", Path: "/admin", Table: itemsTable, PrimaryKey: id}
+	assert.PanicsWithValue(t,
+		`invalid collection config in module collection-page: collection module "items" must declare relation to target module "profiles"`,
+		func() { newGenerator(itemsWithoutRelation, "items").Run() },
+	)
+
+	itemsWithRelation := &module.BaseModule{
+		Name:       "items",
+		Path:       "/admin",
+		Table:      itemsTable,
+		PrimaryKey: id,
+		Relations:  []module.ModuleRelation{{Name: "target", TargetModule: "profiles", SourceField: profileID, TargetField: id}},
+	}
+	assert.NotPanics(t, func() { newGenerator(itemsWithRelation, "items").Run() })
+}
+
 func TestUniversalRendererMetadata_ViewResponse(t *testing.T) {
 	engine := setupUniversalRendererRouter(t)
 

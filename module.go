@@ -32,6 +32,13 @@ type NavigationTarget struct {
 
 type RenderFunc func(c *gin.Context, base renderer.Universal) (renderer.Universal, error)
 
+type ModuleRelation struct {
+	Name         string    `json:"name,omitempty"`
+	TargetModule string    `json:"target_module,omitempty"`
+	SourceField  pg.Column `json:"-"`
+	TargetField  pg.Column `json:"-"`
+}
+
 type BaseModule struct {
 	Name           string                     `json:"name"`
 	Label          string                     `json:"label"`
@@ -50,6 +57,7 @@ type BaseModule struct {
 	Navigation     []NavigationEntry          `json:"navigation,omitempty"`
 	Render         renderer.Universal         `json:"-"`
 	RenderFunc     RenderFunc                 `json:"-"`
+	Relations      []ModuleRelation           `json:"-"`
 }
 
 func (module *BaseModule) RenderFor(c *gin.Context) (renderer.Universal, error) {

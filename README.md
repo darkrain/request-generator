@@ -305,6 +305,61 @@ renderer.Action{
 
 Важно: `visible_if` и `hidden_if` управляют только отображением. Серверное действие обязательно должно проверять доступ через `Permission`, `Where`, `BeforeAction` или `DataCheckRule`.
 
+### Collection manager metadata
+
+`renderer.CollectionConfig` описывает универсальную коллекцию записей модуля в контексте текущей target-записи. Контракт не содержит owner foreign key, profile-specific полей, price-specific полей или endpoint-ов.
+
+```go
+Render: renderer.Universal{
+    Form: &renderer.FormPage{
+        Sections: []renderer.FormSection{
+            {
+                ID:       "services",
+                Renderer: renderer.RendererCollectionManager,
+                Collection: &renderer.CollectionConfig{
+                    Module:     "model_additional_services",
+                    EditFields: []string{"price", "note", "available"},
+                    Item: &renderer.CollectionItem{
+                        LabelField: "title",
+                        MetaFields: []string{"price", "note"},
+                    },
+                    Buckets: []renderer.CollectionBucket{
+                        {
+                            ID:      "included",
+                            Title:   "ui.included",
+                            BlockID: "collection.included",
+                            Predicate: &renderer.CollectionPredicate{
+                                Field:    "price",
+                                Operator: renderer.CollectionPredicateEquals,
+                                Value:    &renderer.TypedValue{Type: renderer.TypedValueNumber, Number: 0},
+                            },
+                            Defaults: []renderer.CollectionFieldDefaultValue{
+                                {Field: "price", Value: renderer.TypedValue{Type: renderer.TypedValueNumber, Number: 0}},
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    },
+}
+```
+
+Связь с target-модулем описывается в backend module, а не в renderer metadata:
+
+```go
+Relations: []module.ModuleRelation{
+    {
+        Name:         "target",
+        TargetModule: "profiles",
+        SourceField:  table.Services.ProfileID,
+        TargetField:  table.Profiles.ID,
+    },
+}
+```
+
+Frontend строит стандартные list/defrec/action endpoints из `collection.module`, а типы, labels, options, валидацию и права для `edit_fields` берет из `defrec` этого модуля.
+
 ### Resource grid metadata
 
 Для страниц типа “управление сущностями” модуль описывает typed `BaseModule.Render.ResourceGrid`. `ExtraFunc` и `extra.resource_grid_page` остаются legacy compatibility, но не являются canonical способом для новых модулей.

@@ -70,6 +70,30 @@ func (r Universal) Validate() error {
 	if r.List != nil && r.ResourceGrid != nil {
 		return fmt.Errorf("renderer.Universal: List and ResourceGrid are mutually exclusive for one list route")
 	}
+	if r.Form != nil {
+		for _, section := range r.Form.Sections {
+			if section.Collection == nil {
+				continue
+			}
+			if section.Collection.Module == "" {
+				return fmt.Errorf("renderer.Universal: collection section %q must define module", section.ID)
+			}
+			for _, bucket := range section.Collection.Buckets {
+				if bucket.Predicate == nil {
+					continue
+				}
+				if bucket.Predicate.Field == "" {
+					return fmt.Errorf("renderer.Universal: collection bucket %q predicate must define field", bucket.ID)
+				}
+				if bucket.Predicate.Operator == "" {
+					return fmt.Errorf("renderer.Universal: collection bucket %q predicate must define operator", bucket.ID)
+				}
+				if len(bucket.Predicate.Values) > 0 && bucket.Predicate.Value != nil {
+					return fmt.Errorf("renderer.Universal: collection bucket %q predicate must not define both value and values", bucket.ID)
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -312,46 +336,87 @@ type MediaGalleryActions struct {
 }
 
 type CollectionConfig struct {
-	Resource       string             `json:"resource,omitempty"`
-	ListEndpoint   string             `json:"list_endpoint,omitempty"`
-	DefrecEndpoint string             `json:"defrec_endpoint,omitempty"`
-	ProfileField   string             `json:"profile_field,omitempty"`
-	ValueField     string             `json:"value_field,omitempty"`
-	PriceField     string             `json:"price_field,omitempty"`
-	PricePrefix    string             `json:"price_prefix,omitempty"`
-	Size           int                `json:"size,omitempty"`
-	LoadingLabel   string             `json:"loading_label,omitempty"`
-	Collections    []CollectionBucket `json:"collections,omitempty"`
-	Modal          *CollectionModal   `json:"modal,omitempty"`
+	Module       string             `json:"module,omitempty"`
+	Target       *CollectionTarget  `json:"target,omitempty"`
+	Item         *CollectionItem    `json:"item,omitempty"`
+	Size         int                `json:"size,omitempty"`
+	LoadingLabel string             `json:"loading_label,omitempty"`
+	Buckets      []CollectionBucket `json:"buckets,omitempty"`
+	EditFields   []string           `json:"edit_fields,omitempty"`
+	Modal        *CollectionModal   `json:"modal,omitempty"`
+	Actions      []Action           `json:"actions,omitempty"`
+}
+
+type CollectionTarget struct {
+	Module string      `json:"module,omitempty"`
+	ID     *TypedValue `json:"id,omitempty"`
+}
+
+type CollectionItem struct {
+	LabelField       string   `json:"label_field,omitempty"`
+	MetaFields       []string `json:"meta_fields,omitempty"`
+	DescriptionField string   `json:"description_field,omitempty"`
+	MediaField       string   `json:"media_field,omitempty"`
+	StatusField      string   `json:"status_field,omitempty"`
 }
 
 type CollectionBucket struct {
-	ID            string                  `json:"id,omitempty"`
-	Title         string                  `json:"title,omitempty"`
-	CountLabel    string                  `json:"count_label,omitempty"`
-	AddLabel      string                  `json:"add_label,omitempty"`
-	ClearLabel    string                  `json:"clear_label,omitempty"`
-	ModalTitle    string                  `json:"modal_title,omitempty"`
-	ModalSubtitle string                  `json:"modal_subtitle,omitempty"`
-	ConfirmLabel  string                  `json:"confirm_label,omitempty"`
-	Tone          string                  `json:"tone,omitempty"`
-	PriceEnabled  bool                    `json:"price_enabled"`
-	DefaultPrice  int                     `json:"default_price"`
-	PricePrefix   string                  `json:"price_prefix,omitempty"`
-	EditFields    []CollectionEditField   `json:"edit_fields,omitempty"`
-	Filter        *CollectionBucketFilter `json:"filter,omitempty"`
+	ID            string                        `json:"id,omitempty"`
+	Title         string                        `json:"title,omitempty"`
+	CountLabel    string                        `json:"count_label,omitempty"`
+	AddLabel      string                        `json:"add_label,omitempty"`
+	ClearLabel    string                        `json:"clear_label,omitempty"`
+	ModalTitle    string                        `json:"modal_title,omitempty"`
+	ModalSubtitle string                        `json:"modal_subtitle,omitempty"`
+	ConfirmLabel  string                        `json:"confirm_label,omitempty"`
+	BlockID       string                        `json:"block_id,omitempty"`
+	Predicate     *CollectionPredicate          `json:"predicate,omitempty"`
+	Defaults      []CollectionFieldDefaultValue `json:"defaults,omitempty"`
+	EditFields    []string                      `json:"edit_fields,omitempty"`
+	Actions       []Action                      `json:"actions,omitempty"`
 }
 
-type CollectionEditField struct {
-	ID      string `json:"id,omitempty"`
-	Type    string `json:"type,omitempty"`
-	Variant string `json:"variant,omitempty"`
-	Prefix  string `json:"prefix,omitempty"`
-	Min     int    `json:"min"`
+type CollectionPredicateOperator string
+
+const (
+	CollectionPredicateEquals      CollectionPredicateOperator = "eq"
+	CollectionPredicateNotEquals   CollectionPredicateOperator = "ne"
+	CollectionPredicateIn          CollectionPredicateOperator = "in"
+	CollectionPredicateNotIn       CollectionPredicateOperator = "not_in"
+	CollectionPredicateEmpty       CollectionPredicateOperator = "empty"
+	CollectionPredicateNotEmpty    CollectionPredicateOperator = "not_empty"
+	CollectionPredicateGreaterThan CollectionPredicateOperator = "gt"
+	CollectionPredicateLessThan    CollectionPredicateOperator = "lt"
+	CollectionPredicateGTE         CollectionPredicateOperator = "gte"
+	CollectionPredicateLTE         CollectionPredicateOperator = "lte"
+)
+
+type CollectionPredicate struct {
+	Field    string                      `json:"field,omitempty"`
+	Operator CollectionPredicateOperator `json:"operator,omitempty"`
+	Value    *TypedValue                 `json:"value,omitempty"`
+	Values   []TypedValue                `json:"values,omitempty"`
 }
 
-type CollectionBucketFilter struct {
-	Price string `json:"price,omitempty"`
+type CollectionFieldDefaultValue struct {
+	Field string     `json:"field,omitempty"`
+	Value TypedValue `json:"value"`
+}
+
+type TypedValueType string
+
+const (
+	TypedValueString TypedValueType = "string"
+	TypedValueNumber TypedValueType = "number"
+	TypedValueBool   TypedValueType = "bool"
+	TypedValueNull   TypedValueType = "null"
+)
+
+type TypedValue struct {
+	Type   TypedValueType `json:"type"`
+	String string         `json:"string,omitempty"`
+	Number float64        `json:"number,omitempty"`
+	Bool   *bool          `json:"bool,omitempty"`
 }
 
 type CollectionModal struct {
