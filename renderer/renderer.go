@@ -337,7 +337,7 @@ type MediaGalleryActions struct {
 
 type CollectionConfig struct {
 	Module       string             `json:"module,omitempty"`
-	Target       *CollectionTarget  `json:"target,omitempty"`
+	Relation     string             `json:"relation,omitempty"`
 	Item         *CollectionItem    `json:"item,omitempty"`
 	Size         int                `json:"size,omitempty"`
 	LoadingLabel string             `json:"loading_label,omitempty"`
@@ -345,11 +345,6 @@ type CollectionConfig struct {
 	EditFields   []string           `json:"edit_fields,omitempty"`
 	Modal        *CollectionModal   `json:"modal,omitempty"`
 	Actions      []Action           `json:"actions,omitempty"`
-}
-
-type CollectionTarget struct {
-	Module string      `json:"module,omitempty"`
-	ID     *TypedValue `json:"id,omitempty"`
 }
 
 type CollectionItem struct {

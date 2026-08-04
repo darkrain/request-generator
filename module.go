@@ -32,11 +32,17 @@ type NavigationTarget struct {
 
 type RenderFunc func(c *gin.Context, base renderer.Universal) (renderer.Universal, error)
 
+type RelationScope struct {
+	Relation string
+	ID       interface{}
+}
+
 type ModuleRelation struct {
-	Name         string    `json:"name,omitempty"`
-	TargetModule string    `json:"target_module,omitempty"`
-	SourceField  pg.Column `json:"-"`
-	TargetField  pg.Column `json:"-"`
+	Name         string                                          `json:"name,omitempty"`
+	TargetModule string                                          `json:"target_module,omitempty"`
+	SourceField  pg.Column                                       `json:"-"`
+	TargetField  pg.Column                                       `json:"-"`
+	ScopeCheck   func(c *gin.Context, scope RelationScope) error `json:"-"`
 }
 
 type BaseModule struct {

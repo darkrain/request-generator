@@ -319,21 +319,11 @@ func cloneCollectionConfig(v *CollectionConfig) *CollectionConfig {
 		return nil
 	}
 	cp := *v
-	cp.Target = cloneCollectionTarget(v.Target)
 	cp.Item = cloneCollectionItem(v.Item)
 	cp.Buckets = cloneCollectionBuckets(v.Buckets)
 	cp.EditFields = cloneSlice(v.EditFields)
 	cp.Modal = cloneCollectionModal(v.Modal)
 	cp.Actions = cloneActions(v.Actions)
-	return &cp
-}
-
-func cloneCollectionTarget(v *CollectionTarget) *CollectionTarget {
-	if v == nil {
-		return nil
-	}
-	cp := *v
-	cp.ID = clonePtr(v.ID)
 	return &cp
 }
 
