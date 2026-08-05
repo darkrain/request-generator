@@ -422,8 +422,9 @@ Typed field metadata нужна для одиночных полей, где б�
 
 ### Option Controls
 
-Для вариантов выбора producer использует базовые `form_type`, `options` и
-`presentation.renderer`. UI kit выбирает control только по renderer key:
+Для вариантов выбора в `defrec` и `view` producer использует базовые
+`form_type`, `options` и `presentation.renderer`. UI kit выбирает control
+поля только по renderer key:
 
 | Renderer key | Назначение |
 |---|---|
@@ -444,7 +445,14 @@ Typed field metadata нужна для одиночных полей, где б�
 
 `label` задается producer-ом как translation key и локализуется
 request-generator до выдачи JSON. `icon` является стабильным именем иконки и
-не локализуется. Этот contract одинаков для list filters, `defrec` и `view`.
+не локализуется.
+
+В list filters generator передает `form_type` и стандартные options
+(`value`, локализованный `label`, `icon`), но не передает
+`presentation.renderer`. Поэтому list filter использует свой базовый control
+по `form_type`. Если для filter понадобится специализированный control, он
+должен получить отдельный typed contract (`FilterPresentation`), а не
+неявно переиспользовать field presentation.
 
 ```go
 {

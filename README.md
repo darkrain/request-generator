@@ -156,9 +156,11 @@ Frontend должен получать готовую схему и рендер
 
 В `defrec.fields[field]` и `view.item[field]` эти blocks приходят как `presentation` и `media`. Labels в media/action metadata переводятся request-generator по текущему языку. В `view` `media.item.src` может быть автоматически заполнен из `item[field].value`, если producer не указал `src`.
 
-Для typed controls выбора используйте renderer key вместе с обычными `Options`.
-`ModuleFieldOptions.Icon` передается в list filters, `defrec` и `view`, а
-`Label` локализуется генератором.
+Для typed controls выбора в `defrec` и `view` используйте renderer key вместе
+с обычными `Options`. `ModuleFieldOptions.Icon` передается в list filters,
+`defrec` и `view`, а `Label` локализуется генератором. List filter не получает
+`Presentation`: он использует базовый control по `form_type`. Специализированный
+filter control потребует отдельного typed contract.
 
 ```go
 {
