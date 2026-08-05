@@ -142,6 +142,7 @@ func cloneFilters(v *Filters) *Filters {
 	cp.PillRows = cloneMapRows(v.PillRows)
 	cp.SecondaryPillRows = cloneMapRows(v.SecondaryPillRows)
 	cp.Reset = cloneFilterReset(v.Reset)
+	cp.Text = clonePtr(v.Text)
 	return &cp
 }
 

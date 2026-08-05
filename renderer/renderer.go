@@ -137,6 +137,22 @@ type Filters struct {
 	PillRows          [][]FilterPill `json:"pill_rows,omitempty"`
 	SecondaryPillRows [][]FilterPill `json:"secondary_pill_rows,omitempty"`
 	Reset             *FilterReset   `json:"reset,omitempty"`
+	Text              *FilterText    `json:"text,omitempty"`
+}
+
+// FilterText contains all text rendered by built-in filter controls.
+// Values are translation keys in module configuration and localized before
+// the renderer response is serialized.
+type FilterText struct {
+	SearchPlaceholder string `json:"search_placeholder,omitempty"`
+	ResetLabel        string `json:"reset_label,omitempty"`
+	ResetAllLabel     string `json:"reset_all_label,omitempty"`
+	ApplyLabel        string `json:"apply_label,omitempty"`
+	LoadingLabel      string `json:"loading_label,omitempty"`
+	EmptyLabel        string `json:"empty_label,omitempty"`
+	NoResultsLabel    string `json:"no_results_label,omitempty"`
+	CancelLabel       string `json:"cancel_label,omitempty"`
+	CloseLabel        string `json:"close_label,omitempty"`
 }
 
 type FilterPill struct {
@@ -698,6 +714,10 @@ type Action struct {
 	Type             ActionType       `json:"type,omitempty"`
 	Label            string           `json:"label,omitempty"`
 	LabelKey         string           `json:"label_key,omitempty"`
+	AriaLabel        string           `json:"aria_label,omitempty"`
+	Title            string           `json:"title,omitempty"`
+	SavingLabel      string           `json:"saving_label,omitempty"`
+	SavedLabel       string           `json:"saved_label,omitempty"`
 	Icon             string           `json:"icon,omitempty"`
 	Variant          ActionVariant    `json:"variant,omitempty"`
 	Appearance       ActionAppearance `json:"appearance,omitempty"`
