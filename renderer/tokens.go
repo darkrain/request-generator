@@ -205,6 +205,7 @@ const (
 	RendererUniversalPagination RendererKey = "universal.pagination"
 	RendererMediaGallery        RendererKey = "media.gallery"
 	RendererCollectionManager   RendererKey = "collection.manager"
+	RendererFieldMatrix         RendererKey = "field.matrix"
 	RendererAvatar              RendererKey = "avatar"
 )
 

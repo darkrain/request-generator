@@ -1,6 +1,8 @@
 package module
 
 import (
+	"fmt"
+
 	"github.com/darkrain/request-generator/actions"
 	"github.com/darkrain/request-generator/fields"
 	"github.com/darkrain/request-generator/renderer"
@@ -68,17 +70,52 @@ type BaseModule struct {
 
 func (module *BaseModule) RenderFor(c *gin.Context) (renderer.Universal, error) {
 	render := module.Render.Clone()
-	if module.RenderFunc != nil {
-		var err error
-		render, err = module.RenderFunc(c, render)
-		if err != nil {
-			return renderer.Universal{}, err
-		}
+	if module.RenderFunc == nil {
+		return render, nil
+	}
+	var err error
+	render, err = module.RenderFunc(c, render)
+	if err != nil {
+		return renderer.Universal{}, err
 	}
 	if err := render.Validate(); err != nil {
 		return renderer.Universal{}, err
 	}
+	if err := module.validateFieldMatrices(render); err != nil {
+		return renderer.Universal{}, err
+	}
 	return render, nil
+}
+
+func (module *BaseModule) validateFieldMatrices(render renderer.Universal) error {
+	if render.Form == nil {
+		return nil
+	}
+	for _, section := range render.Form.Sections {
+		matrix := section.Matrix
+		if matrix == nil {
+			continue
+		}
+		fieldIDs := make([]string, 0)
+		switch matrix.Type {
+		case renderer.FieldMatrixTypeList:
+			fieldIDs = append(fieldIDs, matrix.List.Fields...)
+		case renderer.FieldMatrixTypeTable:
+			for _, row := range matrix.Table.Rows {
+				for _, cell := range row.Cells {
+					if cell.Field != "" {
+						fieldIDs = append(fieldIDs, cell.Field)
+					}
+				}
+			}
+		}
+		for _, fieldID := range fieldIDs {
+			if module.GetField(fieldID) == nil {
+				return fmt.Errorf("renderer.Universal: matrix section %q references unknown field %q", section.ID, fieldID)
+			}
+		}
+	}
+	return nil
 }
 
 func (module BaseModule) GetEntityName() string {

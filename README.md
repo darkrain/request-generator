@@ -156,6 +156,32 @@ Frontend должен получать готовую схему и рендер
 
 В `defrec.fields[field]` и `view.item[field]` эти blocks приходят как `presentation` и `media`. Labels в media/action metadata переводятся request-generator по текущему языку. В `view` `media.item.src` может быть автоматически заполнен из `item[field].value`, если producer не указал `src`.
 
+### FieldMatrix list
+
+`field.matrix` раскладывает уже описанные typed поля формы. Для `list` не
+нужны rows или cells: producer задает только порядок полей и число колонок.
+Само поле сохраняет стандартные `type`, `form_type`, value, options и checks.
+
+```go
+renderer.FormSection{
+    ID:       "preferences",
+    Renderer: renderer.RendererFieldMatrix,
+    Matrix: &renderer.FieldMatrix{
+        Type:      renderer.FieldMatrixTypeList,
+        Underline: "settings",
+        List: &renderer.FieldMatrixList{
+            Fields:  []string{"email_enabled", "push_enabled", "quiet_hours"},
+            Columns: renderer.FieldMatrixColumnsTwo,
+        },
+    },
+}
+```
+
+`Columns` - closed typed enum от `FieldMatrixColumnsOne` до
+`FieldMatrixColumnsFour`. Для table используется отдельная typed структура с
+heads, rows и cells; полный contract и правила локализации приведены в
+[docs/universal-renderer-contract.md](docs/universal-renderer-contract.md).
+
 ### Extra.Defrec
 
 `Extra.Defrec` является legacy-механизмом. Его можно использовать только для существующих модулей или временной совместимости, пока нужный UI contract еще не типизирован.
