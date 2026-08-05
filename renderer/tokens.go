@@ -207,6 +207,8 @@ const (
 	RendererCollectionManager   RendererKey = "collection.manager"
 	RendererFieldMatrix         RendererKey = "field.matrix"
 	RendererAvatar              RendererKey = "avatar"
+	RendererChipSelect          RendererKey = "chip_select"
+	RendererPrimaryRadio        RendererKey = "primary_radio"
 )
 
 type RecordSectionRenderer = RendererKey
