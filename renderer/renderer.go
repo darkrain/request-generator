@@ -74,7 +74,15 @@ func (r Universal) Validate() error {
 		return fmt.Errorf("renderer.Universal: List and ResourceGrid are mutually exclusive for one list route")
 	}
 	if r.Form != nil {
+		if err := validateActions("form page", r.Form.Actions); err != nil {
+			return err
+		}
 		for _, section := range r.Form.Sections {
+			if section.ListPage != nil {
+				if err := validateListPage("form section list page", section.ListPage); err != nil {
+					return err
+				}
+			}
 			if section.Renderer == RendererFieldMatrix && section.Matrix == nil {
 				return fmt.Errorf("renderer.Universal: field matrix section %q must define matrix", section.ID)
 			}
@@ -87,12 +95,18 @@ func (r Universal) Validate() error {
 				}
 			}
 			if section.Collection == nil {
+				if err := validateMediaActions(section.MediaActions); err != nil {
+					return err
+				}
 				continue
 			}
 			if section.Collection.Module == "" {
 				return fmt.Errorf("renderer.Universal: collection section %q must define module", section.ID)
 			}
 			for _, bucket := range section.Collection.Buckets {
+				if err := validateActions("collection bucket", bucket.Actions); err != nil {
+					return err
+				}
 				if bucket.Predicate == nil {
 					continue
 				}
@@ -106,7 +120,88 @@ func (r Universal) Validate() error {
 					return fmt.Errorf("renderer.Universal: collection bucket %q predicate must not define both value and values", bucket.ID)
 				}
 			}
+			if err := validateActions("collection", section.Collection.Actions); err != nil {
+				return err
+			}
+			if err := validateMediaActions(section.MediaActions); err != nil {
+				return err
+			}
 		}
+	}
+	if r.List != nil {
+		if err := validateListPage("list page", r.List); err != nil {
+			return err
+		}
+	}
+	if r.Record != nil {
+		if err := validateActions("record page", r.Record.Actions); err != nil {
+			return err
+		}
+	}
+	if r.ResourceGrid != nil {
+		if err := validateAction("resource grid create", r.ResourceGrid.Create); err != nil {
+			return err
+		}
+		if err := validateAction("resource grid delete", r.ResourceGrid.Delete); err != nil {
+			return err
+		}
+		if err := validateAction("resource grid update", r.ResourceGrid.Update); err != nil {
+			return err
+		}
+		if r.ResourceGrid.Card != nil {
+			if err := validateActions("resource grid card", r.ResourceGrid.Card.Actions); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func validateListPage(scope string, page *ListPage) error {
+	if page == nil {
+		return nil
+	}
+	if err := validateActions(scope, page.Actions); err != nil {
+		return err
+	}
+	if page.CardSchema != nil {
+		if err := validateActions(scope+" card schema", page.CardSchema.Actions); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateActions(scope string, actions []Action) error {
+	for i := range actions {
+		if err := validateAction(scope, &actions[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateMediaActions(actions *MediaGalleryActions) error {
+	if actions == nil {
+		return nil
+	}
+	for scope, action := range map[string]*Action{
+		"media upload": actions.Upload, "media link": actions.Link, "media reorder": actions.Reorder,
+		"media recenter": actions.Recenter, "media crop": actions.Crop, "media remove": actions.Remove,
+	} {
+		if err := validateAction(scope, action); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateAction(scope string, action *Action) error {
+	if action == nil {
+		return nil
+	}
+	if err := action.Validate(); err != nil {
+		return fmt.Errorf("renderer.Universal: %s action %q: %w", scope, action.ID, err)
 	}
 	return nil
 }
@@ -712,6 +807,7 @@ type ResourceGridActionsConfig struct {
 type Action struct {
 	ID               string           `json:"id,omitempty"`
 	Type             ActionType       `json:"type,omitempty"`
+	Behavior         ActionBehavior   `json:"behavior,omitempty"`
 	Label            string           `json:"label,omitempty"`
 	LabelKey         string           `json:"label_key,omitempty"`
 	AriaLabel        string           `json:"aria_label,omitempty"`
@@ -741,6 +837,22 @@ type Action struct {
 	AriaLabelKey     string           `json:"aria_label_key,omitempty"`
 	TitleKey         string           `json:"title_key,omitempty"`
 	Test             string           `json:"test,omitempty"`
+}
+
+type ActionBehavior string
+
+const (
+	ActionBehaviorReset  ActionBehavior = "reset"
+	ActionBehaviorSubmit ActionBehavior = "submit"
+)
+
+func (action Action) Validate() error {
+	switch action.Behavior {
+	case "", ActionBehaviorReset, ActionBehaviorSubmit:
+		return nil
+	default:
+		return fmt.Errorf("unsupported behavior %q", action.Behavior)
+	}
 }
 
 type RouteAction struct {
