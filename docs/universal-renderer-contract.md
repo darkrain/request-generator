@@ -766,8 +766,9 @@ Actions используются в `card_schema.actions`, `record_page.actions`
 ```json
 {
   "id": "open",
-  "type": "route",
-  "label_key": "ui.open",
+  "type": "api",
+	"behavior": "submit",
+	"label": "Open",
   "icon": "open",
   "variant": "primary",
   "appearance": "outline",
@@ -780,11 +781,6 @@ Actions используются в `card_schema.actions`, `record_page.actions`
     "path": "/entities/:id",
     "queryParam": "record",
     "source": "id"
-  },
-  "route": {
-    "path": "/entities/:id",
-    "params": {"id": "record.id"},
-    "query": {}
   },
   "api": {
     "method": "post",
@@ -814,6 +810,16 @@ Actions используются в `card_schema.actions`, `record_page.actions`
   "test": "entity-open"
 }
 ```
+
+`behavior` описывает lifecycle формы и независим от `type` транспорта:
+
+| Behavior | Поведение UI kit |
+|---|---|
+| отсутствует | Обычное typed action без form lifecycle. |
+| `submit` | Передать только измененные поля формы через описанный API action, показать `saving_label`/`saved_label` и принять сохраненный record как исходное состояние. |
+| `reset` | Восстановить исходное состояние формы локально, без обязательного HTTP-запроса. |
+
+Например, `type: "api"` + `behavior: "submit"` сохраняет diff полей. Отдельный reset action выглядит как `{"type":"emit","behavior":"reset"}` и сбрасывает форму. UI kit не должен определять lifecycle по `id` action. Неизвестное значение `behavior` отклоняется validation renderer.
 
 Supported `action.type`:
 
