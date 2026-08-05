@@ -368,6 +368,7 @@ type CollectionBucket struct {
 	ModalSubtitle string                        `json:"modal_subtitle,omitempty"`
 	ConfirmLabel  string                        `json:"confirm_label,omitempty"`
 	BlockID       string                        `json:"block_id,omitempty"`
+	Block         *Block                        `json:"block,omitempty"`
 	Predicate     *CollectionPredicate          `json:"predicate,omitempty"`
 	Defaults      []CollectionFieldDefaultValue `json:"defaults,omitempty"`
 	EditFields    []string                      `json:"edit_fields,omitempty"`

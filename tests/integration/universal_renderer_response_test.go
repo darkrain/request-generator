@@ -410,6 +410,10 @@ func TestUniversalRendererMetadata_FormSectionCollectionContract(t *testing.T) {
 									ID:      "paid",
 									Title:   "Paid",
 									BlockID: "collection.paid",
+									Block: &renderer.Block{
+										Type:    renderer.BlockType("GlassesPanel"),
+										Variant: renderer.BlockVariant("compact-info"),
+									},
 									Predicate: &renderer.CollectionPredicate{
 										Field:    "price",
 										Operator: renderer.CollectionPredicateGreaterThan,
@@ -509,6 +513,10 @@ func TestUniversalRendererMetadata_FormSectionCollectionContract(t *testing.T) {
 	assert.Equal(t, "available", included.Defaults[1].Field)
 	require.NotNil(t, included.Defaults[1].Value.Bool)
 	assert.True(t, *included.Defaults[1].Value.Bool)
+	paid := editable.Buckets[1]
+	require.NotNil(t, paid.Block)
+	assert.Equal(t, renderer.BlockType("GlassesPanel"), paid.Block.Type)
+	assert.Equal(t, renderer.BlockVariant("compact-info"), paid.Block.Variant)
 }
 
 func TestUniversalRendererMetadata_CollectionValidation(t *testing.T) {
