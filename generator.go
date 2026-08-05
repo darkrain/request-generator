@@ -567,6 +567,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 					translatedOpts[i] = fields.ModuleFieldOptions{
 						Value: opt.Value,
 						Label: generator.Translate(lang, opt.Label),
+						Icon:  opt.Icon,
 					}
 				}
 				ef.Title = generator.Translate(lang, ef.Title)

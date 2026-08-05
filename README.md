@@ -156,6 +156,39 @@ Frontend должен получать готовую схему и рендер
 
 В `defrec.fields[field]` и `view.item[field]` эти blocks приходят как `presentation` и `media`. Labels в media/action metadata переводятся request-generator по текущему языку. В `view` `media.item.src` может быть автоматически заполнен из `item[field].value`, если producer не указал `src`.
 
+Для typed controls выбора в `defrec` и `view` используйте renderer key вместе
+с обычными `Options`. `ModuleFieldOptions.Icon` передается в list filters,
+`defrec` и `view`, а `Label` локализуется генератором. List filter не получает
+`Presentation`: он использует базовый control по `form_type`. Специализированный
+filter control потребует отдельного typed contract.
+
+```go
+{
+    Column:   table.Items.Categories,
+    Title:    "items.fields.categories",
+    Type:     fields.ModuleFieldTypeArray,
+    FormType: fields.ModuleFieldFormTypeMultiselect,
+    Presentation: &renderer.FieldPresentation{
+        Renderer: renderer.RendererChipSelect,
+    },
+    Options: []fields.ModuleFieldOptions{
+        {Value: "example", Label: "items.options.example", Icon: "tag"},
+    },
+},
+{
+    Column:   table.Items.Status,
+    Title:    "items.fields.status",
+    Type:     fields.ModuleFieldTypeString,
+    FormType: fields.ModuleFieldFormTypeSelect,
+    Presentation: &renderer.FieldPresentation{
+        Renderer: renderer.RendererPrimaryRadio,
+    },
+    Options: []fields.ModuleFieldOptions{
+        {Value: "active", Label: "items.options.active", Icon: "check"},
+    },
+},
+```
+
 ### FieldMatrix list
 
 `field.matrix` раскладывает уже описанные typed поля формы. Для `list` не
@@ -958,8 +991,8 @@ allModules := []*module.BaseModule{
 - Системные поля задаются через `DefaultFunc`, а не принимаются от клиента.
 - Все options приходят из `Options`, `OptionsFunc` или `options_url`.
 - Все поля формы имеют `Title` как ключ перевода.
-- Для новых UI-полей заполнен `Extra.Defrec`.
-- Для detail/list отображения заполнен `Extra.View`, если raw value неудобен.
+- Новые UI-возможности описаны typed metadata (`Presentation`, `Media` и т.п.), а не ad-hoc `Extra`.
+- `Extra.Defrec` и `Extra.View` используются только для legacy-совместимости.
 - UniversalRenderer page metadata описана через typed `BaseModule.Render`, а не через legacy `ExtraFunc`.
 - Действия, зависящие от состояния записи, описаны через `visible_if`/`hidden_if`.
 - Все ограничения из `visible_if` продублированы серверной проверкой.

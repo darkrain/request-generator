@@ -420,6 +420,67 @@ Typed field metadata нужна для одиночных полей, где б�
 | `presentation.size` | Media size token: `thumb`, `card`, `hero`. |
 | `presentation.ratio` | Media ratio token: `square`, `portrait`, `landscape`, `wide`. |
 
+### Option Controls
+
+Для вариантов выбора в `defrec` и `view` producer использует базовые
+`form_type`, `options` и `presentation.renderer`. UI kit выбирает control
+поля только по renderer key:
+
+| Renderer key | Назначение |
+|---|---|
+| `chip_select` | Множественный выбор через chips. Используется с `form_type: multiselect`. |
+| `primary_radio` | Выбор одного основного варианта. Используется со scalar `form_type`, например `select`. |
+
+Каждый option может содержать `icon`. Значение и label остаются стандартными:
+
+```json
+{
+  "form_type": "multiselect",
+  "presentation": { "renderer": "chip_select" },
+  "options": [
+    { "value": "example", "label": "Example", "icon": "tag" }
+  ]
+}
+```
+
+`label` задается producer-ом как translation key и локализуется
+request-generator до выдачи JSON. `icon` является стабильным именем иконки и
+не локализуется.
+
+В list filters generator передает `form_type` и стандартные options
+(`value`, локализованный `label`, `icon`), но не передает
+`presentation.renderer`. Поэтому list filter использует свой базовый control
+по `form_type`. Если для filter понадобится специализированный control, он
+должен получить отдельный typed contract (`FilterPresentation`), а не
+неявно переиспользовать field presentation.
+
+```go
+{
+    Column:   table.Items.Categories,
+    Title:    "items.fields.categories",
+    Type:     fields.ModuleFieldTypeArray,
+    FormType: fields.ModuleFieldFormTypeMultiselect,
+    Presentation: &renderer.FieldPresentation{
+        Renderer: renderer.RendererChipSelect,
+    },
+    Options: []fields.ModuleFieldOptions{
+        {Value: "example", Label: "items.options.example", Icon: "tag"},
+    },
+},
+{
+    Column:   table.Items.Status,
+    Title:    "items.fields.status",
+    Type:     fields.ModuleFieldTypeString,
+    FormType: fields.ModuleFieldFormTypeSelect,
+    Presentation: &renderer.FieldPresentation{
+        Renderer: renderer.RendererPrimaryRadio,
+    },
+    Options: []fields.ModuleFieldOptions{
+        {Value: "active", Label: "items.options.active", Icon: "check"},
+    },
+},
+```
+
 ### Field Media
 
 `media` описывает одиночное media-поле через существующие универсальные media-структуры. Это не gallery section и не application-specific avatar contract. Это один media item, optional upload config, labels и actions.
