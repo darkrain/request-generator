@@ -281,6 +281,22 @@ const (
 	MediaUsagePoster  MediaUsage = "poster"
 )
 
+type MediaCropperViewportShape string
+
+const (
+	MediaCropperViewportCircle    MediaCropperViewportShape = "circle"
+	MediaCropperViewportRounded   MediaCropperViewportShape = "rounded"
+	MediaCropperViewportRectangle MediaCropperViewportShape = "rectangle"
+)
+
+type MediaCropperOutputMIMEType string
+
+const (
+	MediaCropperOutputMIMETypeJPEG MediaCropperOutputMIMEType = "image/jpeg"
+	MediaCropperOutputMIMETypePNG  MediaCropperOutputMIMEType = "image/png"
+	MediaCropperOutputMIMETypeWebP MediaCropperOutputMIMEType = "image/webp"
+)
+
 type DisplayComponentType string
 
 const (

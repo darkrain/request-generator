@@ -125,6 +125,9 @@ func (generator *Generator) Run() {
 		if err := module.validateFieldMatrices(module.Render); err != nil {
 			panic(fmt.Sprintf("invalid field matrix config in module %s: %v", module.Name, err))
 		}
+		if err := validateModuleFieldMedia(module); err != nil {
+			panic(fmt.Sprintf("invalid field media config in module %s: %v", module.Name, err))
+		}
 		if err := generator.validateCollectionRelations(module); err != nil {
 			panic(fmt.Sprintf("invalid collection config in module %s: %v", module.Name, err))
 		}
@@ -304,6 +307,15 @@ func (generator *Generator) Run() {
 			c.Data(http.StatusOK, "application/json; charset=utf-8", specJSON)
 		})
 	}
+}
+
+func validateModuleFieldMedia(module *BaseModule) error {
+	for _, field := range module.Fields {
+		if err := field.Media.Validate(); err != nil {
+			return fmt.Errorf("field %q: %w", field.ColumnName(), err)
+		}
+	}
+	return nil
 }
 
 func (generator *Generator) validateCollectionRelations(owner *BaseModule) error {

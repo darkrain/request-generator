@@ -316,6 +316,7 @@ func CloneFieldMediaConfig(v *FieldMediaConfig) *FieldMediaConfig {
 	cp.Upload = clonePtr(v.Upload)
 	cp.Labels = clonePtr(v.Labels)
 	cp.Actions = cloneMediaGalleryActions(v.Actions)
+	cp.Cropper = clonePtr(v.Cropper)
 	return &cp
 }
 

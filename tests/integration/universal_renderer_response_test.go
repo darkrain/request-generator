@@ -114,6 +114,26 @@ func setupUniversalRendererRouter(t *testing.T) *gin.Engine {
 						Crop:   &renderer.Action{ID: "crop", Label: "Crop", Type: renderer.ActionEmit, Icon: "crop"},
 						Remove: &renderer.Action{ID: "remove", Label: "Remove", Type: renderer.ActionAPI, API: &renderer.APIAction{Method: "POST", Endpoint: "/profiles/avatar/remove"}},
 					},
+					Cropper: &renderer.MediaCropperConfig{
+						Title:        "Adjust image",
+						Subtitle:     "Move and scale the image",
+						Hint:         "Drag or pinch to zoom",
+						ChooseLabel:  "Choose image",
+						CancelLabel:  "Cancel",
+						ConfirmLabel: "Use image",
+						CloseLabel:   "Close",
+						Accept:       "image/jpeg,image/png,image/webp",
+						Viewport: renderer.MediaCropperViewportConfig{
+							Shape:       renderer.MediaCropperViewportCircle,
+							AspectRatio: 1,
+						},
+						Output: renderer.MediaCropperOutputConfig{
+							Width:    512,
+							Height:   512,
+							MIMEType: renderer.MediaCropperOutputMIMETypeJPEG,
+							Quality:  0.92,
+						},
+					},
 				},
 			},
 		},
@@ -229,6 +249,10 @@ func TestUniversalRendererMetadata_DefrecResponse(t *testing.T) {
 	assert.Equal(t, "Crop", avatarField.Media.Actions.Crop.Label)
 	require.NotNil(t, avatarField.Media.Actions.Remove)
 	assert.Equal(t, "/profiles/avatar/remove", avatarField.Media.Actions.Remove.API.Endpoint)
+	require.NotNil(t, avatarField.Media.Cropper)
+	assert.Equal(t, renderer.MediaCropperViewportCircle, avatarField.Media.Cropper.Viewport.Shape)
+	assert.Equal(t, 512, avatarField.Media.Cropper.Output.Width)
+	assert.Equal(t, "Use image", avatarField.Media.Cropper.ConfirmLabel)
 }
 
 func TestUniversalRendererMetadata_FormSectionMediaGallery(t *testing.T) {
@@ -715,6 +739,9 @@ func TestUniversalRendererMetadata_ViewResponse(t *testing.T) {
 	assert.Equal(t, "ipfs://avatar", avatarField.Media.Item.Src)
 	require.NotNil(t, avatarField.Media.Actions)
 	assert.Equal(t, "Remove", avatarField.Media.Actions.Remove.Label)
+	require.NotNil(t, avatarField.Media.Cropper)
+	assert.Equal(t, 1.0, avatarField.Media.Cropper.Viewport.AspectRatio)
+	assert.Equal(t, renderer.MediaCropperOutputMIMETypeJPEG, avatarField.Media.Cropper.Output.MIMEType)
 }
 
 func TestUniversalRendererMetadata_ViewFormPageResponse(t *testing.T) {

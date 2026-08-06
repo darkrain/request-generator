@@ -3,6 +3,8 @@ package renderer
 import (
 	"encoding/json"
 	"fmt"
+	"math"
+	"strings"
 )
 
 type Universal struct {
@@ -344,6 +346,80 @@ type FieldMediaConfig struct {
 	Upload  *MediaUploadConfig   `json:"upload,omitempty"`
 	Labels  *MediaGalleryLabels  `json:"labels,omitempty"`
 	Actions *MediaGalleryActions `json:"actions,omitempty"`
+	Cropper *MediaCropperConfig  `json:"cropper,omitempty"`
+}
+
+type MediaCropperConfig struct {
+	Title        string                     `json:"title,omitempty"`
+	Subtitle     string                     `json:"subtitle,omitempty"`
+	Hint         string                     `json:"hint,omitempty"`
+	ChooseLabel  string                     `json:"choose_label,omitempty"`
+	CancelLabel  string                     `json:"cancel_label,omitempty"`
+	ConfirmLabel string                     `json:"confirm_label,omitempty"`
+	CloseLabel   string                     `json:"close_label,omitempty"`
+	Accept       string                     `json:"accept,omitempty"`
+	Viewport     MediaCropperViewportConfig `json:"viewport"`
+	Output       MediaCropperOutputConfig   `json:"output"`
+}
+
+type MediaCropperViewportConfig struct {
+	Shape       MediaCropperViewportShape `json:"shape"`
+	AspectRatio float64                   `json:"aspect_ratio"`
+}
+
+type MediaCropperOutputConfig struct {
+	Width    int                        `json:"width"`
+	Height   int                        `json:"height"`
+	MIMEType MediaCropperOutputMIMEType `json:"mime_type"`
+	Quality  float64                    `json:"quality"`
+}
+
+func (config *FieldMediaConfig) Validate() error {
+	if config == nil || config.Cropper == nil {
+		return nil
+	}
+	return config.Cropper.Validate()
+}
+
+func (cropper *MediaCropperConfig) Validate() error {
+	if cropper == nil {
+		return nil
+	}
+	switch cropper.Viewport.Shape {
+	case MediaCropperViewportCircle, MediaCropperViewportRounded, MediaCropperViewportRectangle:
+	default:
+		return fmt.Errorf("renderer.MediaCropperConfig: unsupported viewport shape %q", cropper.Viewport.Shape)
+	}
+	if cropper.Viewport.AspectRatio <= 0 || math.IsNaN(cropper.Viewport.AspectRatio) || math.IsInf(cropper.Viewport.AspectRatio, 0) {
+		return fmt.Errorf("renderer.MediaCropperConfig: viewport aspect ratio must be positive")
+	}
+	for _, label := range []struct {
+		name  string
+		value string
+	}{
+		{name: "title", value: cropper.Title},
+		{name: "hint", value: cropper.Hint},
+		{name: "choose label", value: cropper.ChooseLabel},
+		{name: "cancel label", value: cropper.CancelLabel},
+		{name: "confirm label", value: cropper.ConfirmLabel},
+		{name: "close label", value: cropper.CloseLabel},
+	} {
+		if strings.TrimSpace(label.value) == "" {
+			return fmt.Errorf("renderer.MediaCropperConfig: %s is required", label.name)
+		}
+	}
+	if cropper.Output.Width <= 0 || cropper.Output.Height <= 0 {
+		return fmt.Errorf("renderer.MediaCropperConfig: output dimensions must be positive")
+	}
+	switch cropper.Output.MIMEType {
+	case MediaCropperOutputMIMETypeJPEG, MediaCropperOutputMIMETypePNG, MediaCropperOutputMIMETypeWebP:
+	default:
+		return fmt.Errorf("renderer.MediaCropperConfig: unsupported output mime type %q", cropper.Output.MIMEType)
+	}
+	if cropper.Output.Quality < 0 || cropper.Output.Quality > 1 || math.IsNaN(cropper.Output.Quality) || math.IsInf(cropper.Output.Quality, 0) {
+		return fmt.Errorf("renderer.MediaCropperConfig: output quality must be between 0 and 1")
+	}
+	return nil
 }
 
 type TextBinding struct {
