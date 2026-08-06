@@ -188,3 +188,76 @@ func TestTypedOptionRenderersPreserveIconsAndLocalizedLabels(t *testing.T) {
 	require.Equal(t, renderer.RendererChipSelect, viewResponse.Item["categories"].Presentation.Renderer)
 	assertOptions(t, viewResponse.Item["categories"].Options, "Example", "tag")
 }
+
+func TestListFilterContractRejectsUnavailableFilters(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name           string
+		primary        string
+		virtualFilters []fields.ModuleFilterField
+	}{
+		{
+			name:    "missing regular filter",
+			primary: "missing",
+		},
+		{
+			name:    "hidden virtual filter",
+			primary: "managed_services",
+			virtualFilters: []fields.ModuleFilterField{{
+				FieldName:       "managed_services",
+				Title:           "items.fields.managed_services",
+				Type:            fields.ModuleFieldTypeArray,
+				FormType:        fields.ModuleFieldFormTypeMultiselect,
+				FilterCondition: func(_ *gin.Context) bool { return false },
+			}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			id := pg.IntegerColumn("id")
+			status := pg.StringColumn("status")
+			table := pg.NewTable("public", "filter_contract_items", "", id, status)
+			testModule := &module.BaseModule{
+				Name:       "filter-contract-items",
+				Path:       "/admin",
+				Table:      table,
+				PrimaryKey: id,
+				Fields: []fields.ModuleField{
+					{Column: id, Title: "items.fields.id", Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView},
+					{Column: status, Title: "items.fields.status", Type: fields.ModuleFieldTypeString, FormType: fields.ModuleFieldFormTypeSelect},
+				},
+				Render: renderer.Universal{List: &renderer.ListPage{Filters: &renderer.Filters{Primary: []string{test.primary}}}},
+				Actions: []actions.ModuleAction{actions.ListModuleAction{
+					Columns:        []pg.Column{id, status},
+					Filter:         []pg.Column{status},
+					VirtualFilters: test.virtualFilters,
+					Permission:     []actions.Role{actions.RoleAll},
+					Auth:           true,
+				}},
+			}
+
+			engine := gin.New()
+			group := engine.Group("")
+			generator := module.NewGenerator(
+				func(_ *module.BaseModule) dbpkg.DBExecutor { return fakeRendererDB{} },
+				*group,
+				[]*module.BaseModule{testModule},
+				func(_ actions.ModuleAction, _ []actions.Role) gin.HandlerFunc {
+					return func(c *gin.Context) { c.Next() }
+				},
+				createMockAuthMiddleware(&icontext.UserInfo{ID: 1, Role: "admin"}),
+			)
+			generator.Run()
+
+			w := executeRequest(engine, http.MethodGet, "/admin/filter-contract-items?addFilters=true", nil)
+			require.Equal(t, http.StatusBadRequest, w.Code)
+			var response struct {
+				Message string `json:"message"`
+			}
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+			require.Equal(t, `renderer filter "`+test.primary+`" is not available for the current request`, response.Message)
+		})
+	}
+}

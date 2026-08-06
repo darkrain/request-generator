@@ -366,6 +366,25 @@ func (generator *Generator) fieldOptions(c *gin.Context, field fields.ModuleFiel
 	return options
 }
 
+func validateListFilterAvailability(page *renderer.ListPage, filters map[string]fields.ModuleFilterField) error {
+	if page == nil || page.Filters == nil {
+		return nil
+	}
+	for _, placement := range [][]string{
+		page.Filters.Primary,
+		page.Filters.Secondary,
+		page.Filters.More,
+		page.Filters.Nested,
+	} {
+		for _, field := range placement {
+			if _, ok := filters[field]; !ok {
+				return fmt.Errorf("renderer filter %q is not available for the current request", field)
+			}
+		}
+	}
+	return nil
+}
+
 func (generator *Generator) validateCollectionRelations(owner *BaseModule) error {
 	if owner.Render.Form == nil {
 		return nil
@@ -536,56 +555,53 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			}
 		}
 
-		var filter map[string]fields.ModuleFilterField
-		if addFilters == "true" {
-			filter = make(map[string]fields.ModuleFilterField)
-			filterCols := action.Filter
-			if action.FilterFunc != nil {
-				filterCols = action.FilterFunc(c)
+		filter := make(map[string]fields.ModuleFilterField)
+		filterCols := action.Filter
+		if action.FilterFunc != nil {
+			filterCols = action.FilterFunc(c)
+		}
+		for _, realField := range module.Fields {
+			if realField.FilterCondition != nil && !realField.FilterCondition(c) {
+				continue
 			}
-			for _, realField := range module.Fields {
-				if realField.FilterCondition != nil && !realField.FilterCondition(c) {
-					continue
+			if containsColumn(filterCols, realField.Column) {
+				roleStr := string(actions.GetRoleFromContext(c))
+				options := generator.fieldOptions(c, realField, roleStr, lang)
+				filterField := fields.ModuleFilterField{
+					Column:        realField.Column,
+					Title:         generator.Translate(lang, realField.Title),
+					Type:          realField.Type,
+					FormType:      realField.FormType,
+					Example:       realField.Example,
+					AllLabel:      generator.Translate(lang, realField.AllLabel),
+					Options:       options,
+					OptionsSource: realField.OptionsSource,
+					Check:         realField.Check,
+					Convert:       realField.Convert,
 				}
-				if containsColumn(filterCols, realField.Column) {
-					roleStr := string(actions.GetRoleFromContext(c))
-					options := generator.fieldOptions(c, realField, roleStr, lang)
-					filterField := fields.ModuleFilterField{
-						Column:        realField.Column,
-						Title:         generator.Translate(lang, realField.Title),
-						Type:          realField.Type,
-						FormType:      realField.FormType,
-						Example:       realField.Example,
-						AllLabel:      generator.Translate(lang, realField.AllLabel),
-						Options:       options,
-						OptionsSource: realField.OptionsSource,
-						Check:         realField.Check,
-						Convert:       realField.Convert,
-					}
-					filter[realField.ColumnName()] = filterField
-				}
+				filter[realField.ColumnName()] = filterField
 			}
-			for _, ef := range action.VirtualFilters {
-				if ef.FilterCondition != nil && !ef.FilterCondition(c) {
-					continue
-				}
-				key := ef.FieldName
-				if key == "" && ef.Column != nil {
-					key = ef.Column.Name()
-				}
-				if key == "" {
-					continue
-				}
-				translatedOpts := make([]fields.ModuleFieldOptions, len(ef.Options))
-				copy(translatedOpts, ef.Options)
-				for i := range translatedOpts {
-					translatedOpts[i].Label = generator.Translate(lang, translatedOpts[i].Label)
-				}
-				ef.Title = generator.Translate(lang, ef.Title)
-				ef.AllLabel = generator.Translate(lang, ef.AllLabel)
-				ef.Options = translatedOpts
-				filter[key] = ef
+		}
+		for _, ef := range action.VirtualFilters {
+			if ef.FilterCondition != nil && !ef.FilterCondition(c) {
+				continue
 			}
+			key := ef.FieldName
+			if key == "" && ef.Column != nil {
+				key = ef.Column.Name()
+			}
+			if key == "" {
+				continue
+			}
+			translatedOpts := make([]fields.ModuleFieldOptions, len(ef.Options))
+			copy(translatedOpts, ef.Options)
+			for i := range translatedOpts {
+				translatedOpts[i].Label = generator.Translate(lang, translatedOpts[i].Label)
+			}
+			ef.Title = generator.Translate(lang, ef.Title)
+			ef.AllLabel = generator.Translate(lang, ef.AllLabel)
+			ef.Options = translatedOpts
+			filter[key] = ef
 		}
 
 		if len(results) == 0 {
@@ -598,6 +614,14 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			return
 		}
 		render = generator.localizeRenderer(lang, render)
+		if err := validateListFilterAvailability(render.List, filter); err != nil {
+			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			return
+		}
+		responseFilters := filter
+		if addFilters != "true" {
+			responseFilters = nil
+		}
 
 		if len(heads) == 0 {
 			heads = make(map[string]interface{})
@@ -638,7 +662,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			ResourceGridPage: render.ResourceGrid,
 			Rows:             results,
 			Heads:            heads,
-			Filters:          filter,
+			Filters:          responseFilters,
 			Sort:             sortOptions,
 		}
 
