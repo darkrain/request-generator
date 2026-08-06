@@ -78,6 +78,9 @@ func (r Universal) Validate() error {
 			return err
 		}
 		for _, section := range r.Form.Sections {
+			if err := validateFormSectionColumns(section); err != nil {
+				return err
+			}
 			if section.ListPage != nil {
 				if err := validateListPage("form section list page", section.ListPage); err != nil {
 					return err
@@ -398,25 +401,26 @@ type FormPage struct {
 }
 
 type FormSection struct {
-	ID           string               `json:"id,omitempty"`
-	Title        string               `json:"title,omitempty"`
-	PanelTitle   string               `json:"panel_title,omitempty"`
-	Subtitle     string               `json:"subtitle,omitempty"`
-	Renderer     RendererKey          `json:"renderer,omitempty"`
-	Group        string               `json:"group,omitempty"`
-	GroupTitle   string               `json:"group_title,omitempty"`
-	Icon         string               `json:"icon,omitempty"`
-	Action       string               `json:"action,omitempty"`
-	Mode         string               `json:"mode,omitempty"`
-	Block        *Block               `json:"block,omitempty"`
-	Fields       []string             `json:"fields,omitempty"`
-	Matrix       *FieldMatrix         `json:"matrix,omitempty"`
-	ListPage     *ListPage            `json:"list_page,omitempty"`
-	Collection   *CollectionConfig    `json:"collection,omitempty"`
-	MediaUpload  *MediaUploadConfig   `json:"media_upload,omitempty"`
-	MediaItems   []MediaGalleryItem   `json:"media_items,omitempty"`
-	MediaLabels  *MediaGalleryLabels  `json:"media_labels,omitempty"`
-	MediaActions *MediaGalleryActions `json:"media_actions,omitempty"`
+	ID           string                 `json:"id,omitempty"`
+	Title        string                 `json:"title,omitempty"`
+	PanelTitle   string                 `json:"panel_title,omitempty"`
+	Subtitle     string                 `json:"subtitle,omitempty"`
+	Renderer     RendererKey            `json:"renderer,omitempty"`
+	Group        string                 `json:"group,omitempty"`
+	GroupTitle   string                 `json:"group_title,omitempty"`
+	Icon         string                 `json:"icon,omitempty"`
+	Action       string                 `json:"action,omitempty"`
+	Mode         string                 `json:"mode,omitempty"`
+	Block        *Block                 `json:"block,omitempty"`
+	Fields       []string               `json:"fields,omitempty"`
+	Columns      FieldMatrixColumnCount `json:"columns,omitempty"`
+	Matrix       *FieldMatrix           `json:"matrix,omitempty"`
+	ListPage     *ListPage              `json:"list_page,omitempty"`
+	Collection   *CollectionConfig      `json:"collection,omitempty"`
+	MediaUpload  *MediaUploadConfig     `json:"media_upload,omitempty"`
+	MediaItems   []MediaGalleryItem     `json:"media_items,omitempty"`
+	MediaLabels  *MediaGalleryLabels    `json:"media_labels,omitempty"`
+	MediaActions *MediaGalleryActions   `json:"media_actions,omitempty"`
 }
 
 type FieldMatrixType string
@@ -460,6 +464,15 @@ type FieldMatrixRow struct {
 type FieldMatrixCell struct {
 	Field string `json:"field,omitempty"`
 	Text  string `json:"text,omitempty"`
+}
+
+func validateFormSectionColumns(section FormSection) error {
+	switch section.Columns {
+	case 0, FieldMatrixColumnsOne, FieldMatrixColumnsTwo, FieldMatrixColumnsThree, FieldMatrixColumnsFour:
+		return nil
+	default:
+		return fmt.Errorf("renderer.Universal: form section %q has unsupported columns", section.ID)
+	}
 }
 
 func (matrix *FieldMatrix) Validate(sectionID string) error {
