@@ -3,6 +3,8 @@ package renderer
 import (
 	"encoding/json"
 	"fmt"
+	"math"
+	"strings"
 )
 
 type Universal struct {
@@ -344,6 +346,63 @@ type FieldMediaConfig struct {
 	Upload  *MediaUploadConfig   `json:"upload,omitempty"`
 	Labels  *MediaGalleryLabels  `json:"labels,omitempty"`
 	Actions *MediaGalleryActions `json:"actions,omitempty"`
+	Cropper *MediaCropperConfig  `json:"cropper,omitempty"`
+}
+
+type MediaCropperConfig struct {
+	Title        string                     `json:"title,omitempty"`
+	Subtitle     string                     `json:"subtitle,omitempty"`
+	Hint         string                     `json:"hint,omitempty"`
+	ChooseLabel  string                     `json:"choose_label,omitempty"`
+	CancelLabel  string                     `json:"cancel_label,omitempty"`
+	ConfirmLabel string                     `json:"confirm_label,omitempty"`
+	CloseLabel   string                     `json:"close_label,omitempty"`
+	Accept       string                     `json:"accept,omitempty"`
+	Viewport     MediaCropperViewportConfig `json:"viewport"`
+	Output       MediaCropperOutputConfig   `json:"output"`
+}
+
+type MediaCropperViewportConfig struct {
+	Shape       MediaCropperViewportShape `json:"shape"`
+	AspectRatio float64                   `json:"aspect_ratio"`
+}
+
+type MediaCropperOutputConfig struct {
+	Width    int     `json:"width"`
+	Height   int     `json:"height"`
+	MIMEType string  `json:"mime_type"`
+	Quality  float64 `json:"quality"`
+}
+
+func (config *FieldMediaConfig) Validate() error {
+	if config == nil || config.Cropper == nil {
+		return nil
+	}
+	return config.Cropper.Validate()
+}
+
+func (cropper *MediaCropperConfig) Validate() error {
+	if cropper == nil {
+		return nil
+	}
+	switch cropper.Viewport.Shape {
+	case MediaCropperViewportCircle, MediaCropperViewportRounded, MediaCropperViewportRectangle:
+	default:
+		return fmt.Errorf("renderer.MediaCropperConfig: unsupported viewport shape %q", cropper.Viewport.Shape)
+	}
+	if cropper.Viewport.AspectRatio <= 0 || math.IsNaN(cropper.Viewport.AspectRatio) || math.IsInf(cropper.Viewport.AspectRatio, 0) {
+		return fmt.Errorf("renderer.MediaCropperConfig: viewport aspect ratio must be positive")
+	}
+	if cropper.Output.Width <= 0 || cropper.Output.Height <= 0 {
+		return fmt.Errorf("renderer.MediaCropperConfig: output dimensions must be positive")
+	}
+	if strings.TrimSpace(cropper.Output.MIMEType) == "" {
+		return fmt.Errorf("renderer.MediaCropperConfig: output mime type is required")
+	}
+	if cropper.Output.Quality < 0 || cropper.Output.Quality > 1 || math.IsNaN(cropper.Output.Quality) || math.IsInf(cropper.Output.Quality, 0) {
+		return fmt.Errorf("renderer.MediaCropperConfig: output quality must be between 0 and 1")
+	}
+	return nil
 }
 
 type TextBinding struct {

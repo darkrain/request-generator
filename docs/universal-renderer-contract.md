@@ -566,8 +566,71 @@ request-generator до выдачи JSON. `icon` является стабиль
 | `media.upload` | `MediaUploadConfig`: ограничения upload UI и localized labels. |
 | `media.labels` | `MediaGalleryLabels`, переиспользуется для одиночного media field. |
 | `media.actions` | `MediaGalleryActions`: стандартные действия `upload`, `link`, `reorder`, `recenter`, `crop`, `remove`. |
+| `media.cropper` | Optional typed config универсального image cropper. |
 
 Producer задает labels как translation keys. Request-generator возвращает во внешнем JSON уже локализованные labels согласно `lang`/`Accept-Language`.
+
+### Media Cropper
+
+`media.cropper` опционально описывает обрезку любого image field. Generator не
+знает назначение изображения: `circle` является только маской viewport, а не
+признаком avatar.
+
+```json
+{
+  "cropper": {
+    "title": "Adjust image",
+    "subtitle": "Move and scale the image",
+    "hint": "Drag or pinch to zoom",
+    "choose_label": "Choose image",
+    "cancel_label": "Cancel",
+    "confirm_label": "Use image",
+    "close_label": "Close",
+    "accept": "image/jpeg,image/png,image/webp",
+    "viewport": {
+      "shape": "circle",
+      "aspect_ratio": 1
+    },
+    "output": {
+      "width": 512,
+      "height": 512,
+      "mime_type": "image/jpeg",
+      "quality": 0.92
+    }
+  }
+}
+```
+
+Текстовые поля cropper producer задает translation keys; в response они уже
+локализованы. `viewport.shape` принимает только `circle`, `rounded` или
+`rectangle`; `viewport.aspect_ratio` должен быть положительным. Output требует
+положительные `width` и `height`, непустой `mime_type` и `quality` от `0` до
+`1`. Некорректный cropper generator отклоняет при запуске.
+
+```go
+Media: &renderer.FieldMediaConfig{
+    Cropper: &renderer.MediaCropperConfig{
+        Title:        "items.cropper.title",
+        Subtitle:     "items.cropper.subtitle",
+        Hint:         "items.cropper.hint",
+        ChooseLabel:  "items.cropper.choose",
+        CancelLabel:  "ui.cancel",
+        ConfirmLabel: "items.cropper.confirm",
+        CloseLabel:   "ui.close",
+        Accept:       "image/jpeg,image/png,image/webp",
+        Viewport: renderer.MediaCropperViewportConfig{
+            Shape:       renderer.MediaCropperViewportCircle,
+            AspectRatio: 1,
+        },
+        Output: renderer.MediaCropperOutputConfig{
+            Width:    512,
+            Height:   512,
+            MIMEType: "image/jpeg",
+            Quality:  0.92,
+        },
+    },
+},
+```
 
 ### Go API
 

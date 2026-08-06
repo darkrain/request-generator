@@ -281,6 +281,14 @@ const (
 	MediaUsagePoster  MediaUsage = "poster"
 )
 
+type MediaCropperViewportShape string
+
+const (
+	MediaCropperViewportCircle    MediaCropperViewportShape = "circle"
+	MediaCropperViewportRounded   MediaCropperViewportShape = "rounded"
+	MediaCropperViewportRectangle MediaCropperViewportShape = "rectangle"
+)
+
 type DisplayComponentType string
 
 const (
