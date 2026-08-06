@@ -117,6 +117,7 @@ type ModuleField struct {
 	Media            *renderer.FieldMediaConfig                      `json:"media,omitempty"`
 	Extra            *FieldExtra                                     `json:"-"`
 	Options          []ModuleFieldOptions                            `json:"options,omitempty"`
+	OptionsSource    *FieldOptionsSource                             `json:"options_source,omitempty"`
 	OptionsURL       string                                          `json:"options_url,omitempty"`
 	OptionsFunc      func(context *gin.Context) []ModuleFieldOptions `json:"-"`
 	RoleOptions      []RoleOptions                                   `json:"-"`
@@ -191,6 +192,7 @@ type ModuleFilterField struct {
 	Example         string                                                       `json:"example,omitempty"`
 	AllLabel        string                                                       `json:"all_label,omitempty"`
 	Options         []ModuleFieldOptions                                         `json:"options,omitempty"`
+	OptionsSource   *FieldOptionsSource                                          `json:"options_source,omitempty"`
 	Check           []CheckRules                                                 `json:"-"`
 	Convert         func(c *gin.Context, value interface{}) (interface{}, error) `json:"-"`
 	Group           string                                                       `json:"group,omitempty"`
@@ -211,6 +213,45 @@ type ModuleFieldOptions struct {
 	Label  string            `json:"label"`
 	Icon   string            `json:"icon,omitempty"`
 	Labels map[string]string `json:"-"`
+}
+
+type FieldOptionsSourceMode string
+
+const (
+	FieldOptionsSourceModeList FieldOptionsSourceMode = "list"
+	FieldOptionsSourceModeTree FieldOptionsSourceMode = "tree"
+)
+
+type FieldOptionsQueryParam struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+type FieldOptionsSource struct {
+	Endpoint    string                   `json:"endpoint"`
+	Query       []FieldOptionsQueryParam `json:"query,omitempty"`
+	SearchParam string                   `json:"search_param,omitempty"`
+	Mode        FieldOptionsSourceMode   `json:"mode,omitempty"`
+}
+
+func (source *FieldOptionsSource) Validate() error {
+	if source == nil {
+		return nil
+	}
+	if source.Endpoint == "" {
+		return fmt.Errorf("field options source endpoint is required")
+	}
+	switch source.Mode {
+	case "", FieldOptionsSourceModeList, FieldOptionsSourceModeTree:
+	default:
+		return fmt.Errorf("field options source has unsupported mode %q", source.Mode)
+	}
+	for _, param := range source.Query {
+		if param.Key == "" {
+			return fmt.Errorf("field options source query key is required")
+		}
+	}
+	return nil
 }
 
 type CheckRules interface {

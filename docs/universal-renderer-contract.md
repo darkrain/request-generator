@@ -125,10 +125,7 @@ Closed enums должны использовать typed constants из package 
   "rows": [],
   "heads": {
     "status": {
-      "title": "Status",
-      "extra": {
-        "display": {"type": "badge"}
-      }
+      "title": "Status"
     }
   },
   "filters": {
@@ -136,13 +133,7 @@ Closed enums должны использовать typed constants из package 
       "title": "Status",
       "type": "string",
       "form_type": "select",
-      "options": [],
-      "group": "main",
-      "order": 10,
-      "extra": {
-        "filter_group": "main",
-        "filter_order": 10
-      }
+      "options": []
     }
   },
   "sort": [
@@ -156,8 +147,8 @@ Closed enums должны использовать typed constants из package 
 | Path | Назначение |
 |------|------------|
 | `rows` | Данные строк. |
-| `heads[field].extra` | Metadata отображения колонки. |
-| `filters[field].extra` | Metadata UI фильтра. |
+| `heads[field]` | Локализованный заголовок колонки. Визуальное представление поля задается typed `presentation`. |
+| `filters[field]` | Тип, form type, options и typed `options_source` фильтра. Расположение задается в `list_page.filters`. |
 | `sort[].value` | Значение сортировки в формате `field:asc` или `field:desc`. |
 | `count`, `size`, `page` | Server-side pagination. |
 | `renderer` | Renderer identity/version, добавляется request-generator. |
@@ -438,6 +429,11 @@ Typed field metadata нужна для одиночных полей, где б�
 | `presentation.style` | Optional style token, если renderer поддерживает несколько визуальных стилей. |
 | `presentation.size` | Media size token: `thumb`, `card`, `hero`. |
 | `presentation.ratio` | Media ratio token: `square`, `portrait`, `landscape`, `wide`. |
+| `presentation.prefix`, `presentation.suffix` | Локализуемый текст до или после значения. |
+| `presentation.hint`, `presentation.description` | Локализуемые подсказка и описание поля. |
+| `presentation.rows` | Высота многострочного control. |
+| `presentation.visible_if` | Typed условие видимости через `renderer.Condition`. |
+| `presentation.tone_by_value` | Маппинг стабильного значения enum на theme tone. |
 
 ### Option Controls
 
@@ -466,12 +462,11 @@ Typed field metadata нужна для одиночных полей, где б�
 request-generator до выдачи JSON. `icon` является стабильным именем иконки и
 не локализуется.
 
-В list filters generator передает `form_type` и стандартные options
-(`value`, локализованный `label`, `icon`), но не передает
-`presentation.renderer`. Поэтому list filter использует свой базовый control
-по `form_type`. Если для filter понадобится специализированный control, он
-должен получить отдельный typed contract (`FilterPresentation`), а не
-неявно переиспользовать field presentation.
+В list filters generator передает `form_type`, стандартные options
+(`value`, локализованный `label`, `icon`) и `options_source`, если варианты
+подгружаются асинхронно. Расположение и порядок фильтров описываются только в
+`list_page.filters` (`primary`, `secondary`, `more`, `nested`), а не в metadata
+самого поля.
 
 ```go
 {
@@ -499,6 +494,27 @@ request-generator до выдачи JSON. `icon` является стабиль
     },
 },
 ```
+
+### Field Options Source
+
+`options_source` задает typed источник вариантов для `select` и
+`multiselect`. Он одинаково сериализуется в `list.filters`, `defrec.fields` и
+`view.item`.
+
+```json
+{
+  "options_source": {
+    "endpoint": "/api/locations",
+    "query": [{"key": "active", "value": "true"}],
+    "search_param": "search",
+    "mode": "tree"
+  }
+}
+```
+
+`endpoint` обязателен. `mode` допускает `list` или `tree`; при отсутствии поля
+frontend использует обычный список. `query` содержит статические параметры
+запроса, `search_param` задает имя параметра поиска.
 
 ### Field Media
 
@@ -676,97 +692,6 @@ Media: &renderer.FieldMediaConfig{
 }
 ```
 
-### Legacy Extra
-
-`extra` пока остается в трех контекстах для старых модулей:
-
-| Контекст | Где задается producer-side | Где приходит frontend |
-|----------|-----------------------------|-----------------------|
-| Form | `ModuleField.Extra.Defrec` | `defrec.fields[field].extra` |
-| List | `ModuleField.Extra.List` | `list.heads[field].extra`, `list.filters[field].extra` |
-| View | `ModuleField.Extra.View` | `view.item[field].extra` |
-
-Для нового UniversalRenderer metadata `extra` использовать нельзя. Если нужной структуры нет, надо добавить typed поле в `renderer` package, тест response contract и обновить эту спецификацию.
-
-Legacy shape:
-
-```json
-{
-  "extra": {
-    "visual_kind": "select",
-    "display": {
-      "type": "badge",
-      "tone": "cyan"
-    },
-    "section": "main",
-    "group": "general",
-    "order": 20,
-    "layout": "full",
-    "icon": "status",
-    "hint": "entity.fields.status_hint",
-    "placeholder": "entity.fields.status_placeholder",
-    "multiple": false,
-    "searchable": true,
-    "options_url": "/options/statuses",
-    "options_params": {
-      "scope": "active"
-    }
-  }
-}
-```
-
-### Form Metadata
-
-| Key | Назначение |
-|-----|------------|
-| `visual_kind` | UI control: `input`, `textarea`, `select`, `location`, `radio`, `switch`, `matrix`, `media`, `collection`. |
-| `section` | ID секции формы. |
-| `group` | ID группы внутри секции. |
-| `order` | Порядок поля. |
-| `layout` | `full`, `grid`, `inline`, `compact`, `matrix`. |
-| `icon` | Icon registry key. |
-| `hint` | Translation key подсказки. |
-| `placeholder` | Translation key placeholder. |
-| `multiple` | Множественный выбор. |
-| `searchable` | Поиск внутри control. |
-| `options_url` | Server-driven options endpoint. |
-| `options_params` | Параметры для `options_url`. |
-| `prefix` / `suffix` | Визуальный prefix/suffix. |
-| `min` / `max` / `step` | UI-ограничения числового ввода. |
-
-### Display Metadata
-
-`display` всегда должен быть object.
-
-```json
-{
-  "display": {
-    "type": "badge",
-    "tone": "cyan",
-    "tones": {
-      "active": "success",
-      "blocked": "danger"
-    }
-  }
-}
-```
-
-Поддерживаемые `display.type`:
-
-| Type | Назначение |
-|------|------------|
-| `text` | Обычный текст. |
-| `badge` | Статус, роль, тип. |
-| `boolean` | Boolean indicator. |
-| `code` | ID/key/code. |
-| `json` | Pretty JSON. |
-| `masked` | Token/secret/IP. |
-| `chips` | Массивы и tags. |
-| `media` | Media preview. |
-| `money` | Money value. |
-| `date` | Date/time. |
-| `location` | Location value. |
-
 ## List Contract
 
 `list_page` описывает список целиком. В Go API это `renderer.Universal.List`.
@@ -866,8 +791,9 @@ Renderer-specific enum values должны быть описаны в разде
 Filters являются server-driven:
 
 - если фильтр есть в `filters[field]`, producer должен применять его server-side;
-- `filters[field].group` и `filters[field].order` задают группировку и порядок;
-- `filters[field].extra.filter_group` и `filters[field].extra.filter_order` могут переопределять группировку и порядок;
+- расположение и порядок фильтров определяет `list_page.filters` через `primary`, `secondary`, `more` и `nested`;
+- виртуальные фильтры, не связанные с `ModuleField`, задаются typed `ListModuleAction.VirtualFilters`;
+- range presets задаются в `list_page.filters.range_presets` и содержат `field`, локализуемый `label`, `min`, `max`;
 - selected values передаются в query как `filter[field]=value`;
 - multi-value filters передаются повторением query value или согласованным serialized array;
 - search query передается отдельным search parameter, если list action поддерживает search;
@@ -1344,15 +1270,14 @@ Media metadata should reference fields, not hardcoded rendering branches.
   ],
   "heads": {
     "name": {"title": "Name"},
-    "status": {"title": "Status", "extra": {"display": {"type": "badge"}}}
+    "status": {"title": "Status"}
   },
   "filters": {
     "status": {
       "title": "Status",
       "type": "string",
       "form_type": "select",
-      "options": [{"value": "active", "label": "Active"}],
-      "extra": {"filter_group": "main", "filter_order": 10}
+      "options": [{"value": "active", "label": "Active"}]
     }
   },
   "sort": [

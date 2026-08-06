@@ -5,8 +5,16 @@ import (
 	"github.com/darkrain/request-generator/renderer"
 )
 
-func (generator *Generator) localizeFieldPresentation(_ locale.Lang, value *renderer.FieldPresentation) *renderer.FieldPresentation {
-	return renderer.CloneFieldPresentation(value)
+func (generator *Generator) localizeFieldPresentation(lang locale.Lang, value *renderer.FieldPresentation) *renderer.FieldPresentation {
+	localized := renderer.CloneFieldPresentation(value)
+	if localized == nil {
+		return nil
+	}
+	resolver := generator.rendererTextResolver(lang)
+	for _, field := range []*string{&localized.Prefix, &localized.Suffix, &localized.Hint, &localized.Description} {
+		*field = resolver(*field, "")
+	}
+	return localized
 }
 
 func (generator *Generator) localizeFieldMedia(lang locale.Lang, value *renderer.FieldMediaConfig, fieldValue interface{}) *renderer.FieldMediaConfig {

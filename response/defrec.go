@@ -26,8 +26,8 @@ func NewDefrecResponse(extra interface{}, fields []f.ModuleField) DefrecResponse
 		if len(field.Options) > 0 {
 			item["options"] = field.Options
 		}
-		if field.Extra != nil && field.Extra.Defrec != nil {
-			item["extra"] = field.Extra.Defrec
+		if field.OptionsSource != nil {
+			item["options_source"] = field.OptionsSource
 		}
 		if field.Presentation != nil {
 			item["presentation"] = field.Presentation

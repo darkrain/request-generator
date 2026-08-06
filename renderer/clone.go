@@ -143,7 +143,19 @@ func cloneFilters(v *Filters) *Filters {
 	cp.SecondaryPillRows = cloneMapRows(v.SecondaryPillRows)
 	cp.Reset = cloneFilterReset(v.Reset)
 	cp.Text = clonePtr(v.Text)
+	cp.RangePresets = cloneFilterRangePresets(v.RangePresets)
 	return &cp
+}
+
+func cloneFilterRangePresets(values []FilterRangePresets) []FilterRangePresets {
+	if values == nil {
+		return nil
+	}
+	out := make([]FilterRangePresets, len(values))
+	for i, value := range values {
+		out[i] = FilterRangePresets{Field: value.Field, Presets: cloneSlice(value.Presets)}
+	}
+	return out
 }
 
 func cloneMapRows(values [][]FilterPill) [][]FilterPill {
@@ -304,7 +316,13 @@ func cloneFieldMatrix(v *FieldMatrix) *FieldMatrix {
 }
 
 func CloneFieldPresentation(v *FieldPresentation) *FieldPresentation {
-	return clonePtr(v)
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.VisibleIf = cloneCondition(v.VisibleIf)
+	cp.ToneByValue = cloneSlice(v.ToneByValue)
+	return &cp
 }
 
 func CloneFieldMediaConfig(v *FieldMediaConfig) *FieldMediaConfig {
