@@ -128,6 +128,12 @@ func (generator *Generator) Run() {
 		if err := validateModuleFieldMedia(module); err != nil {
 			panic(fmt.Sprintf("invalid field media config in module %s: %v", module.Name, err))
 		}
+		if err := validateModuleFieldOptionsSources(module); err != nil {
+			panic(fmt.Sprintf("invalid field options source in module %s: %v", module.Name, err))
+		}
+		if err := validateModuleVirtualFilterOptionsSources(module); err != nil {
+			panic(fmt.Sprintf("invalid virtual filter options source in module %s: %v", module.Name, err))
+		}
 		if err := generator.validateCollectionRelations(module); err != nil {
 			panic(fmt.Sprintf("invalid collection config in module %s: %v", module.Name, err))
 		}
@@ -318,6 +324,67 @@ func validateModuleFieldMedia(module *BaseModule) error {
 	return nil
 }
 
+func validateModuleFieldOptionsSources(module *BaseModule) error {
+	for _, field := range module.Fields {
+		if err := field.OptionsSource.Validate(); err != nil {
+			return fmt.Errorf("field %q: %w", field.ColumnName(), err)
+		}
+	}
+	return nil
+}
+
+func validateModuleVirtualFilterOptionsSources(module *BaseModule) error {
+	for _, moduleAction := range module.Actions {
+		listAction, ok := moduleAction.(actions.ListModuleAction)
+		if !ok {
+			continue
+		}
+		for _, filter := range listAction.VirtualFilters {
+			if err := filter.OptionsSource.Validate(); err != nil {
+				return fmt.Errorf("filter %q: %w", filter.FieldName, err)
+			}
+		}
+	}
+	return nil
+}
+
+func (generator *Generator) fieldOptions(c *gin.Context, field fields.ModuleField, role string, lang locale.Lang) []fields.ModuleFieldOptions {
+	options := make([]fields.ModuleFieldOptions, 0, len(field.Options))
+	options = append(options, field.Options...)
+	if field.OptionsFunc != nil {
+		options = append(options, field.OptionsFunc(c)...)
+	}
+	for _, roleOptions := range field.RoleOptions {
+		if roleOptions.Role == role || roleOptions.Role == string(actions.RoleAll) {
+			options = append(options, roleOptions.Options...)
+			break
+		}
+	}
+	for i := range options {
+		options[i].Label = generator.Translate(lang, options[i].Label)
+	}
+	return options
+}
+
+func validateListFilterAvailability(page *renderer.ListPage, filters map[string]fields.ModuleFilterField) error {
+	if page == nil || page.Filters == nil {
+		return nil
+	}
+	for _, placement := range [][]string{
+		page.Filters.Primary,
+		page.Filters.Secondary,
+		page.Filters.More,
+		page.Filters.Nested,
+	} {
+		for _, field := range placement {
+			if _, ok := filters[field]; !ok {
+				return fmt.Errorf("renderer filter %q is not available for the current request", field)
+			}
+		}
+	}
+	return nil
+}
+
 func (generator *Generator) validateCollectionRelations(owner *BaseModule) error {
 	if owner.Render.Form == nil {
 		return nil
@@ -481,112 +548,60 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 
 			for _, realField := range module.Fields {
 				if containsColumn(columns, realField.Column) {
-					headItem := map[string]interface{}{
+					heads[realField.ColumnName()] = map[string]interface{}{
 						"title": generator.Translate(lang, realField.Title),
 					}
-					if realField.Extra != nil && realField.Extra.List != nil {
-						headItem["extra"] = realField.Extra.List
-					}
-					heads[realField.ColumnName()] = headItem
 				}
 			}
 		}
 
-		var filter map[string]fields.ModuleFilterField
-		if addFilters == "true" {
-			filter = make(map[string]fields.ModuleFilterField)
-			filterCols := action.Filter
-			if action.FilterFunc != nil {
-				filterCols = action.FilterFunc(c)
+		filter := make(map[string]fields.ModuleFilterField)
+		filterCols := action.Filter
+		if action.FilterFunc != nil {
+			filterCols = action.FilterFunc(c)
+		}
+		for _, realField := range module.Fields {
+			if realField.FilterCondition != nil && !realField.FilterCondition(c) {
+				continue
 			}
-			for _, realField := range module.Fields {
-				if realField.FilterCondition != nil && !realField.FilterCondition(c) {
-					continue
+			if containsColumn(filterCols, realField.Column) {
+				roleStr := string(actions.GetRoleFromContext(c))
+				options := generator.fieldOptions(c, realField, roleStr, lang)
+				filterField := fields.ModuleFilterField{
+					Column:        realField.Column,
+					Title:         generator.Translate(lang, realField.Title),
+					Type:          realField.Type,
+					FormType:      realField.FormType,
+					Example:       realField.Example,
+					AllLabel:      generator.Translate(lang, realField.AllLabel),
+					Options:       options,
+					OptionsSource: realField.OptionsSource,
+					Check:         realField.Check,
+					Convert:       realField.Convert,
 				}
-				if containsColumn(filterCols, realField.Column) {
-					options := make([]fields.ModuleFieldOptions, 0, 10)
-					if realField.Options != nil {
-						for _, item := range realField.Options {
-							options = append(options, item)
-						}
-					}
-					if realField.OptionsFunc != nil {
-						for _, item := range realField.OptionsFunc(c) {
-							options = append(options, item)
-						}
-					}
-					roleStr := string(actions.GetRoleFromContext(c))
-					for _, ro := range realField.RoleOptions {
-						if ro.Role == roleStr || ro.Role == string(actions.RoleAll) {
-							options = append(options, ro.Options...)
-							break
-						}
-					}
-
-					for i, opt := range options {
-						options[i].Label = generator.Translate(lang, opt.Label)
-					}
-
-					var filterExtra interface{}
-					if realField.Extra != nil && realField.Extra.List != nil {
-						filterExtra = realField.Extra.List
-					}
-					filterGroup := realField.Group
-					filterOrder := realField.Order
-					if extraMap, ok := filterExtra.(map[string]interface{}); ok {
-						if group, ok := extraMap["filter_group"].(string); ok {
-							filterGroup = group
-						}
-						switch order := extraMap["filter_order"].(type) {
-						case int:
-							filterOrder = order
-						case int64:
-							filterOrder = int(order)
-						case float64:
-							filterOrder = int(order)
-						}
-					}
-					filterField := fields.ModuleFilterField{
-						Column:   realField.Column,
-						Title:    generator.Translate(lang, realField.Title),
-						Type:     realField.Type,
-						FormType: realField.FormType,
-						Example:  realField.Example,
-						AllLabel: generator.Translate(lang, realField.AllLabel),
-						Options:  options,
-						Check:    realField.Check,
-						Convert:  realField.Convert,
-						Group:    filterGroup,
-						Order:    filterOrder,
-						Extra:    filterExtra,
-					}
-					filter[realField.ColumnName()] = filterField
-				}
+				filter[realField.ColumnName()] = filterField
 			}
-			for _, ef := range action.ExtraFilters {
-				if ef.FilterCondition != nil && !ef.FilterCondition(c) {
-					continue
-				}
-				key := ef.FieldName
-				if key == "" && ef.Column != nil {
-					key = ef.Column.Name()
-				}
-				if key == "" {
-					continue
-				}
-				translatedOpts := make([]fields.ModuleFieldOptions, len(ef.Options))
-				for i, opt := range ef.Options {
-					translatedOpts[i] = fields.ModuleFieldOptions{
-						Value: opt.Value,
-						Label: generator.Translate(lang, opt.Label),
-						Icon:  opt.Icon,
-					}
-				}
-				ef.Title = generator.Translate(lang, ef.Title)
-				ef.AllLabel = generator.Translate(lang, ef.AllLabel)
-				ef.Options = translatedOpts
-				filter[key] = ef
+		}
+		for _, ef := range action.VirtualFilters {
+			if ef.FilterCondition != nil && !ef.FilterCondition(c) {
+				continue
 			}
+			key := ef.FieldName
+			if key == "" && ef.Column != nil {
+				key = ef.Column.Name()
+			}
+			if key == "" {
+				continue
+			}
+			translatedOpts := make([]fields.ModuleFieldOptions, len(ef.Options))
+			copy(translatedOpts, ef.Options)
+			for i := range translatedOpts {
+				translatedOpts[i].Label = generator.Translate(lang, translatedOpts[i].Label)
+			}
+			ef.Title = generator.Translate(lang, ef.Title)
+			ef.AllLabel = generator.Translate(lang, ef.AllLabel)
+			ef.Options = translatedOpts
+			filter[key] = ef
 		}
 
 		if len(results) == 0 {
@@ -599,6 +614,14 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			return
 		}
 		render = generator.localizeRenderer(lang, render)
+		if err := validateListFilterAvailability(render.List, filter); err != nil {
+			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			return
+		}
+		responseFilters := filter
+		if addFilters != "true" {
+			responseFilters = nil
+		}
 
 		if len(heads) == 0 {
 			heads = make(map[string]interface{})
@@ -626,7 +649,6 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			Renderer         *renderer.Identity                  `json:"renderer,omitempty"`
 			ListPage         *renderer.ListPage                  `json:"list_page,omitempty"`
 			ResourceGridPage *renderer.ResourceGridPage          `json:"resource_grid_page,omitempty"`
-			Extra            interface{}                         `json:"extra,omitempty"`
 			Rows             []interface{}                       `json:"rows"`
 			Heads            map[string]interface{}              `json:"heads"`
 			Filters          map[string]fields.ModuleFilterField `json:"filters,omitempty"`
@@ -638,16 +660,10 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			Renderer:         render.ListIdentity(),
 			ListPage:         render.List,
 			ResourceGridPage: render.ResourceGrid,
-			Extra: func() interface{} {
-				if action.ExtraFunc != nil {
-					return action.ExtraFunc(c)
-				}
-				return action.Extra
-			}(),
-			Rows:    results,
-			Heads:   heads,
-			Filters: filter,
-			Sort:    sortOptions,
+			Rows:             results,
+			Heads:            heads,
+			Filters:          responseFilters,
+			Sort:             sortOptions,
 		}
 
 		if isCSV == 0 {
@@ -846,28 +862,7 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 			}
 
 			checkItems := make([]fields.CheckRules, 0, 10)
-			optionItems := make([]fields.ModuleFieldOptions, 0, 10)
-
-			if field.Options != nil {
-				for _, option := range field.Options {
-					optionItems = append(optionItems, option)
-				}
-			}
-			if field.OptionsFunc != nil {
-				for _, option := range field.OptionsFunc(c) {
-					optionItems = append(optionItems, option)
-				}
-			}
-			for _, ro := range field.RoleOptions {
-				if ro.Role == role || ro.Role == string(actions.RoleAll) {
-					optionItems = append(optionItems, ro.Options...)
-					break
-				}
-			}
-
-			for i, opt := range optionItems {
-				optionItems[i].Label = generator.Translate(lang, opt.Label)
-			}
+			optionItems := generator.fieldOptions(c, field, role, lang)
 
 			if field.Check != nil {
 				for _, check := range field.Check {
@@ -906,17 +901,13 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 			output = append(output, field)
 		}
 
-		var extra interface{}
-		if module.Defrec.ExtraFunc != nil {
-			extra = module.Defrec.ExtraFunc(c)
-		}
 		render, err := module.RenderFor(c)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
 		render = generator.localizeRenderer(lang, render)
-		defrecResponse := response.NewDefrecResponse(extra, output)
+		defrecResponse := response.NewDefrecResponse(output)
 		defrecResponse.AttachRender(render)
 		response.Response(l, c, defrecResponse)
 
@@ -1046,9 +1037,6 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 				"edit":      containsColumn(editableColumns, field.Column),
 			}
 
-			if field.Extra != nil && field.Extra.View != nil {
-				fieldItem["extra"] = field.Extra.View
-			}
 			if field.Presentation != nil {
 				fieldItem["presentation"] = generator.localizeFieldPresentation(lang, field.Presentation)
 			}
@@ -1056,35 +1044,16 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 				fieldItem["media"] = generator.localizeFieldMedia(lang, field.Media, value)
 			}
 
-			// Collect options
-			options := make([]fields.ModuleFieldOptions, 0)
-			if field.Options != nil {
-				options = append(options, field.Options...)
+			if field.OptionsSource != nil {
+				fieldItem["options_source"] = field.OptionsSource
 			}
-			if field.OptionsFunc != nil {
-				options = append(options, field.OptionsFunc(c)...)
-			}
-			for _, ro := range field.RoleOptions {
-				if ro.Role == roleStr || ro.Role == string(actions.RoleAll) {
-					options = append(options, ro.Options...)
-					break
-				}
-			}
+
+			options := generator.fieldOptions(c, field, roleStr, lang)
 			if len(options) > 0 {
-				for i, opt := range options {
-					options[i].Label = generator.Translate(lang, opt.Label)
-				}
 				fieldItem["options"] = options
 			}
 
 			item[fieldKey] = fieldItem
-		}
-
-		var extra interface{}
-		if action.ExtraFunc != nil {
-			extra = action.ExtraFunc(c)
-		} else {
-			extra = action.Extra
 		}
 
 		render, err := module.RenderFor(c)
@@ -1098,11 +1067,9 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			Renderer   *renderer.Identity     `json:"renderer,omitempty"`
 			RecordPage *renderer.RecordPage   `json:"record_page,omitempty"`
 			FormPage   *renderer.FormPage     `json:"form_page,omitempty"`
-			Extra      interface{}            `json:"extra,omitempty"`
 			Item       map[string]interface{} `json:"item"`
 		}{
 			Renderer: viewRouteIdentity(render, pageType),
-			Extra:    extra,
 			Item:     item,
 		}
 		switch pageType {

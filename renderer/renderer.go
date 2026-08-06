@@ -174,6 +174,43 @@ func validateListPage(scope string, page *ListPage) error {
 			return err
 		}
 	}
+	if err := validateFilterRangePresets(scope, page.Filters); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateFilterRangePresets(scope string, filters *Filters) error {
+	if filters == nil || len(filters.RangePresets) == 0 {
+		return nil
+	}
+	declared := make(map[string]struct{}, len(filters.Primary)+len(filters.Secondary)+len(filters.More)+len(filters.Nested))
+	for _, fields := range [][]string{filters.Primary, filters.Secondary, filters.More, filters.Nested} {
+		for _, field := range fields {
+			declared[field] = struct{}{}
+		}
+	}
+	seen := make(map[string]struct{}, len(filters.RangePresets))
+	for _, group := range filters.RangePresets {
+		if group.Field == "" {
+			return fmt.Errorf("renderer.Universal: %s range presets field is required", scope)
+		}
+		if _, exists := seen[group.Field]; exists {
+			return fmt.Errorf("renderer.Universal: %s range presets field %q is duplicated", scope, group.Field)
+		}
+		seen[group.Field] = struct{}{}
+		if _, exists := declared[group.Field]; !exists {
+			return fmt.Errorf("renderer.Universal: %s range presets field %q is not declared in filters", scope, group.Field)
+		}
+		if len(group.Presets) == 0 {
+			return fmt.Errorf("renderer.Universal: %s range presets field %q must have at least one preset", scope, group.Field)
+		}
+		for _, preset := range group.Presets {
+			if preset.Min > preset.Max {
+				return fmt.Errorf("renderer.Universal: %s range preset for field %q has min greater than max", scope, group.Field)
+			}
+		}
+	}
 	return nil
 }
 
@@ -224,20 +261,32 @@ type Layout struct {
 }
 
 type Filters struct {
-	Renderer          RendererKey    `json:"renderer,omitempty"`
-	Enabled           bool           `json:"enabled"`
-	PrimaryPlacement  string         `json:"primary_placement,omitempty"`
-	SecondaryEnabled  *bool          `json:"secondary_enabled,omitempty"`
-	ResetPlacement    string         `json:"reset_placement,omitempty"`
-	Levels            []string       `json:"levels,omitempty"`
-	Primary           []string       `json:"primary,omitempty"`
-	Secondary         []string       `json:"secondary,omitempty"`
-	More              []string       `json:"more,omitempty"`
-	Nested            []string       `json:"nested,omitempty"`
-	PillRows          [][]FilterPill `json:"pill_rows,omitempty"`
-	SecondaryPillRows [][]FilterPill `json:"secondary_pill_rows,omitempty"`
-	Reset             *FilterReset   `json:"reset,omitempty"`
-	Text              *FilterText    `json:"text,omitempty"`
+	Renderer          RendererKey          `json:"renderer,omitempty"`
+	Enabled           bool                 `json:"enabled"`
+	PrimaryPlacement  string               `json:"primary_placement,omitempty"`
+	SecondaryEnabled  *bool                `json:"secondary_enabled,omitempty"`
+	ResetPlacement    string               `json:"reset_placement,omitempty"`
+	Levels            []string             `json:"levels,omitempty"`
+	Primary           []string             `json:"primary,omitempty"`
+	Secondary         []string             `json:"secondary,omitempty"`
+	More              []string             `json:"more,omitempty"`
+	Nested            []string             `json:"nested,omitempty"`
+	PillRows          [][]FilterPill       `json:"pill_rows,omitempty"`
+	SecondaryPillRows [][]FilterPill       `json:"secondary_pill_rows,omitempty"`
+	Reset             *FilterReset         `json:"reset,omitempty"`
+	Text              *FilterText          `json:"text,omitempty"`
+	RangePresets      []FilterRangePresets `json:"range_presets,omitempty"`
+}
+
+type FilterRangePresets struct {
+	Field   string              `json:"field"`
+	Presets []FilterRangePreset `json:"presets"`
+}
+
+type FilterRangePreset struct {
+	Label string  `json:"label"`
+	Min   float64 `json:"min"`
+	Max   float64 `json:"max"`
 }
 
 // FilterText contains all text rendered by built-in filter controls.
@@ -334,11 +383,23 @@ type Media struct {
 }
 
 type FieldPresentation struct {
-	Renderer RendererKey `json:"renderer,omitempty"`
-	Variant  string      `json:"variant,omitempty"`
-	Style    string      `json:"style,omitempty"`
-	Size     MediaSize   `json:"size,omitempty"`
-	Ratio    MediaRatio  `json:"ratio,omitempty"`
+	Renderer    RendererKey      `json:"renderer,omitempty"`
+	Variant     string           `json:"variant,omitempty"`
+	Style       string           `json:"style,omitempty"`
+	Size        MediaSize        `json:"size,omitempty"`
+	Ratio       MediaRatio       `json:"ratio,omitempty"`
+	Prefix      string           `json:"prefix,omitempty"`
+	Suffix      string           `json:"suffix,omitempty"`
+	Hint        string           `json:"hint,omitempty"`
+	Description string           `json:"description,omitempty"`
+	Rows        uint8            `json:"rows,omitempty"`
+	VisibleIf   *Condition       `json:"visible_if,omitempty"`
+	ToneByValue []FieldValueTone `json:"tone_by_value,omitempty"`
+}
+
+type FieldValueTone struct {
+	Value TypedValue `json:"value"`
+	Tone  string     `json:"tone"`
 }
 
 type FieldMediaConfig struct {

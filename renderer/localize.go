@@ -90,12 +90,21 @@ func (localizer textLocalizer) localizeListPage(page *ListPage) {
 		localizer.localizeFilterPills(page.Filters.PillRows)
 		localizer.localizeFilterPills(page.Filters.SecondaryPillRows)
 		localizer.localizeFilterText(page.Filters.Text)
+		localizer.localizeFilterRangePresets(page.Filters.RangePresets)
 	}
 	if page.Summary != nil {
 		localizer.localizeTextFields(&page.Summary.Title, &page.Summary.TitleFallback)
 	}
 	if page.CardSchema != nil {
 		localizer.localizeCardSchema(page.CardSchema)
+	}
+}
+
+func (localizer textLocalizer) localizeFilterRangePresets(groups []FilterRangePresets) {
+	for i := range groups {
+		for j := range groups[i].Presets {
+			groups[i].Presets[j].Label = localizer.localizeRendererText(groups[i].Presets[j].Label, "")
+		}
 	}
 }
 
