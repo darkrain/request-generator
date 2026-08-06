@@ -204,6 +204,25 @@ Closed enums должны использовать typed constants из package 
 | `renderer` | Renderer identity/version, добавляется request-generator. |
 | `form_page` | Typed metadata универсальной form/edit страницы из `BaseModule.Render.Form`. |
 
+### Form Section Columns
+
+`form_page.sections[].columns` задает количество колонок для обычной секции
+формы и ее дочерних fields. Это layout секции, а не свойство отдельного поля
+или визуальной поверхности `block`.
+
+Допустимы typed значения `1`, `2`, `3`, `4` из
+`renderer.FieldMatrixColumnCount`. Значение `0` не сериализуется и означает
+renderer default. Generator отклоняет другие значения при `Universal.Validate()`.
+
+```go
+renderer.FormSection{
+    ID:      "payments",
+    Block:   &renderer.Block{Type: renderer.BlockPanel},
+    Fields:  []string{"accepted_payment", "commission_rate"},
+    Columns: renderer.FieldMatrixColumnsOne,
+}
+```
+
 ### Field Matrix
 
 `field.matrix` задает раскладку уже описанных typed полей формы. Matrix не

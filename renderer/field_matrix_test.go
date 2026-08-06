@@ -1,9 +1,11 @@
 package renderer
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFieldMatrixValidate(t *testing.T) {
@@ -91,6 +93,33 @@ func TestUniversalValidateFieldMatrixRendererBinding(t *testing.T) {
 			assert.Equal(t, test.valid, err == nil, err)
 		})
 	}
+}
+
+func TestUniversalValidateFormSectionColumns(t *testing.T) {
+	for _, columns := range []FieldMatrixColumnCount{0, FieldMatrixColumnsOne, FieldMatrixColumnsTwo, FieldMatrixColumnsThree, FieldMatrixColumnsFour} {
+		t.Run("valid", func(t *testing.T) {
+			err := (Universal{Form: &FormPage{Sections: []FormSection{{ID: "preferences", Columns: columns}}}}).Validate()
+			require.NoError(t, err)
+		})
+	}
+
+	err := (Universal{Form: &FormPage{Sections: []FormSection{{ID: "preferences", Columns: 5}}}}).Validate()
+	require.EqualError(t, err, `renderer.Universal: form section "preferences" has unsupported columns`)
+}
+
+func TestFormSectionColumnsJSONAndClone(t *testing.T) {
+	original := Universal{Form: &FormPage{Sections: []FormSection{{
+		ID:      "payments",
+		Fields:  []string{"accepted_payment", "commission_rate"},
+		Columns: FieldMatrixColumnsOne,
+	}}}}
+
+	encoded, err := json.Marshal(original.Form.Sections[0])
+	require.NoError(t, err)
+	require.JSONEq(t, `{"id":"payments","fields":["accepted_payment","commission_rate"],"columns":1}`, string(encoded))
+
+	cloned := original.Clone()
+	require.Equal(t, FieldMatrixColumnsOne, cloned.Form.Sections[0].Columns)
 }
 
 func TestFieldMatrixClone(t *testing.T) {
