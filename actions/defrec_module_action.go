@@ -15,7 +15,6 @@ type DefrecModuleAction struct {
 	Fields       []RoleContext     `json:"-"`
 	BeforeAction func(c *gin.Context) error
 	AfterAction  func(c *gin.Context)
-	ExtraFunc    func(c *gin.Context) interface{}
 	Widget       *WidgetConfig `json:"widget,omitempty"`
 }
 

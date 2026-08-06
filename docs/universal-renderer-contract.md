@@ -25,21 +25,13 @@ flowchart TD
     B --> D["heads / filters / sort"]
     B --> E["renderer identity"]
     B --> T["typed page metadata"]
-    B --> X["legacy response.extra"]
 
-    C --> F["field.extra"]
     C --> Y["field.presentation / field.media"]
-    D --> F
 
     T --> G["list_page"]
     T --> H["resource_grid_page"]
     T --> I["form_page"]
     T --> J["record_page"]
-    X --> K["legacy view_groups / app extra"]
-
-    F --> L["form metadata"]
-    F --> M["list metadata"]
-    F --> N["view metadata"]
     Y --> Q
     Y --> R
 
@@ -47,16 +39,11 @@ flowchart TD
     H --> P["Resource grid renderer"]
     I --> Q["Form renderer"]
     J --> R["Record renderer"]
-    K --> S["Admin detail renderer"]
-    L --> Q
-    M --> O
-    N --> R
-    N --> S
 ```
 
 ## Где Лежит Metadata
 
-UniversalRenderer читает canonical metadata из typed response fields. `response.extra` и `field.extra` остаются legacy/deprecated escape hatch для старых модулей и application-specific compatibility. Новые UI-возможности должны добавляться в typed contract генератора, а не в ad-hoc `extra`.
+UniversalRenderer читает metadata только из typed response fields. Новые UI-возможности добавляются в typed contract генератора, а не в ad-hoc maps.
 
 Каждый response с typed page metadata должен содержать renderer identity:
 
@@ -106,7 +93,7 @@ RenderFunc: func(c *gin.Context, base renderer.Universal) (renderer.Universal, e
 }
 ```
 
-`Render` задает базовую статическую схему. `RenderFunc` является optional typed runtime override/merge и вызывается request-generator через `RenderFor(c)` перед построением `/api/config`, list, defrec и view responses. В `RenderFunc` передается deep clone базового `Render`, поэтому producer module может безопасно менять pointer structs, slices, maps и стандартные JSON-like значения внутри `interface{}` (`map[string]interface{}`, `[]interface{}`, `map[string]string`, `[]string` и т.п.) без протекания state в следующие запросы. Произвольные custom objects внутри `interface{}` не клонируются и остаются ответственностью producer module. Результат `RenderFunc` остается `renderer.Universal` и валидируется через `Validate()` уже после runtime изменений. Legacy `ExtraFunc` не должен использоваться для canonical UniversalRenderer metadata.
+`Render` задает базовую статическую схему. `RenderFunc` является optional typed runtime override/merge и вызывается request-generator через `RenderFor(c)` перед построением `/api/config`, list, defrec и view responses. В `RenderFunc` передается deep clone базового `Render`, поэтому producer module может безопасно менять pointer structs, slices, maps и стандартные JSON-like значения внутри `interface{}` (`map[string]interface{}`, `[]interface{}`, `map[string]string`, `[]string` и т.п.) без протекания state в следующие запросы. Произвольные custom objects внутри `interface{}` не клонируются и остаются ответственностью producer module. Результат `RenderFunc` остается `renderer.Universal` и валидируется через `Validate()` уже после runtime изменений.
 
 Closed enums должны использовать typed constants из package `renderer`. `map[string]interface{}` допустим только в явно typed runtime/transport полях (`Context`, `Payload`, `Query`, route query и т.п.), где содержимое является данными запроса или состоянием выполнения, а не схемой UI. Если producer-у нужен новый UI metadata block, он должен быть добавлен в typed renderer contract, а не передан через ad-hoc map.
 
@@ -191,7 +178,6 @@ Closed enums должны использовать typed constants из package 
 | `fields[field].section` | Базовая секция поля. |
 | `fields[field].presentation` | Typed metadata визуального представления одиночного поля. |
 | `fields[field].media` | Typed media metadata одиночного поля, если поле является media value. |
-| `fields[field].extra` | Legacy metadata формы. Не использовать для новых UniversalRenderer capabilities. |
 | `renderer` | Renderer identity/version, добавляется request-generator. |
 | `form_page` | Typed metadata универсальной form/edit страницы из `BaseModule.Render.Form`. |
 
@@ -317,7 +303,6 @@ Generator проверяет closed `type`, применимость `list`/`tab
 | `item[field].options` | Options для значения. |
 | `item[field].presentation` | Typed metadata визуального представления одиночного поля. |
 | `item[field].media` | Typed media metadata одиночного поля, если поле является media value. |
-| `item[field].extra` | Legacy metadata отображения поля. Не использовать для новых UniversalRenderer capabilities. |
 | `renderer` | Renderer identity/version, добавляется request-generator. |
 | `record_page` | Typed metadata страницы просмотра из `BaseModule.Render.Record`. |
 
@@ -743,7 +728,7 @@ Media: &renderer.FieldMediaConfig{
 }
 ```
 
-`list_page.extra` не используется. Если producer-у не хватает поля для renderer metadata, поле нужно добавить в typed contract генератора и в документацию.
+Если producer-у не хватает поля для renderer metadata, поле нужно добавить в typed contract генератора и в документацию.
 
 ### Design Tokens
 
@@ -1186,29 +1171,7 @@ Generator behavior:
 }
 ```
 
-`record_page.sections[].components` и `record_page.sections[].stack` являются canonical metadata для display renderer. Не кладите layout/display metadata в `section.extra`: такого поля нет в UniversalRenderer contract.
-
-## View Groups
-
-`view_groups` является legacy/application-specific metadata для detail view. Для новых typed modules предпочтительно описывать группировку через `record_page.sections`.
-
-```json
-{
-  "view_groups": [
-    {
-      "key": "summary",
-      "title": "admin_module.detail_group_summary",
-      "fields": ["id", "name", "status"]
-    },
-    {
-      "key": "conditional",
-      "title": "admin_module.detail_group_content",
-      "fields": ["description"],
-      "visible_when": {"field": "type", "in": ["public"]}
-    }
-  ]
-}
-```
+`record_page.sections[].components` и `record_page.sections[].stack` являются canonical metadata для display renderer.
 
 ## Renderer Registry
 
@@ -1309,16 +1272,8 @@ Examples of application-specific values:
 - resources: `/api/icons`, `/api/media_assets`, `/api/media_links`;
 - renderer-specific visual variants: `wash-brand-secondary`, `qo-panel`, `glass-cyan`.
 
-## Compatibility Notes
+## Совместимость
 
-Текущий webapp поддерживает legacy metadata, но новые producer-сервисы должны использовать canonical shapes выше.
-
-Legacy forms:
-
-- UniversalRenderer metadata внутри `response.extra.*`, например `extra.list_page`, `extra.form_page`, `extra.record_page`, `extra.resource_grid_page`;
-- application extension fields внутри top-level page `extra` не допускаются в UniversalRenderer contract;
-- `display` как string вместо object, например `"display": "badge"`;
-- `{"path": "...", "not": true}` вместо `{"not": {"path": "...", "truthy": true}}`;
-- `external: true` action without explicit `type`;
-
-`response.extra` остается deprecated escape hatch для старых модулей и application-specific данных вне UniversalRenderer. Новые producer modules должны описывать UniversalRenderer metadata через typed `BaseModule.Render renderer.Universal`, а request-generator должен отдавать canonical top-level `renderer` + page metadata fields.
+UniversalRenderer использует только canonical typed shapes этого документа. Модуль,
+которому не хватает metadata для отображения, должен расширить typed contract,
+обновить документацию и добавить response-contract тест.

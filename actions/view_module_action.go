@@ -18,8 +18,6 @@ type ViewModuleAction struct {
 	Auth         bool                             `json:"auth"`
 	Join         []ModuleActionJoin               `json:"join"`
 	By           []pg.Column                      `json:"-"`
-	Extra        interface{}                      `json:"extra"`
-	ExtraFunc    func(c *gin.Context) interface{} `json:"-"`
 	Fields       []RoleContext                    `json:"-"`
 	Widget       *WidgetConfig                    `json:"widget,omitempty"`
 	PageType     renderer.PageType                `json:"page_type,omitempty"`

@@ -45,7 +45,7 @@ func TestTypedOptionRenderersPreserveIconsAndLocalizedLabels(t *testing.T) {
 					Hint:        "items.status.hint",
 					Description: "items.status.description",
 					VisibleIf:   &renderer.Condition{Path: "enabled", Equals: true},
-					ToneByValue: []renderer.FieldValueTone{{Value: "active", Tone: "success"}},
+					ToneByValue: []renderer.FieldValueTone{{Value: renderer.TypedValue{Type: renderer.TypedValueString, String: "active"}, Tone: "success"}},
 				},
 				OptionsSource: &fields.FieldOptionsSource{
 					Endpoint:    "/admin/status-options",
@@ -72,7 +72,7 @@ func TestTypedOptionRenderersPreserveIconsAndLocalizedLabels(t *testing.T) {
 			List: &renderer.ListPage{
 				ID: "typed-option-items",
 				Filters: &renderer.Filters{
-					Primary: []string{"status", "managed_services"},
+					Primary: []string{"status", "managed_services", "rating"},
 					RangePresets: []renderer.FilterRangePresets{{
 						Field:   "rating",
 						Presets: []renderer.FilterRangePreset{{Label: "items.rating.any", Min: 0, Max: 5}},
@@ -96,6 +96,11 @@ func TestTypedOptionRenderersPreserveIconsAndLocalizedLabels(t *testing.T) {
 					OptionsSource: &fields.FieldOptionsSource{
 						Endpoint: "/admin/services",
 					},
+				}, {
+					FieldName: "rating",
+					Title:     "items.fields.rating",
+					Type:      fields.ModuleFieldTypeFloat,
+					FormType:  fields.ModuleFieldFormTypeNumber,
 				}},
 			},
 			actions.AddModuleAction{Columns: []pg.Column{status, categories}, Permission: []actions.Role{actions.RoleAll}, Auth: true},
@@ -104,7 +109,7 @@ func TestTypedOptionRenderersPreserveIconsAndLocalizedLabels(t *testing.T) {
 	}
 
 	translationsPath := filepath.Join(t.TempDir(), "en.json")
-	require.NoError(t, os.WriteFile(translationsPath, []byte(`{"items":{"fields":{"id":"ID","status":"Status","categories":"Categories","managed_services":"Managed services"},"options":{"active":"Active","example":"Example"},"status":{"prefix":"Current:","suffix":"state","hint":"Choose current state","description":"Controls item visibility"},"rating":{"any":"Any rating"}}}`), 0o600))
+	require.NoError(t, os.WriteFile(translationsPath, []byte(`{"items":{"fields":{"id":"ID","status":"Status","categories":"Categories","managed_services":"Managed services","rating":"Rating"},"options":{"active":"Active","example":"Example"},"status":{"prefix":"Current:","suffix":"state","hint":"Choose current state","description":"Controls item visibility"},"rating":{"any":"Any rating"}}}`), 0o600))
 
 	engine := gin.New()
 	group := engine.Group("")

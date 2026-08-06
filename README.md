@@ -56,16 +56,12 @@ BaseModule
   │     ├── Options/OptionsFunc
   │     ├── Check/DefaultFunc/Convert
   │     ├── Presentation  -> typed metadata визуального представления поля
-  │     ├── Media         -> typed metadata одиночного media-поля
-  │     └── Extra         -> legacy escape hatch
+  │     └── Media         -> typed metadata одиночного media-поля
   │
   ├── ListModuleAction
   │     ├── Filter/Search/Sort/SortDefault
   │     ├── Where/Permission/Auth
-  │     └── ExtraFunc -> legacy/dynamic app-specific metadata
-  │
-  ├── ViewModuleAction
-  │     └── Extra -> legacy custom view/detail metadata
+  │     └── VirtualFilters -> typed filters without a module field
   │
   ├── DefrecModuleAction
   │     └── schema for add/edit forms
@@ -93,7 +89,6 @@ BaseModule
 - ключи иконок;
 - typed metadata для UniversalRenderer через `BaseModule.Render`;
 - typed metadata одиночных полей через `ModuleField.Presentation` и специализированные typed blocks вроде `ModuleField.Media`;
-- legacy/application-specific metadata через `extra` только для старого кода. Новые возможности UniversalRenderer нужно добавлять в typed contract.
 
 Frontend должен получать готовую схему и рендерить ее своими универсальными компонентами. Frontend не должен угадывать, что поле `status` нужно показать badge, что `category_ids` является multiselect, а `owner_id` нужно скрыть от определенной роли.
 
@@ -107,18 +102,17 @@ Frontend должен получать готовую схему и рендер
 | Универсальная form/edit page | `BaseModule.Render.Form` |
 | Страница просмотра записи | `BaseModule.Render.Record` |
 | Рабочий grid с create/update/delete/status | `BaseModule.Render.ResourceGrid` |
-| Legacy/detail groups | `ViewModuleAction.Extra` |
 | Навигация и page routes | `BaseModule.Navigation` |
 | Динамический список колонок по роли | `ColumnsFunc` или `Fields`/`RoleContext` |
 | Динамические фильтры по роли | `FilterFunc` |
 | Права на строки | `Where`, `RoleWhere`, `BeforeAction`, `DataCheckRule` |
-| Options из базы | `OptionsFunc` или `Extra.Defrec.options_url` |
+| Options из базы | `OptionsFunc` или typed `OptionsSource` |
 
 Подробная спецификация UniversalRenderer: [docs/universal-renderer-contract.md](docs/universal-renderer-contract.md).
 
 ### Typed field metadata
 
-Для новых UI-возможностей нельзя заставлять frontend угадывать поведение по имени поля и нельзя добавлять ad-hoc `extra`. Если поле требует явного renderer contract, используйте typed поля `ModuleField`.
+Для новых UI-возможностей нельзя заставлять frontend угадывать поведение по имени поля и нельзя добавлять ad-hoc maps. Если поле требует явного renderer contract, используйте typed поля `ModuleField`.
 
 Пример одиночного media-поля:
 
@@ -214,85 +208,6 @@ renderer.FormSection{
 `FieldMatrixColumnsFour`. Для table используется отдельная typed структура с
 heads, rows и cells; полный contract и правила локализации приведены в
 [docs/universal-renderer-contract.md](docs/universal-renderer-contract.md).
-
-### Extra.Defrec
-
-`Extra.Defrec` является legacy-механизмом. Его можно использовать только для существующих модулей или временной совместимости, пока нужный UI contract еще не типизирован.
-
-```go
-{
-    Column:   table.CatalogItems.CategoryIDs,
-    Title:    "catalog_items.fields.categories",
-    Type:     fields.ModuleFieldTypeArray,
-    FormType: fields.ModuleFieldFormTypeMultiselect,
-    OptionsFunc: categoryOptions,
-    Extra: &fields.FieldExtra{
-        Defrec: map[string]interface{}{
-            "visual_kind": "select",
-            "multiple":    true,
-            "searchable":  true,
-            "icon":        "tag",
-            "section":     "general",
-            "group":       "main",
-            "order":       30,
-            "layout":      "full",
-            "placeholder": "ui.search",
-        },
-    },
-}
-```
-
-Рекомендуемые ключи:
-
-| Ключ | Назначение |
-|---|---|
-| `visual_kind` | Универсальный тип: `input`, `textarea`, `select`, `location`, `radio`, `switch`, `matrix`, `media`, `collection`. |
-| `section` | ID секции страницы. |
-| `group` | ID группы внутри секции. |
-| `order` | Порядок поля. |
-| `layout` | `full`, `grid`, `inline`, `compact`, `matrix`. |
-| `icon` | Ключ иконки из реестра. |
-| `hint` | Ключ перевода подсказки. |
-| `placeholder` | Ключ перевода placeholder. |
-| `multiple` | Множественный выбор. |
-| `searchable` | Поиск внутри select. |
-| `options_url` | Endpoint для server-driven options. |
-| `options_params` | Параметры endpoint options. |
-| `prefix` / `suffix` | Внутренний prefix/suffix поля. |
-| `min` / `max` / `step` | Числовые ограничения. |
-
-Нельзя добавлять поле так, чтобы frontend узнавал его по имени и вручную выбирал компонент.
-
-### Extra.View
-
-`Extra.View` описывает отображение значения в list/detail/card view.
-
-```go
-Extra: &fields.FieldExtra{
-    View: map[string]interface{}{
-        "display": map[string]interface{}{
-            "type":   "badge",
-            "tone":   "glass-cyan",
-            "marker": false,
-            "option": "status",
-        },
-    },
-}
-```
-
-Типовые `display`:
-
-- `text`;
-- `badge`;
-- `chips`;
-- `boolean`;
-- `code`;
-- `json`;
-- `masked`;
-- `media`;
-- `money`;
-- `date`;
-- `location`.
 
 ### Typed Render и страницы списков
 
@@ -425,7 +340,7 @@ Frontend строит стандартные list/defrec/action endpoints из `
 
 ### Resource grid metadata
 
-Для страниц типа “управление сущностями” модуль описывает typed `BaseModule.Render.ResourceGrid`. `ExtraFunc` и `extra.resource_grid_page` остаются legacy compatibility, но не являются canonical способом для новых модулей.
+Для страниц типа “управление сущностями” модуль описывает typed `BaseModule.Render.ResourceGrid`.
 
 Для одного list route `Render.List` и `Render.ResourceGrid` взаимоисключающие. Если нужны обе страницы, создавайте отдельный route/module; request-generator валидирует это при старте.
 
@@ -489,7 +404,7 @@ Render: renderer.Universal{
 - [docs/specification-process.md](docs/specification-process.md) - процесс предложения, принятия, статусов и версионирования спецификаций.
 - [docs/specification-goals.md](docs/specification-goals.md) - общие цели, одинаковые для всех спецификаций.
 
-README содержит только обзор request-generator. Полная схема typed `BaseModule.Render`, `renderer`, `field.extra`, `list_page`, `resource_grid_page`, `form_page`, `record_page`, legacy `extra`, actions, conditions, filters и renderer registry описывается в спецификации.
+README содержит только обзор request-generator. Полная схема typed `BaseModule.Render`, `renderer`, `list_page`, `resource_grid_page`, `form_page`, `record_page`, actions, conditions, filters и renderer registry описывается в спецификации.
 
 ### Правила совместимости с универсальным frontend
 
@@ -497,7 +412,7 @@ PR в модуле считается неготовым, если:
 
 - новое поле требует `if field.key == ...` на frontend;
 - options захардкожены во frontend, хотя зависят от базы или роли;
-- UniversalRenderer metadata добавляется через legacy `ExtraFunc`, хотя уже есть typed `BaseModule.Render`;
+- UniversalRenderer metadata добавляется через произвольный map вместо typed `BaseModule.Render`;
 - действие скрывается только на frontend, но API все равно разрешает его выполнить;
 - фильтр есть в UI, но не применяется в `Filter`/`Where`;
 - переводимый текст отдается literal-строкой вместо ключа;
@@ -803,24 +718,10 @@ actions.ListModuleAction{
     Maxsize:     1000,
     Join:        []actions.ModuleActionJoin{...},
     Where:       func(c *gin.Context) pg.BoolExpression { ... },
-    ExtraFunc:   func(c *gin.Context) interface{} { ... }, // legacy/dynamic app-specific extra
 }
 ```
 
 **Обязательные поля:** `Label`, `Columns`.
-
-**`ExtraFunc`** вызывается при каждом запросе; результат включается в ответ как поле `extra`. Используется для legacy/dynamic app-specific данных, зависящих от роли или параметров запроса. UniversalRenderer page metadata для новых модулей описывайте через `BaseModule.Render`.
-
-```go
-ExtraFunc: func(c *gin.Context) interface{} {
-    return map[string]interface{}{
-        "pills": []map[string]interface{}{
-            {"label": "All"},
-            {"label": "Verified", "key": "verify_status", "val": "verified"},
-        },
-    }
-},
-```
 
 **`FilterFunc`** заменяет/дополняет статический `Filter` — используется когда набор доступных фильтров зависит от роли:
 
@@ -989,11 +890,10 @@ allModules := []*module.BaseModule{
 - `UpdateModuleAction.Where` и `DeleteModuleAction.Where` не позволяют менять чужие записи.
 - `AddModuleAction.Columns` содержит только поля, которые клиент имеет право прислать.
 - Системные поля задаются через `DefaultFunc`, а не принимаются от клиента.
-- Все options приходят из `Options`, `OptionsFunc` или `options_url`.
+- Все options приходят из `Options`, `OptionsFunc` или typed `OptionsSource`.
 - Все поля формы имеют `Title` как ключ перевода.
-- Новые UI-возможности описаны typed metadata (`Presentation`, `Media` и т.п.), а не ad-hoc `Extra`.
-- `Extra.Defrec` и `Extra.View` используются только для legacy-совместимости.
-- UniversalRenderer page metadata описана через typed `BaseModule.Render`, а не через legacy `ExtraFunc`.
+- Новые UI-возможности описаны typed metadata (`Presentation`, `Media` и т.п.), а не ad-hoc maps.
+- UniversalRenderer page metadata описана через typed `BaseModule.Render`.
 - Действия, зависящие от состояния записи, описаны через `visible_if`/`hidden_if`.
 - Все ограничения из `visible_if` продублированы серверной проверкой.
 - Новые фильтры реально работают на сервере.

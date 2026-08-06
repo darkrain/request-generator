@@ -8,11 +8,10 @@ import (
 type DefrecResponse struct {
 	Renderer *renderer.Identity     `json:"renderer,omitempty"`
 	FormPage *renderer.FormPage     `json:"form_page,omitempty"`
-	Extra    interface{}            `json:"extra,omitempty"`
 	Fields   map[string]interface{} `json:"fields"`
 }
 
-func NewDefrecResponse(extra interface{}, fields []f.ModuleField) DefrecResponse {
+func NewDefrecResponse(fields []f.ModuleField) DefrecResponse {
 	fieldsMap := make(map[string]interface{}, len(fields))
 	for _, field := range fields {
 		item := map[string]interface{}{
@@ -65,10 +64,7 @@ func NewDefrecResponse(extra interface{}, fields []f.ModuleField) DefrecResponse
 		fieldsMap[key] = item
 	}
 
-	return DefrecResponse{
-		Extra:  extra,
-		Fields: fieldsMap,
-	}
+	return DefrecResponse{Fields: fieldsMap}
 }
 
 func (r *DefrecResponse) AttachRender(render renderer.Universal) {

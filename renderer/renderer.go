@@ -174,6 +174,43 @@ func validateListPage(scope string, page *ListPage) error {
 			return err
 		}
 	}
+	if err := validateFilterRangePresets(scope, page.Filters); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateFilterRangePresets(scope string, filters *Filters) error {
+	if filters == nil || len(filters.RangePresets) == 0 {
+		return nil
+	}
+	declared := make(map[string]struct{}, len(filters.Primary)+len(filters.Secondary)+len(filters.More)+len(filters.Nested))
+	for _, fields := range [][]string{filters.Primary, filters.Secondary, filters.More, filters.Nested} {
+		for _, field := range fields {
+			declared[field] = struct{}{}
+		}
+	}
+	seen := make(map[string]struct{}, len(filters.RangePresets))
+	for _, group := range filters.RangePresets {
+		if group.Field == "" {
+			return fmt.Errorf("renderer.Universal: %s range presets field is required", scope)
+		}
+		if _, exists := seen[group.Field]; exists {
+			return fmt.Errorf("renderer.Universal: %s range presets field %q is duplicated", scope, group.Field)
+		}
+		seen[group.Field] = struct{}{}
+		if _, exists := declared[group.Field]; !exists {
+			return fmt.Errorf("renderer.Universal: %s range presets field %q is not declared in filters", scope, group.Field)
+		}
+		if len(group.Presets) == 0 {
+			return fmt.Errorf("renderer.Universal: %s range presets field %q must have at least one preset", scope, group.Field)
+		}
+		for _, preset := range group.Presets {
+			if preset.Min > preset.Max {
+				return fmt.Errorf("renderer.Universal: %s range preset for field %q has min greater than max", scope, group.Field)
+			}
+		}
+	}
 	return nil
 }
 
@@ -361,8 +398,8 @@ type FieldPresentation struct {
 }
 
 type FieldValueTone struct {
-	Value string `json:"value"`
-	Tone  string `json:"tone"`
+	Value TypedValue `json:"value"`
+	Tone  string     `json:"tone"`
 }
 
 type FieldMediaConfig struct {

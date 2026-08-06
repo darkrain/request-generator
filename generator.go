@@ -565,10 +565,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 					filter[realField.ColumnName()] = filterField
 				}
 			}
-			virtualFilters := make([]fields.ModuleFilterField, 0, len(action.VirtualFilters)+len(action.ExtraFilters))
-			virtualFilters = append(virtualFilters, action.VirtualFilters...)
-			virtualFilters = append(virtualFilters, action.ExtraFilters...)
-			for _, ef := range virtualFilters {
+			for _, ef := range action.VirtualFilters {
 				if ef.FilterCondition != nil && !ef.FilterCondition(c) {
 					continue
 				}
@@ -628,7 +625,6 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			Renderer         *renderer.Identity                  `json:"renderer,omitempty"`
 			ListPage         *renderer.ListPage                  `json:"list_page,omitempty"`
 			ResourceGridPage *renderer.ResourceGridPage          `json:"resource_grid_page,omitempty"`
-			Extra            interface{}                         `json:"extra,omitempty"`
 			Rows             []interface{}                       `json:"rows"`
 			Heads            map[string]interface{}              `json:"heads"`
 			Filters          map[string]fields.ModuleFilterField `json:"filters,omitempty"`
@@ -640,16 +636,10 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			Renderer:         render.ListIdentity(),
 			ListPage:         render.List,
 			ResourceGridPage: render.ResourceGrid,
-			Extra: func() interface{} {
-				if action.ExtraFunc != nil {
-					return action.ExtraFunc(c)
-				}
-				return action.Extra
-			}(),
-			Rows:    results,
-			Heads:   heads,
-			Filters: filter,
-			Sort:    sortOptions,
+			Rows:             results,
+			Heads:            heads,
+			Filters:          filter,
+			Sort:             sortOptions,
 		}
 
 		if isCSV == 0 {
@@ -887,17 +877,13 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 			output = append(output, field)
 		}
 
-		var extra interface{}
-		if module.Defrec.ExtraFunc != nil {
-			extra = module.Defrec.ExtraFunc(c)
-		}
 		render, err := module.RenderFor(c)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
 		render = generator.localizeRenderer(lang, render)
-		defrecResponse := response.NewDefrecResponse(extra, output)
+		defrecResponse := response.NewDefrecResponse(output)
 		defrecResponse.AttachRender(render)
 		response.Response(l, c, defrecResponse)
 
@@ -1046,13 +1032,6 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			item[fieldKey] = fieldItem
 		}
 
-		var extra interface{}
-		if action.ExtraFunc != nil {
-			extra = action.ExtraFunc(c)
-		} else {
-			extra = action.Extra
-		}
-
 		render, err := module.RenderFor(c)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
@@ -1064,11 +1043,9 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			Renderer   *renderer.Identity     `json:"renderer,omitempty"`
 			RecordPage *renderer.RecordPage   `json:"record_page,omitempty"`
 			FormPage   *renderer.FormPage     `json:"form_page,omitempty"`
-			Extra      interface{}            `json:"extra,omitempty"`
 			Item       map[string]interface{} `json:"item"`
 		}{
 			Renderer: viewRouteIdentity(render, pageType),
-			Extra:    extra,
 			Item:     item,
 		}
 		switch pageType {
