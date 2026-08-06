@@ -368,10 +368,10 @@ type MediaCropperViewportConfig struct {
 }
 
 type MediaCropperOutputConfig struct {
-	Width    int     `json:"width"`
-	Height   int     `json:"height"`
-	MIMEType string  `json:"mime_type"`
-	Quality  float64 `json:"quality"`
+	Width    int                        `json:"width"`
+	Height   int                        `json:"height"`
+	MIMEType MediaCropperOutputMIMEType `json:"mime_type"`
+	Quality  float64                    `json:"quality"`
 }
 
 func (config *FieldMediaConfig) Validate() error {
@@ -393,11 +393,28 @@ func (cropper *MediaCropperConfig) Validate() error {
 	if cropper.Viewport.AspectRatio <= 0 || math.IsNaN(cropper.Viewport.AspectRatio) || math.IsInf(cropper.Viewport.AspectRatio, 0) {
 		return fmt.Errorf("renderer.MediaCropperConfig: viewport aspect ratio must be positive")
 	}
+	for _, label := range []struct {
+		name  string
+		value string
+	}{
+		{name: "title", value: cropper.Title},
+		{name: "hint", value: cropper.Hint},
+		{name: "choose label", value: cropper.ChooseLabel},
+		{name: "cancel label", value: cropper.CancelLabel},
+		{name: "confirm label", value: cropper.ConfirmLabel},
+		{name: "close label", value: cropper.CloseLabel},
+	} {
+		if strings.TrimSpace(label.value) == "" {
+			return fmt.Errorf("renderer.MediaCropperConfig: %s is required", label.name)
+		}
+	}
 	if cropper.Output.Width <= 0 || cropper.Output.Height <= 0 {
 		return fmt.Errorf("renderer.MediaCropperConfig: output dimensions must be positive")
 	}
-	if strings.TrimSpace(cropper.Output.MIMEType) == "" {
-		return fmt.Errorf("renderer.MediaCropperConfig: output mime type is required")
+	switch cropper.Output.MIMEType {
+	case MediaCropperOutputMIMETypeJPEG, MediaCropperOutputMIMETypePNG, MediaCropperOutputMIMETypeWebP:
+	default:
+		return fmt.Errorf("renderer.MediaCropperConfig: unsupported output mime type %q", cropper.Output.MIMEType)
 	}
 	if cropper.Output.Quality < 0 || cropper.Output.Quality > 1 || math.IsNaN(cropper.Output.Quality) || math.IsInf(cropper.Output.Quality, 0) {
 		return fmt.Errorf("renderer.MediaCropperConfig: output quality must be between 0 and 1")

@@ -22,8 +22,14 @@ func TestRunRejectsInvalidFieldMediaCropper(t *testing.T) {
 		Fields: []fields.ModuleField{{
 			Column: avatar,
 			Media: &renderer.FieldMediaConfig{Cropper: &renderer.MediaCropperConfig{
-				Viewport: renderer.MediaCropperViewportConfig{Shape: renderer.MediaCropperViewportCircle, AspectRatio: 1},
-				Output:   renderer.MediaCropperOutputConfig{Width: 512, Height: 512, MIMEType: "image/jpeg", Quality: 1.1},
+				Title:        "Adjust image",
+				Hint:         "Drag to crop",
+				ChooseLabel:  "Choose image",
+				CancelLabel:  "Cancel",
+				ConfirmLabel: "Use image",
+				CloseLabel:   "Close",
+				Viewport:     renderer.MediaCropperViewportConfig{Shape: renderer.MediaCropperViewportCircle, AspectRatio: 1},
+				Output:       renderer.MediaCropperOutputConfig{Width: 512, Height: 512, MIMEType: renderer.MediaCropperOutputMIMETypeJPEG, Quality: 1.1},
 			}},
 		}},
 	}

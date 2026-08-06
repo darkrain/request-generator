@@ -130,7 +130,7 @@ func setupUniversalRendererRouter(t *testing.T) *gin.Engine {
 						Output: renderer.MediaCropperOutputConfig{
 							Width:    512,
 							Height:   512,
-							MIMEType: "image/jpeg",
+							MIMEType: renderer.MediaCropperOutputMIMETypeJPEG,
 							Quality:  0.92,
 						},
 					},
@@ -741,7 +741,7 @@ func TestUniversalRendererMetadata_ViewResponse(t *testing.T) {
 	assert.Equal(t, "Remove", avatarField.Media.Actions.Remove.Label)
 	require.NotNil(t, avatarField.Media.Cropper)
 	assert.Equal(t, 1.0, avatarField.Media.Cropper.Viewport.AspectRatio)
-	assert.Equal(t, "image/jpeg", avatarField.Media.Cropper.Output.MIMEType)
+	assert.Equal(t, renderer.MediaCropperOutputMIMETypeJPEG, avatarField.Media.Cropper.Output.MIMEType)
 }
 
 func TestUniversalRendererMetadata_ViewFormPageResponse(t *testing.T) {

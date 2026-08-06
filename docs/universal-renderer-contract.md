@@ -601,10 +601,12 @@ Producer задает labels как translation keys. Request-generator возв
 }
 ```
 
-Текстовые поля cropper producer задает translation keys; в response они уже
-локализованы. `viewport.shape` принимает только `circle`, `rounded` или
-`rectangle`; `viewport.aspect_ratio` должен быть положительным. Output требует
-положительные `width` и `height`, непустой `mime_type` и `quality` от `0` до
+Producer задает `title`, `hint`, `choose_label`, `cancel_label`,
+`confirm_label` и `close_label` как обязательные translation keys; в response
+они уже локализованы. `subtitle` optional. `viewport.shape` принимает только
+`circle`, `rounded` или `rectangle`; `viewport.aspect_ratio` должен быть
+положительным. Output требует положительные `width` и `height`, один из typed
+`mime_type` (`image/jpeg`, `image/png`, `image/webp`) и `quality` от `0` до
 `1`. Некорректный cropper generator отклоняет при запуске.
 
 ```go
@@ -625,7 +627,7 @@ Media: &renderer.FieldMediaConfig{
         Output: renderer.MediaCropperOutputConfig{
             Width:    512,
             Height:   512,
-            MIMEType: "image/jpeg",
+			MIMEType: renderer.MediaCropperOutputMIMETypeJPEG,
             Quality:  0.92,
         },
     },

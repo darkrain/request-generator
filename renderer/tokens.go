@@ -289,6 +289,14 @@ const (
 	MediaCropperViewportRectangle MediaCropperViewportShape = "rectangle"
 )
 
+type MediaCropperOutputMIMEType string
+
+const (
+	MediaCropperOutputMIMETypeJPEG MediaCropperOutputMIMEType = "image/jpeg"
+	MediaCropperOutputMIMETypePNG  MediaCropperOutputMIMEType = "image/png"
+	MediaCropperOutputMIMETypeWebP MediaCropperOutputMIMEType = "image/webp"
+)
+
 type DisplayComponentType string
 
 const (

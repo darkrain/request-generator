@@ -23,7 +23,7 @@ func validMediaCropper() *MediaCropperConfig {
 		Output: MediaCropperOutputConfig{
 			Width:    512,
 			Height:   512,
-			MIMEType: "image/jpeg",
+			MIMEType: MediaCropperOutputMIMETypeJPEG,
 			Quality:  0.92,
 		},
 	}
@@ -39,7 +39,9 @@ func TestMediaCropperConfigValidate(t *testing.T) {
 		{name: "unsupported shape", mutate: func(config *MediaCropperConfig) { config.Viewport.Shape = "oval" }, err: `renderer.MediaCropperConfig: unsupported viewport shape "oval"`},
 		{name: "nonpositive aspect ratio", mutate: func(config *MediaCropperConfig) { config.Viewport.AspectRatio = 0 }, err: "renderer.MediaCropperConfig: viewport aspect ratio must be positive"},
 		{name: "nonpositive dimensions", mutate: func(config *MediaCropperConfig) { config.Output.Width = 0 }, err: "renderer.MediaCropperConfig: output dimensions must be positive"},
-		{name: "missing mime type", mutate: func(config *MediaCropperConfig) { config.Output.MIMEType = " " }, err: "renderer.MediaCropperConfig: output mime type is required"},
+		{name: "missing title", mutate: func(config *MediaCropperConfig) { config.Title = " " }, err: "renderer.MediaCropperConfig: title is required"},
+		{name: "missing confirm label", mutate: func(config *MediaCropperConfig) { config.ConfirmLabel = "" }, err: "renderer.MediaCropperConfig: confirm label is required"},
+		{name: "unsupported mime type", mutate: func(config *MediaCropperConfig) { config.Output.MIMEType = "image/avif" }, err: `renderer.MediaCropperConfig: unsupported output mime type "image/avif"`},
 		{name: "invalid quality", mutate: func(config *MediaCropperConfig) { config.Output.Quality = 1.01 }, err: "renderer.MediaCropperConfig: output quality must be between 0 and 1"},
 	}
 
