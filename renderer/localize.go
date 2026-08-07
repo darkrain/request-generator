@@ -105,6 +105,10 @@ func (localizer textLocalizer) localizeFilterGroups(groups []FilterGroup) {
 	for i := range groups {
 		groups[i].Label = localizer.localizeRendererText(groups[i].Label, groups[i].LabelKey)
 		groups[i].LabelKey = ""
+		for j := range groups[i].Sections {
+			groups[i].Sections[j].Label = localizer.localizeRendererText(groups[i].Sections[j].Label, groups[i].Sections[j].LabelKey)
+			groups[i].Sections[j].LabelKey = ""
+		}
 	}
 }
 

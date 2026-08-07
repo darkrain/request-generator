@@ -197,6 +197,11 @@ func filterFields(filters *Filters) map[string]struct{} {
 		for _, field := range group.Fields {
 			declared[field] = struct{}{}
 		}
+		for _, section := range group.Sections {
+			for _, field := range section.Fields {
+				declared[field] = struct{}{}
+			}
+		}
 	}
 	return declared
 }
@@ -266,24 +271,73 @@ func validateFilterGroups(scope string, filters *Filters) error {
 		if !group.Placement.Valid() {
 			return fmt.Errorf("renderer.Universal: %s filter group %q has invalid placement %q", scope, group.ID, group.Placement)
 		}
+		if err := validateFilterGroupContent(scope, group, fieldOwners); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateFilterGroupContent(scope string, group FilterGroup, fieldOwners map[string]string) error {
+	if !group.Presentation.Valid() {
+		return fmt.Errorf("renderer.Universal: %s filter group %q has invalid presentation %q", scope, group.ID, group.Presentation)
+	}
+	if group.Presentation == "" {
+		if len(group.Sections) != 0 {
+			return fmt.Errorf("renderer.Universal: %s filter group %q sections require a presentation", scope, group.ID)
+		}
 		if len(group.Fields) == 0 {
 			return fmt.Errorf("renderer.Universal: %s filter group %q must contain at least one field", scope, group.ID)
 		}
-		fields := make(map[string]struct{}, len(group.Fields))
 		for _, field := range group.Fields {
-			if field == "" {
-				return fmt.Errorf("renderer.Universal: %s filter group %q contains an empty field", scope, group.ID)
+			if err := claimFilterGroupField(scope, group.ID, "", field, fieldOwners); err != nil {
+				return err
 			}
-			if _, exists := fields[field]; exists {
-				return fmt.Errorf("renderer.Universal: %s filter group %q contains duplicate field %q", scope, group.ID, field)
+		}
+		return nil
+	}
+	if len(group.Fields) != 0 {
+		return fmt.Errorf("renderer.Universal: %s filter group %q with presentation %q must use sections instead of fields", scope, group.ID, group.Presentation)
+	}
+	if len(group.Sections) == 0 {
+		return fmt.Errorf("renderer.Universal: %s filter group %q with presentation %q must contain at least one section", scope, group.ID, group.Presentation)
+	}
+	sectionIDs := make(map[string]struct{}, len(group.Sections))
+	for _, section := range group.Sections {
+		if section.ID == "" {
+			return fmt.Errorf("renderer.Universal: %s filter group %q section id is required", scope, group.ID)
+		}
+		if _, exists := sectionIDs[section.ID]; exists {
+			return fmt.Errorf("renderer.Universal: %s filter group %q section %q is duplicated", scope, group.ID, section.ID)
+		}
+		sectionIDs[section.ID] = struct{}{}
+		if section.Label == "" && section.LabelKey == "" {
+			return fmt.Errorf("renderer.Universal: %s filter group %q section %q label is required", scope, group.ID, section.ID)
+		}
+		if len(section.Fields) == 0 {
+			return fmt.Errorf("renderer.Universal: %s filter group %q section %q must contain at least one field", scope, group.ID, section.ID)
+		}
+		for _, field := range section.Fields {
+			if err := claimFilterGroupField(scope, group.ID, section.ID, field, fieldOwners); err != nil {
+				return err
 			}
-			if owner, exists := fieldOwners[field]; exists {
-				return fmt.Errorf("renderer.Universal: %s filter field %q is declared in both %s and group %q", scope, field, owner, group.ID)
-			}
-			fields[field] = struct{}{}
-			fieldOwners[field] = fmt.Sprintf("group %q", group.ID)
 		}
 	}
+	return nil
+}
+
+func claimFilterGroupField(scope, groupID, sectionID, field string, fieldOwners map[string]string) error {
+	owner := fmt.Sprintf("group %q", groupID)
+	if sectionID != "" {
+		owner = fmt.Sprintf("group %q section %q", groupID, sectionID)
+	}
+	if field == "" {
+		return fmt.Errorf("renderer.Universal: %s %s contains an empty field", scope, owner)
+	}
+	if previous, exists := fieldOwners[field]; exists {
+		return fmt.Errorf("renderer.Universal: %s filter field %q is declared in both %s and %s", scope, field, previous, owner)
+	}
+	fieldOwners[field] = owner
 	return nil
 }
 
@@ -370,14 +424,34 @@ func (placement FilterGroupPlacement) Valid() bool {
 	}
 }
 
+type FilterGroupPresentation string
+
+const (
+	FilterGroupPresentationTabs FilterGroupPresentation = "tabs"
+)
+
+func (presentation FilterGroupPresentation) Valid() bool {
+	return presentation == "" || presentation == FilterGroupPresentationTabs
+}
+
 // FilterGroup describes one named filter control and the fields it owns.
 // Placement determines the typed level in which the control is rendered.
 type FilterGroup struct {
-	ID        string               `json:"id"`
-	Label     string               `json:"label,omitempty"`
-	LabelKey  string               `json:"label_key,omitempty"`
-	Placement FilterGroupPlacement `json:"placement"`
-	Fields    []string             `json:"fields"`
+	ID           string                  `json:"id"`
+	Label        string                  `json:"label,omitempty"`
+	LabelKey     string                  `json:"label_key,omitempty"`
+	Placement    FilterGroupPlacement    `json:"placement"`
+	Presentation FilterGroupPresentation `json:"presentation,omitempty"`
+	Fields       []string                `json:"fields,omitempty"`
+	Sections     []FilterGroupSection    `json:"sections,omitempty"`
+}
+
+// FilterGroupSection describes an ordered typed section inside a presented group.
+type FilterGroupSection struct {
+	ID       string   `json:"id"`
+	Label    string   `json:"label,omitempty"`
+	LabelKey string   `json:"label_key,omitempty"`
+	Fields   []string `json:"fields"`
 }
 
 type FilterRangePresets struct {

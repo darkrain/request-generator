@@ -24,6 +24,7 @@ func TestLocalizeRenderer_LocalizesPublicTextOnly(t *testing.T) {
 			"filter.cancel":      "Отмена",
 			"filter.close":       "Закрыть",
 			"filter.price":       "Цена",
+			"filter.incall":      "Инколл",
 			"summary.title":      "Результаты",
 			"badge.verified":     "Проверен",
 			"action.open":        "Открыть",
@@ -60,7 +61,8 @@ func TestLocalizeRenderer_LocalizesPublicTextOnly(t *testing.T) {
 			Filters: &renderer.Filters{PillRows: [][]renderer.FilterPill{{
 				{Label: "All", LabelKey: "pill.all", Key: "status", Val: "all"},
 			}}, Groups: []renderer.FilterGroup{{
-				ID: "price", Label: "Price", LabelKey: "filter.price", Placement: renderer.FilterGroupPlacementPrimary, Fields: []string{"price"},
+				ID: "price", Label: "Price", LabelKey: "filter.price", Placement: renderer.FilterGroupPlacementPrimary, Presentation: renderer.FilterGroupPresentationTabs,
+				Sections: []renderer.FilterGroupSection{{ID: "incall", Label: "Incall", LabelKey: "filter.incall", Fields: []string{"price"}}},
 			}}, Text: &renderer.FilterText{
 				SearchPlaceholder: "filter.search",
 				ResetLabel:        "filter.reset",
@@ -147,6 +149,8 @@ func TestLocalizeRenderer_LocalizesPublicTextOnly(t *testing.T) {
 	require.Equal(t, "Закрыть", localized.List.Filters.Text.CloseLabel)
 	require.Equal(t, "Цена", localized.List.Filters.Groups[0].Label)
 	require.Empty(t, localized.List.Filters.Groups[0].LabelKey)
+	require.Equal(t, "Инколл", localized.List.Filters.Groups[0].Sections[0].Label)
+	require.Empty(t, localized.List.Filters.Groups[0].Sections[0].LabelKey)
 	require.Equal(t, "Проверен", localized.List.CardSchema.Badges[0].Label)
 	require.Empty(t, localized.List.CardSchema.Badges[0].LabelKey)
 	action := localized.List.CardSchema.Actions[0]
