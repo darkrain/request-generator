@@ -412,6 +412,7 @@ Typed field metadata нужна для одиночных полей, где б�
 | `presentation.renderer` | Renderer/component key, например `avatar`, `universal.display`, `universal.section`. |
 | `presentation.variant` | Вариант компонента внутри renderer. |
 | `presentation.style` | Optional style token, если renderer поддерживает несколько визуальных стилей. |
+| `presentation.icon` | Стабильный ключ иконки из icon registry. Не локализуется. |
 | `presentation.size` | Media size token: `thumb`, `card`, `hero`. |
 | `presentation.ratio` | Media ratio token: `square`, `portrait`, `landscape`, `wide`. |
 | `presentation.prefix`, `presentation.suffix` | Локализуемый текст до или после значения. |
