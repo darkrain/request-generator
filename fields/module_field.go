@@ -121,12 +121,16 @@ type ModuleField struct {
 	Convert              func(c *gin.Context, value interface{}) (interface{}, error) `json:"-"`
 	ResultValueConverter func(value interface{}) interface{}                          `json:"-"`
 	Translatable         bool                                                         `json:"-"`
-	FieldName            string                                                       `json:"-"`
-	FilterCondition      func(c *gin.Context) bool                                    `json:"-"`
-	Roles                []string                                                     `json:"roles,omitempty"`
-	Section              string                                                       `json:"section,omitempty"`
-	RoleSection          map[string]string                                            `json:"-"`
-	RoleFormType         map[string]ModuleFieldFormType                               `json:"-"`
+	// Group and Order are producer-only inputs used to build typed renderer
+	// composition. They are never serialized as field metadata.
+	Group           string                         `json:"-"`
+	Order           int                            `json:"-"`
+	FieldName       string                         `json:"-"`
+	FilterCondition func(c *gin.Context) bool      `json:"-"`
+	Roles           []string                       `json:"roles,omitempty"`
+	Section         string                         `json:"section,omitempty"`
+	RoleSection     map[string]string              `json:"-"`
+	RoleFormType    map[string]ModuleFieldFormType `json:"-"`
 }
 
 // ColumnName returns the database column name from the Jet column.

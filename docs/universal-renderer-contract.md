@@ -431,6 +431,7 @@ Typed field metadata нужна для одиночных полей, где б�
 |---|---|
 | `chip_select` | Множественный выбор через chips. Используется с `form_type: multiselect`. |
 | `primary_radio` | Выбор одного основного варианта. Используется со scalar `form_type`, например `select`. |
+| `badge` | Статус или enum с tone, в том числе `presentation.tone_by_value`. |
 
 Каждый option может содержать `icon`. Значение и label остаются стандартными:
 
