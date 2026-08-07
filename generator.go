@@ -382,16 +382,35 @@ func validateListFilterAvailability(page *renderer.ListPage, filters map[string]
 		}
 	}
 	for _, group := range page.Filters.Groups {
-		for _, field := range group.Fields {
+		if err := validateFilterGroupAvailability(group, filters); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateFilterGroupAvailability(group renderer.FilterGroup, filters map[string]fields.ModuleFilterField) error {
+	for _, field := range group.Fields {
+		if _, ok := filters[field]; !ok {
+			return fmt.Errorf("renderer filter group %q field %q is not available for the current request", group.ID, field)
+		}
+	}
+	for _, section := range group.Sections {
+		for _, field := range section.Fields {
 			if _, ok := filters[field]; !ok {
-				return fmt.Errorf("renderer filter group %q field %q is not available for the current request", group.ID, field)
+				return fmt.Errorf("renderer filter group %q section %q field %q is not available for the current request", group.ID, section.ID, field)
 			}
 		}
-		for _, section := range group.Sections {
-			for _, field := range section.Fields {
-				if _, ok := filters[field]; !ok {
-					return fmt.Errorf("renderer filter group %q section %q field %q is not available for the current request", group.ID, section.ID, field)
-				}
+	}
+	for _, item := range group.Items {
+		if item.Field != "" {
+			if _, ok := filters[item.Field]; !ok {
+				return fmt.Errorf("renderer filter group %q field %q is not available for the current request", group.ID, item.Field)
+			}
+		}
+		if item.Group != nil {
+			if err := validateFilterGroupAvailability(*item.Group, filters); err != nil {
+				return err
 			}
 		}
 	}
