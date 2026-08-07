@@ -29,7 +29,6 @@ type ConfigNavigationEntry struct {
 	Order  int                    `json:"order,omitempty"`
 	Group  string                 `json:"group,omitempty"`
 	Query  map[string]interface{} `json:"query,omitempty"`
-	Data   map[string]interface{} `json:"data,omitempty"`
 }
 
 type NavigationPageTarget struct {
@@ -39,7 +38,6 @@ type NavigationPageTarget struct {
 	Renderer *renderer.Identity     `json:"renderer,omitempty"`
 	PageType renderer.PageType      `json:"page_type,omitempty"`
 	Query    *RouteQuery            `json:"query,omitempty"`
-	Data     map[string]interface{} `json:"data,omitempty"`
 	Children map[string]RouteConfig `json:"children,omitempty"`
 }
 
@@ -61,7 +59,6 @@ type RouteConfig struct {
 	Renderer  *renderer.Identity     `json:"renderer,omitempty"`
 	PageType  renderer.PageType      `json:"page_type,omitempty"`
 	Query     *RouteQuery            `json:"query,omitempty"`
-	Data      map[string]interface{} `json:"data,omitempty"`
 	Children  map[string]RouteConfig `json:"children,omitempty"`
 }
 
@@ -214,7 +211,6 @@ func (generator *Generator) buildNavigation(c *gin.Context, role string, lang lo
 				target.Renderer = route.Renderer
 				target.PageType = route.PageType
 				target.Query = route.Query
-				target.Data = route.Data
 				target.Children = route.Children
 				if target.Query != nil && entry.Query != nil {
 					target.Query.Params = entry.Query
@@ -230,7 +226,6 @@ func (generator *Generator) buildNavigation(c *gin.Context, role string, lang lo
 				Order:  entry.Order,
 				Target: target,
 				Query:  entry.Query,
-				Data:   entry.Data,
 			})
 		}
 	}
@@ -378,11 +373,6 @@ func actionWidget(action actions.ModuleAction) *actions.WidgetConfig {
 func (generator *Generator) buildListRoute(module *BaseModule, render renderer.Universal, action actions.ListModuleAction, role string) RouteConfig {
 	routePath := module.Path + "/" + module.Name
 
-	viewAdapter := "list_table"
-	if adapter, exists := generator.ViewAdapters["list"]; exists {
-		viewAdapter = adapter
-	}
-
 	route := RouteConfig{
 		Title:     action.Label,
 		MenuTitle: action.Label,
@@ -392,22 +382,14 @@ func (generator *Generator) buildListRoute(module *BaseModule, render renderer.U
 			Url:    apiQueryURL(routePath),
 			Method: "GET",
 		},
-		Data: map[string]interface{}{
-			"view_adapter": viewAdapter,
-		},
 	}
 
-	route.Data["actions"] = generator.buildRouteActions(module, role)
 	route.Children = generator.buildRouteChildren(module, render, role)
 
 	return route
 }
 
 func (generator *Generator) buildViewRoute(module *BaseModule, render renderer.Universal, action actions.ViewModuleAction) RouteConfig {
-	viewAdapter := "view"
-	if adapter, exists := generator.ViewAdapters["view"]; exists {
-		viewAdapter = adapter
-	}
 	pageType := viewActionPageType(action)
 
 	return RouteConfig{
@@ -417,9 +399,6 @@ func (generator *Generator) buildViewRoute(module *BaseModule, render renderer.U
 		Query: &RouteQuery{
 			Url:    apiQueryURL(module.Path + "/" + module.Name + "/view/:bykey/:value"),
 			Method: "GET",
-		},
-		Data: map[string]interface{}{
-			"view_adapter": viewAdapter,
 		},
 	}
 }
@@ -463,11 +442,6 @@ func viewRoutePageType(render renderer.Universal, pageType renderer.PageType) re
 }
 
 func (generator *Generator) buildAddRoute(module *BaseModule, render renderer.Universal, action actions.AddModuleAction) RouteConfig {
-	viewAdapter := "add"
-	if adapter, exists := generator.ViewAdapters["add"]; exists {
-		viewAdapter = adapter
-	}
-
 	return RouteConfig{
 		Title:    action.Label,
 		Renderer: render.FormIdentity(),
@@ -476,18 +450,10 @@ func (generator *Generator) buildAddRoute(module *BaseModule, render renderer.Un
 			Url:    apiQueryURL(module.Path + "/" + module.Name),
 			Method: "PUT",
 		},
-		Data: map[string]interface{}{
-			"view_adapter": viewAdapter,
-		},
 	}
 }
 
 func (generator *Generator) buildDefrecRoute(module *BaseModule, render renderer.Universal, action actions.DefrecModuleAction) RouteConfig {
-	viewAdapter := "add"
-	if adapter, exists := generator.ViewAdapters["add"]; exists {
-		viewAdapter = adapter
-	}
-
 	return RouteConfig{
 		Title:    action.Label,
 		Renderer: render.FormIdentity(),
@@ -495,9 +461,6 @@ func (generator *Generator) buildDefrecRoute(module *BaseModule, render renderer
 		Query: &RouteQuery{
 			Url:    apiQueryURL(module.Path + "/" + module.Name + "/defrec/"),
 			Method: "GET",
-		},
-		Data: map[string]interface{}{
-			"view_adapter": viewAdapter,
 		},
 	}
 }
@@ -507,41 +470,6 @@ func apiQueryURL(path string) string {
 		return path
 	}
 	return "/api" + path
-}
-
-// buildRouteActions формирует actions для маршрута
-func (generator *Generator) buildRouteActions(module *BaseModule, role string) []map[string]interface{} {
-	var result []map[string]interface{}
-
-	for _, entry := range module.Navigation {
-		for _, action := range module.Actions {
-			if string(action.Action()) != entry.ActionName {
-				continue
-			}
-			if !hasPermission(action, role) {
-				continue
-			}
-
-			actionMap := map[string]interface{}{
-				"title": entry.Title,
-				"type":  entry.ActionName,
-				"icon":  entry.Icon,
-				"show":  entry.Show,
-			}
-
-			if entry.Query != nil {
-				actionMap["query"] = entry.Query
-			}
-			if entry.Data != nil {
-				actionMap["data"] = entry.Data
-			}
-
-			result = append(result, actionMap)
-			break
-		}
-	}
-
-	return result
 }
 
 // buildRouteChildren формирует children маршруты (view, edit, add)
@@ -585,11 +513,6 @@ func (generator *Generator) buildViewChild(module *BaseModule, render renderer.U
 		return RouteConfig{}, false
 	}
 
-	viewAdapter := "view"
-	if adapter, exists := generator.ViewAdapters["view"]; exists {
-		viewAdapter = adapter
-	}
-
 	return RouteConfig{
 		Title:    a.Label,
 		Renderer: viewRouteIdentity(render, viewActionPageType(a)),
@@ -598,20 +521,12 @@ func (generator *Generator) buildViewChild(module *BaseModule, render renderer.U
 			Url:    apiQueryURL(module.Path + "/" + module.Name + "/view/:bykey/:value"),
 			Method: "GET",
 		},
-		Data: map[string]interface{}{
-			"view_adapter": viewAdapter,
-		},
 	}, true
 }
 
 func (generator *Generator) buildUpdateChild(module *BaseModule, render renderer.Universal, a actions.UpdateModuleAction, role string) (RouteConfig, bool) {
 	if !hasPermission(a, role) {
 		return RouteConfig{}, false
-	}
-
-	editAdapter := "edit"
-	if adapter, exists := generator.ViewAdapters["edit"]; exists {
-		editAdapter = adapter
 	}
 
 	return RouteConfig{
@@ -622,20 +537,12 @@ func (generator *Generator) buildUpdateChild(module *BaseModule, render renderer
 			Url:    apiQueryURL(module.Path + "/" + module.Name + "/:bykey/:value"),
 			Method: "POST",
 		},
-		Data: map[string]interface{}{
-			"view_adapter": editAdapter,
-		},
 	}, true
 }
 
 func (generator *Generator) buildAddChild(module *BaseModule, render renderer.Universal, a actions.AddModuleAction, role string) (RouteConfig, bool) {
 	if !hasPermission(a, role) {
 		return RouteConfig{}, false
-	}
-
-	addAdapter := "add"
-	if adapter, exists := generator.ViewAdapters["add"]; exists {
-		addAdapter = adapter
 	}
 
 	return RouteConfig{
@@ -645,9 +552,6 @@ func (generator *Generator) buildAddChild(module *BaseModule, render renderer.Un
 		Query: &RouteQuery{
 			Url:    apiQueryURL(module.Path + "/" + module.Name),
 			Method: "PUT",
-		},
-		Data: map[string]interface{}{
-			"view_adapter": addAdapter,
 		},
 	}, true
 }

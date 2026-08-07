@@ -22,7 +22,6 @@ type NavigationEntry struct {
 	Target     NavigationTarget       `json:"target,omitempty"`
 	Roles      []actions.Role         `json:"roles,omitempty"`
 	Query      map[string]interface{} `json:"query,omitempty"`
-	Data       map[string]interface{} `json:"data,omitempty"`
 }
 
 type NavigationTarget struct {
