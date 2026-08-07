@@ -177,19 +177,35 @@ func validateListPage(scope string, page *ListPage) error {
 	if err := validateFilterRangePresets(scope, page.Filters); err != nil {
 		return err
 	}
+	if err := validateFilterGroups(scope, page.Filters); err != nil {
+		return err
+	}
 	return nil
+}
+
+func filterFields(filters *Filters) map[string]struct{} {
+	declared := make(map[string]struct{})
+	if filters == nil {
+		return declared
+	}
+	for _, placement := range [][]string{filters.Primary, filters.Secondary, filters.More, filters.Nested} {
+		for _, field := range placement {
+			declared[field] = struct{}{}
+		}
+	}
+	for _, group := range filters.Groups {
+		for _, field := range group.Fields {
+			declared[field] = struct{}{}
+		}
+	}
+	return declared
 }
 
 func validateFilterRangePresets(scope string, filters *Filters) error {
 	if filters == nil || len(filters.RangePresets) == 0 {
 		return nil
 	}
-	declared := make(map[string]struct{}, len(filters.Primary)+len(filters.Secondary)+len(filters.More)+len(filters.Nested))
-	for _, fields := range [][]string{filters.Primary, filters.Secondary, filters.More, filters.Nested} {
-		for _, field := range fields {
-			declared[field] = struct{}{}
-		}
-	}
+	declared := filterFields(filters)
 	seen := make(map[string]struct{}, len(filters.RangePresets))
 	for _, group := range filters.RangePresets {
 		if group.Field == "" {
@@ -209,6 +225,63 @@ func validateFilterRangePresets(scope string, filters *Filters) error {
 			if preset.Min > preset.Max {
 				return fmt.Errorf("renderer.Universal: %s range preset for field %q has min greater than max", scope, group.Field)
 			}
+		}
+	}
+	return nil
+}
+
+func validateFilterGroups(scope string, filters *Filters) error {
+	if filters == nil {
+		return nil
+	}
+	fieldOwners := make(map[string]string)
+	for _, placement := range []struct {
+		name   string
+		fields []string
+	}{
+		{name: "primary", fields: filters.Primary},
+		{name: "secondary", fields: filters.Secondary},
+		{name: "more", fields: filters.More},
+		{name: "nested", fields: filters.Nested},
+	} {
+		for _, field := range placement.fields {
+			if owner, exists := fieldOwners[field]; exists {
+				return fmt.Errorf("renderer.Universal: %s filter field %q is declared in both %s and %s", scope, field, owner, placement.name)
+			}
+			fieldOwners[field] = placement.name
+		}
+	}
+	ids := make(map[string]struct{}, len(filters.Groups))
+	for _, group := range filters.Groups {
+		if group.ID == "" {
+			return fmt.Errorf("renderer.Universal: %s filter group id is required", scope)
+		}
+		if _, exists := ids[group.ID]; exists {
+			return fmt.Errorf("renderer.Universal: %s filter group %q is duplicated", scope, group.ID)
+		}
+		ids[group.ID] = struct{}{}
+		if group.Label == "" && group.LabelKey == "" {
+			return fmt.Errorf("renderer.Universal: %s filter group %q label is required", scope, group.ID)
+		}
+		if !group.Placement.Valid() {
+			return fmt.Errorf("renderer.Universal: %s filter group %q has invalid placement %q", scope, group.ID, group.Placement)
+		}
+		if len(group.Fields) == 0 {
+			return fmt.Errorf("renderer.Universal: %s filter group %q must contain at least one field", scope, group.ID)
+		}
+		fields := make(map[string]struct{}, len(group.Fields))
+		for _, field := range group.Fields {
+			if field == "" {
+				return fmt.Errorf("renderer.Universal: %s filter group %q contains an empty field", scope, group.ID)
+			}
+			if _, exists := fields[field]; exists {
+				return fmt.Errorf("renderer.Universal: %s filter group %q contains duplicate field %q", scope, group.ID, field)
+			}
+			if owner, exists := fieldOwners[field]; exists {
+				return fmt.Errorf("renderer.Universal: %s filter field %q is declared in both %s and group %q", scope, field, owner, group.ID)
+			}
+			fields[field] = struct{}{}
+			fieldOwners[field] = fmt.Sprintf("group %q", group.ID)
 		}
 	}
 	return nil
@@ -271,11 +344,40 @@ type Filters struct {
 	Secondary         []string             `json:"secondary,omitempty"`
 	More              []string             `json:"more,omitempty"`
 	Nested            []string             `json:"nested,omitempty"`
+	Groups            []FilterGroup        `json:"groups,omitempty"`
 	PillRows          [][]FilterPill       `json:"pill_rows,omitempty"`
 	SecondaryPillRows [][]FilterPill       `json:"secondary_pill_rows,omitempty"`
 	Reset             *FilterReset         `json:"reset,omitempty"`
 	Text              *FilterText          `json:"text,omitempty"`
 	RangePresets      []FilterRangePresets `json:"range_presets,omitempty"`
+}
+
+type FilterGroupPlacement string
+
+const (
+	FilterGroupPlacementPrimary   FilterGroupPlacement = "primary"
+	FilterGroupPlacementSecondary FilterGroupPlacement = "secondary"
+	FilterGroupPlacementMore      FilterGroupPlacement = "more"
+	FilterGroupPlacementNested    FilterGroupPlacement = "nested"
+)
+
+func (placement FilterGroupPlacement) Valid() bool {
+	switch placement {
+	case FilterGroupPlacementPrimary, FilterGroupPlacementSecondary, FilterGroupPlacementMore, FilterGroupPlacementNested:
+		return true
+	default:
+		return false
+	}
+}
+
+// FilterGroup describes one named filter control and the fields it owns.
+// Placement determines the typed level in which the control is rendered.
+type FilterGroup struct {
+	ID        string               `json:"id"`
+	Label     string               `json:"label,omitempty"`
+	LabelKey  string               `json:"label_key,omitempty"`
+	Placement FilterGroupPlacement `json:"placement"`
+	Fields    []string             `json:"fields"`
 }
 
 type FilterRangePresets struct {

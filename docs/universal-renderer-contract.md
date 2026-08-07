@@ -779,6 +779,7 @@ Filters являются server-driven:
 
 - если фильтр есть в `filters[field]`, producer должен применять его server-side;
 - расположение и порядок фильтров определяет `list_page.filters` через `primary`, `secondary`, `more` и `nested`;
+- именованный control, объединяющий несколько полей, задаётся через `list_page.filters.groups`: `id`, локализуемый `label`/`label_key`, `placement` и `fields`; это позволяет renderer отобразить, например, единый `Price` или `Options`, не выводя дочерние поля отдельными dropdown;
 - виртуальные фильтры, не связанные с `ModuleField`, задаются typed `ListModuleAction.VirtualFilters`;
 - range presets задаются в `list_page.filters.range_presets` и содержат `field`, локализуемый `label`, `min`, `max`;
 - selected values передаются в query как `filter[field]=value`;
@@ -789,6 +790,29 @@ Filters являются server-driven:
 Sort format: `field:asc` или `field:desc`.
 
 Pagination: `count`, `size`, `page`.
+
+Пример named controls:
+
+```json
+{
+  "groups": [
+    {
+      "id": "price",
+      "label": "Price",
+      "placement": "primary",
+      "fields": ["incall_1h_price", "outcall_1h_price"]
+    },
+    {
+      "id": "options",
+      "label": "Options",
+      "placement": "primary",
+      "fields": ["smoker", "piercing", "tattoo"]
+    }
+  ]
+}
+```
+
+Все поля группы обязаны присутствовать в top-level `filters` при `addFilters=true`; generator проверяет это до сериализации ответа.
 
 ## Card Schema
 

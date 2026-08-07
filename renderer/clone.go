@@ -139,12 +139,25 @@ func cloneFilters(v *Filters) *Filters {
 	cp.Secondary = cloneSlice(v.Secondary)
 	cp.More = cloneSlice(v.More)
 	cp.Nested = cloneSlice(v.Nested)
+	cp.Groups = cloneFilterGroups(v.Groups)
 	cp.PillRows = cloneMapRows(v.PillRows)
 	cp.SecondaryPillRows = cloneMapRows(v.SecondaryPillRows)
 	cp.Reset = cloneFilterReset(v.Reset)
 	cp.Text = clonePtr(v.Text)
 	cp.RangePresets = cloneFilterRangePresets(v.RangePresets)
 	return &cp
+}
+
+func cloneFilterGroups(values []FilterGroup) []FilterGroup {
+	if values == nil {
+		return nil
+	}
+	out := make([]FilterGroup, len(values))
+	for i, value := range values {
+		out[i] = value
+		out[i].Fields = cloneSlice(value.Fields)
+	}
+	return out
 }
 
 func cloneFilterRangePresets(values []FilterRangePresets) []FilterRangePresets {
