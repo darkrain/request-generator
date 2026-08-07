@@ -278,7 +278,7 @@ func TestConfigEndpoint_NavigationStructure(t *testing.T) {
 		assert.NotEmpty(t, element.Path, "Page navigation item path should not be empty")
 		assert.NotEmpty(t, element.Target.Query.Url, "Page navigation target query URL should not be empty")
 		assert.NotEmpty(t, element.Target.Query.Method, "Page navigation target query method should not be empty")
-		assert.NotNil(t, element.Target.Data, "Page navigation target data should not be nil")
+		assert.Nil(t, element.Target.Data, "Page navigation target must not emit legacy adapter data")
 	}
 }
 
@@ -316,5 +316,5 @@ func TestConfigEndpoint_PageTargetStructure(t *testing.T) {
 	assert.Equal(t, renderer.PageTypeList, usersEntry.Target.PageType)
 	assert.Equal(t, "/api/admin/users", usersEntry.Target.Query.Url)
 	assert.Equal(t, "GET", usersEntry.Target.Query.Method)
-	assert.NotNil(t, usersEntry.Target.Data, "Users page target data should not be nil")
+	assert.Nil(t, usersEntry.Target.Data, "Users page target must not emit legacy adapter data")
 }

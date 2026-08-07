@@ -40,7 +40,6 @@ type Generator struct {
 	translations         map[locale.Lang]map[string]string
 	EnableOpenAPI        bool
 	GroupTitles          map[string]string
-	ViewAdapters         map[string]string
 	IconMap              map[string]string
 	Realtime             RealtimeConfig
 	realtimeHub          *realtimeHub
