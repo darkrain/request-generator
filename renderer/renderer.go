@@ -1203,6 +1203,7 @@ type Action struct {
 	SavingLabel      string           `json:"saving_label,omitempty"`
 	SavedLabel       string           `json:"saved_label,omitempty"`
 	Icon             string           `json:"icon,omitempty"`
+	IconOnly         *bool            `json:"icon_only,omitempty"`
 	Variant          ActionVariant    `json:"variant,omitempty"`
 	Appearance       ActionAppearance `json:"appearance,omitempty"`
 	ActiveAppearance ActionAppearance `json:"active_appearance,omitempty"`
