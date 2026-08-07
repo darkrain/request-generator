@@ -29,7 +29,6 @@ type ConfigNavigationEntry struct {
 	Order  int                    `json:"order,omitempty"`
 	Group  string                 `json:"group,omitempty"`
 	Query  map[string]interface{} `json:"query,omitempty"`
-	Data   map[string]interface{} `json:"data,omitempty"`
 }
 
 type NavigationPageTarget struct {
@@ -39,7 +38,6 @@ type NavigationPageTarget struct {
 	Renderer *renderer.Identity     `json:"renderer,omitempty"`
 	PageType renderer.PageType      `json:"page_type,omitempty"`
 	Query    *RouteQuery            `json:"query,omitempty"`
-	Data     map[string]interface{} `json:"data,omitempty"`
 	Children map[string]RouteConfig `json:"children,omitempty"`
 }
 
@@ -61,7 +59,6 @@ type RouteConfig struct {
 	Renderer  *renderer.Identity     `json:"renderer,omitempty"`
 	PageType  renderer.PageType      `json:"page_type,omitempty"`
 	Query     *RouteQuery            `json:"query,omitempty"`
-	Data      map[string]interface{} `json:"data,omitempty"`
 	Children  map[string]RouteConfig `json:"children,omitempty"`
 }
 
@@ -214,7 +211,6 @@ func (generator *Generator) buildNavigation(c *gin.Context, role string, lang lo
 				target.Renderer = route.Renderer
 				target.PageType = route.PageType
 				target.Query = route.Query
-				target.Data = route.Data
 				target.Children = route.Children
 				if target.Query != nil && entry.Query != nil {
 					target.Query.Params = entry.Query
@@ -230,7 +226,6 @@ func (generator *Generator) buildNavigation(c *gin.Context, role string, lang lo
 				Order:  entry.Order,
 				Target: target,
 				Query:  entry.Query,
-				Data:   entry.Data,
 			})
 		}
 	}

@@ -1379,9 +1379,6 @@ type TranslationContext struct {
           "url": "/api/api/catalog",
           "method": "GET"
         },
-        "data": {
-          "view_adapter": "list_table"
-        },
         "children": {}
       },
       "title": "Catalog",

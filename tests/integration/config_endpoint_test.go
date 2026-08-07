@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 
 	"github.com/darkrain/request-generator"
@@ -278,7 +279,22 @@ func TestConfigEndpoint_NavigationStructure(t *testing.T) {
 		assert.NotEmpty(t, element.Path, "Page navigation item path should not be empty")
 		assert.NotEmpty(t, element.Target.Query.Url, "Page navigation target query URL should not be empty")
 		assert.NotEmpty(t, element.Target.Query.Method, "Page navigation target query method should not be empty")
-		assert.Nil(t, element.Target.Data, "Page navigation target must not emit legacy adapter data")
+		encoded, err := json.Marshal(element)
+		require.NoError(t, err)
+		assert.NotContains(t, string(encoded), `"data"`, "Navigation must not emit arbitrary legacy data")
+		assert.NotContains(t, string(encoded), "view_adapter", "Navigation must not emit legacy view adapters")
+	}
+}
+
+func TestNavigationContract_HasNoArbitraryDataField(t *testing.T) {
+	for _, value := range []interface{}{
+		module.NavigationEntry{},
+		module.ConfigNavigationEntry{},
+		module.NavigationPageTarget{},
+		module.RouteConfig{},
+	} {
+		_, exists := reflect.TypeOf(value).FieldByName("Data")
+		assert.False(t, exists, "%T must not expose an arbitrary Data field", value)
 	}
 }
 
@@ -316,5 +332,8 @@ func TestConfigEndpoint_PageTargetStructure(t *testing.T) {
 	assert.Equal(t, renderer.PageTypeList, usersEntry.Target.PageType)
 	assert.Equal(t, "/api/admin/users", usersEntry.Target.Query.Url)
 	assert.Equal(t, "GET", usersEntry.Target.Query.Method)
-	assert.Nil(t, usersEntry.Target.Data, "Users page target must not emit legacy adapter data")
+	encoded, err := json.Marshal(usersEntry)
+	require.NoError(t, err)
+	assert.NotContains(t, string(encoded), `"data"`, "Users page target must not emit arbitrary legacy data")
+	assert.NotContains(t, string(encoded), "view_adapter", "Users page target must not emit legacy view adapters")
 }
