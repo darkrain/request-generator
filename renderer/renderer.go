@@ -234,6 +234,23 @@ func validateFilterGroups(scope string, filters *Filters) error {
 	if filters == nil {
 		return nil
 	}
+	fieldOwners := make(map[string]string)
+	for _, placement := range []struct {
+		name   string
+		fields []string
+	}{
+		{name: "primary", fields: filters.Primary},
+		{name: "secondary", fields: filters.Secondary},
+		{name: "more", fields: filters.More},
+		{name: "nested", fields: filters.Nested},
+	} {
+		for _, field := range placement.fields {
+			if owner, exists := fieldOwners[field]; exists {
+				return fmt.Errorf("renderer.Universal: %s filter field %q is declared in both %s and %s", scope, field, owner, placement.name)
+			}
+			fieldOwners[field] = placement.name
+		}
+	}
 	ids := make(map[string]struct{}, len(filters.Groups))
 	for _, group := range filters.Groups {
 		if group.ID == "" {
@@ -260,7 +277,11 @@ func validateFilterGroups(scope string, filters *Filters) error {
 			if _, exists := fields[field]; exists {
 				return fmt.Errorf("renderer.Universal: %s filter group %q contains duplicate field %q", scope, group.ID, field)
 			}
+			if owner, exists := fieldOwners[field]; exists {
+				return fmt.Errorf("renderer.Universal: %s filter field %q is declared in both %s and group %q", scope, field, owner, group.ID)
+			}
 			fields[field] = struct{}{}
+			fieldOwners[field] = fmt.Sprintf("group %q", group.ID)
 		}
 	}
 	return nil

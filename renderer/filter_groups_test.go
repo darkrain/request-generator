@@ -34,4 +34,22 @@ func TestUniversalValidateFilterGroups(t *testing.T) {
 		err := (Universal{List: &ListPage{Filters: filters}}).Validate()
 		require.EqualError(t, err, `renderer.Universal: list page filter group "price" is duplicated`)
 	})
+
+	t.Run("field repeated in flat placement and group", func(t *testing.T) {
+		filters := &Filters{
+			Primary: []string{"price"},
+			Groups:  []FilterGroup{{ID: "price", Label: "Price", Placement: FilterGroupPlacementPrimary, Fields: []string{"price"}}},
+		}
+		err := (Universal{List: &ListPage{Filters: filters}}).Validate()
+		require.EqualError(t, err, `renderer.Universal: list page filter field "price" is declared in both primary and group "price"`)
+	})
+
+	t.Run("field repeated in two groups", func(t *testing.T) {
+		filters := &Filters{Groups: []FilterGroup{
+			{ID: "price", Label: "Price", Placement: FilterGroupPlacementPrimary, Fields: []string{"price"}},
+			{ID: "options", Label: "Options", Placement: FilterGroupPlacementPrimary, Fields: []string{"price"}},
+		}}
+		err := (Universal{List: &ListPage{Filters: filters}}).Validate()
+		require.EqualError(t, err, `renderer.Universal: list page filter field "price" is declared in both group "price" and group "options"`)
+	})
 }
