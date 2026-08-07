@@ -229,7 +229,10 @@ Render: renderer.Universal{
             Secondary:        []string{"created_at", "owner_id"},
             More:             []string{"rating", "tags"},
 			Groups: []renderer.FilterGroup{
-				{ID: "price", Label: "catalog.filters.price", Placement: renderer.FilterGroupPlacementPrimary, Fields: []string{"price", "discount_price"}},
+				{ID: "price", Label: "catalog.filters.price", Placement: renderer.FilterGroupPlacementPrimary, Presentation: renderer.FilterGroupPresentationTabs, Sections: []renderer.FilterGroupSection{
+					{ID: "regular", Label: "catalog.filters.regular", Fields: []string{"price"}},
+					{ID: "discount", Label: "catalog.filters.discount", Fields: []string{"discount_price"}},
+				}},
 			},
         },
         Grid: &renderer.Grid{Enabled: true, Mode: renderer.GridModeCards},

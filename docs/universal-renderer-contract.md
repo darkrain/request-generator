@@ -779,7 +779,8 @@ Filters являются server-driven:
 
 - если фильтр есть в `filters[field]`, producer должен применять его server-side;
 - расположение и порядок фильтров определяет `list_page.filters` через `primary`, `secondary`, `more` и `nested`;
-- именованный control, объединяющий несколько полей, задаётся через `list_page.filters.groups`: `id`, локализуемый `label`/`label_key`, `placement` и `fields`; это позволяет renderer отобразить, например, единый `Price` или `Options`, не выводя дочерние поля отдельными dropdown;
+- именованный control, объединяющий несколько полей, задаётся через `list_page.filters.groups`: `id`, локализуемый `label`/`label_key`, `placement` и `fields`; это позволяет renderer отобразить, например, единый `Options`, не выводя дочерние поля отдельными dropdown;
+- для control со сложным layout задаются typed `presentation` и `sections`. Например, `presentation: "tabs"` описывает порядок вкладок через section `id`, локализуемый заголовок и `fields`. В этом варианте поля задаются только внутри sections, а не в `group.fields`;
 - виртуальные фильтры, не связанные с `ModuleField`, задаются typed `ListModuleAction.VirtualFilters`;
 - range presets задаются в `list_page.filters.range_presets` и содержат `field`, локализуемый `label`, `min`, `max`;
 - selected values передаются в query как `filter[field]=value`;
@@ -800,7 +801,11 @@ Pagination: `count`, `size`, `page`.
       "id": "price",
       "label": "Price",
       "placement": "primary",
-      "fields": ["incall_1h_price", "outcall_1h_price"]
+      "presentation": "tabs",
+      "sections": [
+        {"id": "incall", "label": "Incall", "fields": ["incall_1h_price"]},
+        {"id": "outcall", "label": "Outcall", "fields": ["outcall_1h_price"]}
+      ]
     },
     {
       "id": "options",
@@ -812,7 +817,7 @@ Pagination: `count`, `size`, `page`.
 }
 ```
 
-Все поля группы обязаны присутствовать в top-level `filters` при `addFilters=true`; generator проверяет это до сериализации ответа.
+Все поля группы, включая section fields, обязаны присутствовать в top-level `filters` при `addFilters=true`; generator проверяет это до сериализации ответа. Поле принадлежит ровно одному flat placement либо одной группе: `group.fields` для generic group или одной section для group с presentation.
 
 ## Card Schema
 
