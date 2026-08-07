@@ -40,6 +40,7 @@ func TestTypedOptionRenderersPreserveIconsAndLocalizedLabels(t *testing.T) {
 				FormType: fields.ModuleFieldFormTypeSelect,
 				Presentation: &renderer.FieldPresentation{
 					Renderer:    renderer.RendererPrimaryRadio,
+					Icon:        "status",
 					Prefix:      "items.status.prefix",
 					Suffix:      "items.status.suffix",
 					Hint:        "items.status.hint",
@@ -162,6 +163,7 @@ func TestTypedOptionRenderersPreserveIconsAndLocalizedLabels(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &defrecResponse))
 	require.Equal(t, renderer.RendererPrimaryRadio, defrecResponse.Fields["status"].Presentation.Renderer)
+	require.Equal(t, "status", defrecResponse.Fields["status"].Presentation.Icon)
 	require.Equal(t, "Current:", defrecResponse.Fields["status"].Presentation.Prefix)
 	require.Equal(t, "state", defrecResponse.Fields["status"].Presentation.Suffix)
 	require.Equal(t, "Choose current state", defrecResponse.Fields["status"].Presentation.Hint)

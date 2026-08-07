@@ -386,6 +386,7 @@ type FieldPresentation struct {
 	Renderer    RendererKey      `json:"renderer,omitempty"`
 	Variant     string           `json:"variant,omitempty"`
 	Style       string           `json:"style,omitempty"`
+	Icon        string           `json:"icon,omitempty"`
 	Size        MediaSize        `json:"size,omitempty"`
 	Ratio       MediaRatio       `json:"ratio,omitempty"`
 	Prefix      string           `json:"prefix,omitempty"`
