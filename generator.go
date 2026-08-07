@@ -488,7 +488,8 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			size = action.Maxsize
 		}
 		isCSV := int64QueryParam(c, "csv", 0)
-		filters := generator.normalizeFilters(c, c.QueryMap("filter"), module, action, lang)
+		filter := generator.effectiveListFilters(c, module, action, lang)
+		filters := generator.normalizeFilters(c.QueryMap("filter"), filter, lang)
 		searchText := c.Query("search")
 		addFilters := c.Query("addFilters")
 		addHeads := c.Query("addHeads")
@@ -557,7 +558,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			module.Table,
 			module.PrimaryKey,
 			realFields,
-			module.Fields,
+			filter,
 			page,
 			size,
 			action.Search,
@@ -585,55 +586,6 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 					}
 				}
 			}
-		}
-
-		filter := make(map[string]fields.ModuleFilterField)
-		filterCols := action.Filter
-		if action.FilterFunc != nil {
-			filterCols = action.FilterFunc(c)
-		}
-		for _, realField := range module.Fields {
-			if realField.FilterCondition != nil && !realField.FilterCondition(c) {
-				continue
-			}
-			if containsColumn(filterCols, realField.Column) {
-				roleStr := string(actions.GetRoleFromContext(c))
-				options := generator.fieldOptions(c, realField, roleStr, lang)
-				filterField := fields.ModuleFilterField{
-					Column:        realField.Column,
-					Title:         generator.Translate(lang, realField.Title),
-					Type:          realField.Type,
-					FormType:      realField.FormType,
-					Example:       realField.Example,
-					AllLabel:      generator.Translate(lang, realField.AllLabel),
-					Options:       options,
-					OptionsSource: realField.OptionsSource,
-					Check:         realField.Check,
-					Convert:       realField.Convert,
-				}
-				filter[realField.ColumnName()] = filterField
-			}
-		}
-		for _, ef := range action.VirtualFilters {
-			if ef.FilterCondition != nil && !ef.FilterCondition(c) {
-				continue
-			}
-			key := ef.FieldName
-			if key == "" && ef.Column != nil {
-				key = ef.Column.Name()
-			}
-			if key == "" {
-				continue
-			}
-			translatedOpts := make([]fields.ModuleFieldOptions, len(ef.Options))
-			copy(translatedOpts, ef.Options)
-			for i := range translatedOpts {
-				translatedOpts[i].Label = generator.Translate(lang, translatedOpts[i].Label)
-			}
-			ef.Title = generator.Translate(lang, ef.Title)
-			ef.AllLabel = generator.Translate(lang, ef.AllLabel)
-			ef.Options = translatedOpts
-			filter[key] = ef
 		}
 
 		if len(results) == 0 {

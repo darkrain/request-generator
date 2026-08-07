@@ -288,7 +288,7 @@ func (db *DB) List(
 	table pg.Table,
 	primaryKey pg.Column,
 	moduleFields []fields.ModuleField,
-	allFields []fields.ModuleField,
+	filterRegistry map[string]fields.ModuleFilterField,
 	page int64,
 	size int64,
 	searchColumns []pg.Column,
@@ -362,14 +362,6 @@ func (db *DB) List(
 
 	// Filters
 	if len(filter) > 0 {
-		// Build lookup maps from allFields (all module fields, not just SELECT columns)
-		fieldTypeMap := make(map[string]fields.ModuleFieldType)
-		formTypeMap := make(map[string]fields.ModuleFieldFormType)
-		for _, f := range allFields {
-			fieldTypeMap[f.ColumnName()] = f.Type
-			formTypeMap[f.ColumnName()] = f.FormType
-		}
-
 		for key, value := range filter {
 			parts := strings.Split(key, ".")
 			colName := key
@@ -379,8 +371,17 @@ func (db *DB) List(
 				tblRef = parts[0]
 			}
 
-			ft := fieldTypeMap[colName]
-			fmt2 := formTypeMap[colName]
+			definition, ok := filterRegistry[key]
+			if !ok {
+				// Dotted relation filters retain the existing physical-key path.
+				definition, ok = filterRegistry[colName]
+			}
+			if !ok || definition.Column == nil {
+				continue
+			}
+			colName = definition.Column.Name()
+			ft := definition.Type
+			fmt2 := definition.FormType
 
 			// 1. Array-type columns → overlap operator (&&)
 			if ft == fields.ModuleFieldTypeArray {

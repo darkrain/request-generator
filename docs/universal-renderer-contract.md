@@ -784,6 +784,7 @@ Filters являются server-driven:
 - для ordered nested composition generic group использует `items`. Каждый item содержит ровно один `field` или вложенную typed `group`; вложенная группа наследует placement родителя и поэтому не задаёт собственный `placement`;
 - виртуальные фильтры, не связанные с `ModuleField`, задаются typed `ListModuleAction.VirtualFilters`;
 - range presets задаются в `list_page.filters.range_presets` и содержат `field`, локализуемый `label`, `min`, `max`;
+- numeric range controls используют локализованные `list_page.filters.text.range_min_label` и `range_max_label`;
 - selected values передаются в query как `filter[field]=value`;
 - multi-value filters передаются повторением query value или согласованным serialized array;
 - search query передается отдельным search parameter, если list action поддерживает search;
@@ -837,6 +838,8 @@ Pagination: `count`, `size`, `page`.
 ```
 
 Все поля группы, включая section fields и nested items, обязаны присутствовать в top-level `filters` при `addFilters=true`; generator проверяет это до сериализации ответа. Поле принадлежит ровно одному flat placement либо одной группе: `group.fields` для generic group, item `field`, или одной section для group с presentation.
+
+Для list action generator строит effective typed filter registry из разрешённых module fields и `VirtualFilters`. Virtual definition с тем же logical key имеет приоритет для нормализации query, metadata ответа и SQL predicate; так action может изменить filter semantics, не меняя form semantics записи.
 
 ## Card Schema
 

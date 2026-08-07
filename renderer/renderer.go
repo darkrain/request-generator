@@ -537,6 +537,8 @@ type FilterText struct {
 	NoResultsLabel    string `json:"no_results_label,omitempty"`
 	CancelLabel       string `json:"cancel_label,omitempty"`
 	CloseLabel        string `json:"close_label,omitempty"`
+	RangeMinLabel     string `json:"range_min_label,omitempty"`
+	RangeMaxLabel     string `json:"range_max_label,omitempty"`
 }
 
 type FilterPill struct {
