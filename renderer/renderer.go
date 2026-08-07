@@ -194,16 +194,28 @@ func filterFields(filters *Filters) map[string]struct{} {
 		}
 	}
 	for _, group := range filters.Groups {
-		for _, field := range group.Fields {
-			declared[field] = struct{}{}
-		}
-		for _, section := range group.Sections {
-			for _, field := range section.Fields {
-				declared[field] = struct{}{}
-			}
-		}
+		appendFilterGroupFields(declared, group)
 	}
 	return declared
+}
+
+func appendFilterGroupFields(declared map[string]struct{}, group FilterGroup) {
+	for _, field := range group.Fields {
+		declared[field] = struct{}{}
+	}
+	for _, section := range group.Sections {
+		for _, field := range section.Fields {
+			declared[field] = struct{}{}
+		}
+	}
+	for _, item := range group.Items {
+		if item.Field != "" {
+			declared[item.Field] = struct{}{}
+		}
+		if item.Group != nil {
+			appendFilterGroupFields(declared, *item.Group)
+		}
+	}
 }
 
 func validateFilterRangePresets(scope string, filters *Filters) error {
@@ -286,7 +298,10 @@ func validateFilterGroupContent(scope string, group FilterGroup, fieldOwners map
 		if len(group.Sections) != 0 {
 			return fmt.Errorf("renderer.Universal: %s filter group %q sections require a presentation", scope, group.ID)
 		}
-		if len(group.Fields) == 0 {
+		if len(group.Fields) != 0 && len(group.Items) != 0 {
+			return fmt.Errorf("renderer.Universal: %s filter group %q must use either fields or items", scope, group.ID)
+		}
+		if len(group.Fields) == 0 && len(group.Items) == 0 {
 			return fmt.Errorf("renderer.Universal: %s filter group %q must contain at least one field", scope, group.ID)
 		}
 		for _, field := range group.Fields {
@@ -294,9 +309,12 @@ func validateFilterGroupContent(scope string, group FilterGroup, fieldOwners map
 				return err
 			}
 		}
+		if err := validateFilterGroupItems(scope, group.ID, group.Items, fieldOwners); err != nil {
+			return err
+		}
 		return nil
 	}
-	if len(group.Fields) != 0 {
+	if len(group.Fields) != 0 || len(group.Items) != 0 {
 		return fmt.Errorf("renderer.Universal: %s filter group %q with presentation %q must use sections instead of fields", scope, group.ID, group.Presentation)
 	}
 	if len(group.Sections) == 0 {
@@ -321,6 +339,39 @@ func validateFilterGroupContent(scope string, group FilterGroup, fieldOwners map
 			if err := claimFilterGroupField(scope, group.ID, section.ID, field, fieldOwners); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+func validateFilterGroupItems(scope, parentID string, items []FilterGroupItem, fieldOwners map[string]string) error {
+	childIDs := make(map[string]struct{})
+	for _, item := range items {
+		if (item.Field == "") == (item.Group == nil) {
+			return fmt.Errorf("renderer.Universal: %s filter group %q item must contain exactly one field or group", scope, parentID)
+		}
+		if item.Field != "" {
+			if err := claimFilterGroupField(scope, parentID, "", item.Field, fieldOwners); err != nil {
+				return err
+			}
+			continue
+		}
+		child := *item.Group
+		if child.Placement != "" {
+			return fmt.Errorf("renderer.Universal: %s nested filter group %q must not declare placement", scope, child.ID)
+		}
+		if child.ID == "" {
+			return fmt.Errorf("renderer.Universal: %s filter group %q nested group id is required", scope, parentID)
+		}
+		if _, exists := childIDs[child.ID]; exists {
+			return fmt.Errorf("renderer.Universal: %s filter group %q nested group %q is duplicated", scope, parentID, child.ID)
+		}
+		childIDs[child.ID] = struct{}{}
+		if child.Label == "" && child.LabelKey == "" {
+			return fmt.Errorf("renderer.Universal: %s filter group %q nested group %q label is required", scope, parentID, child.ID)
+		}
+		if err := validateFilterGroupContent(scope, child, fieldOwners); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -440,10 +491,11 @@ type FilterGroup struct {
 	ID           string                  `json:"id"`
 	Label        string                  `json:"label,omitempty"`
 	LabelKey     string                  `json:"label_key,omitempty"`
-	Placement    FilterGroupPlacement    `json:"placement"`
+	Placement    FilterGroupPlacement    `json:"placement,omitempty"`
 	Presentation FilterGroupPresentation `json:"presentation,omitempty"`
 	Fields       []string                `json:"fields,omitempty"`
 	Sections     []FilterGroupSection    `json:"sections,omitempty"`
+	Items        []FilterGroupItem       `json:"items,omitempty"`
 }
 
 // FilterGroupSection describes an ordered typed section inside a presented group.
@@ -452,6 +504,13 @@ type FilterGroupSection struct {
 	Label    string   `json:"label,omitempty"`
 	LabelKey string   `json:"label_key,omitempty"`
 	Fields   []string `json:"fields"`
+}
+
+// FilterGroupItem preserves the order of direct fields and nested groups.
+// Exactly one of Field or Group must be set.
+type FilterGroupItem struct {
+	Field string       `json:"field,omitempty"`
+	Group *FilterGroup `json:"group,omitempty"`
 }
 
 type FilterRangePresets struct {

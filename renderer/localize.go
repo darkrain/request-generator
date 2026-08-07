@@ -103,11 +103,20 @@ func (localizer textLocalizer) localizeListPage(page *ListPage) {
 
 func (localizer textLocalizer) localizeFilterGroups(groups []FilterGroup) {
 	for i := range groups {
-		groups[i].Label = localizer.localizeRendererText(groups[i].Label, groups[i].LabelKey)
-		groups[i].LabelKey = ""
-		for j := range groups[i].Sections {
-			groups[i].Sections[j].Label = localizer.localizeRendererText(groups[i].Sections[j].Label, groups[i].Sections[j].LabelKey)
-			groups[i].Sections[j].LabelKey = ""
+		localizer.localizeFilterGroup(&groups[i])
+	}
+}
+
+func (localizer textLocalizer) localizeFilterGroup(group *FilterGroup) {
+	group.Label = localizer.localizeRendererText(group.Label, group.LabelKey)
+	group.LabelKey = ""
+	for j := range group.Sections {
+		group.Sections[j].Label = localizer.localizeRendererText(group.Sections[j].Label, group.Sections[j].LabelKey)
+		group.Sections[j].LabelKey = ""
+	}
+	for j := range group.Items {
+		if group.Items[j].Group != nil {
+			localizer.localizeFilterGroup(group.Items[j].Group)
 		}
 	}
 }

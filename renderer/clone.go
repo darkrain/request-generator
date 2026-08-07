@@ -157,6 +157,22 @@ func cloneFilterGroups(values []FilterGroup) []FilterGroup {
 		out[i] = value
 		out[i].Fields = cloneSlice(value.Fields)
 		out[i].Sections = cloneFilterGroupSections(value.Sections)
+		out[i].Items = cloneFilterGroupItems(value.Items)
+	}
+	return out
+}
+
+func cloneFilterGroupItems(values []FilterGroupItem) []FilterGroupItem {
+	if values == nil {
+		return nil
+	}
+	out := make([]FilterGroupItem, len(values))
+	for i, value := range values {
+		out[i] = value
+		if value.Group != nil {
+			cloned := cloneFilterGroups([]FilterGroup{*value.Group})
+			out[i].Group = &cloned[0]
+		}
 	}
 	return out
 }

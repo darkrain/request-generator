@@ -781,6 +781,7 @@ Filters являются server-driven:
 - расположение и порядок фильтров определяет `list_page.filters` через `primary`, `secondary`, `more` и `nested`;
 - именованный control, объединяющий несколько полей, задаётся через `list_page.filters.groups`: `id`, локализуемый `label`/`label_key`, `placement` и `fields`; это позволяет renderer отобразить, например, единый `Options`, не выводя дочерние поля отдельными dropdown;
 - для control со сложным layout задаются typed `presentation` и `sections`. Например, `presentation: "tabs"` описывает порядок вкладок через section `id`, локализуемый заголовок и `fields`. В этом варианте поля задаются только внутри sections, а не в `group.fields`;
+- для ordered nested composition generic group использует `items`. Каждый item содержит ровно один `field` или вложенную typed `group`; вложенная группа наследует placement родителя и поэтому не задаёт собственный `placement`;
 - виртуальные фильтры, не связанные с `ModuleField`, задаются typed `ListModuleAction.VirtualFilters`;
 - range presets задаются в `list_page.filters.range_presets` и содержат `field`, локализуемый `label`, `min`, `max`;
 - selected values передаются в query как `filter[field]=value`;
@@ -797,6 +798,24 @@ Pagination: `count`, `size`, `page`.
 ```json
 {
   "groups": [
+    {
+      "id": "others",
+      "label": "Others",
+      "placement": "nested",
+      "items": [
+        {"field": "language"},
+        {"group": {
+          "id": "breast",
+          "label": "Breast",
+          "presentation": "tabs",
+          "sections": [
+            {"id": "size", "label": "Size", "fields": ["breast_size"]},
+            {"id": "type", "label": "Type", "fields": ["breast_type"]}
+          ]
+        }},
+        {"field": "height"}
+      ]
+    },
     {
       "id": "price",
       "label": "Price",
@@ -817,7 +836,7 @@ Pagination: `count`, `size`, `page`.
 }
 ```
 
-Все поля группы, включая section fields, обязаны присутствовать в top-level `filters` при `addFilters=true`; generator проверяет это до сериализации ответа. Поле принадлежит ровно одному flat placement либо одной группе: `group.fields` для generic group или одной section для group с presentation.
+Все поля группы, включая section fields и nested items, обязаны присутствовать в top-level `filters` при `addFilters=true`; generator проверяет это до сериализации ответа. Поле принадлежит ровно одному flat placement либо одной группе: `group.fields` для generic group, item `field`, или одной section для group с presentation.
 
 ## Card Schema
 

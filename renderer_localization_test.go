@@ -25,6 +25,8 @@ func TestLocalizeRenderer_LocalizesPublicTextOnly(t *testing.T) {
 			"filter.close":       "Закрыть",
 			"filter.price":       "Цена",
 			"filter.incall":      "Инколл",
+			"filter.others":      "Другие",
+			"filter.breast":      "Грудь",
 			"summary.title":      "Результаты",
 			"badge.verified":     "Проверен",
 			"action.open":        "Открыть",
@@ -63,6 +65,9 @@ func TestLocalizeRenderer_LocalizesPublicTextOnly(t *testing.T) {
 			}}, Groups: []renderer.FilterGroup{{
 				ID: "price", Label: "Price", LabelKey: "filter.price", Placement: renderer.FilterGroupPlacementPrimary, Presentation: renderer.FilterGroupPresentationTabs,
 				Sections: []renderer.FilterGroupSection{{ID: "incall", Label: "Incall", LabelKey: "filter.incall", Fields: []string{"price"}}},
+			}, {
+				ID: "others", Label: "Others", LabelKey: "filter.others", Placement: renderer.FilterGroupPlacementNested,
+				Items: []renderer.FilterGroupItem{{Group: &renderer.FilterGroup{ID: "breast", Label: "Breast", LabelKey: "filter.breast", Fields: []string{"breast_size"}}}},
 			}}, Text: &renderer.FilterText{
 				SearchPlaceholder: "filter.search",
 				ResetLabel:        "filter.reset",
@@ -151,6 +156,10 @@ func TestLocalizeRenderer_LocalizesPublicTextOnly(t *testing.T) {
 	require.Empty(t, localized.List.Filters.Groups[0].LabelKey)
 	require.Equal(t, "Инколл", localized.List.Filters.Groups[0].Sections[0].Label)
 	require.Empty(t, localized.List.Filters.Groups[0].Sections[0].LabelKey)
+	require.Equal(t, "Другие", localized.List.Filters.Groups[1].Label)
+	require.Empty(t, localized.List.Filters.Groups[1].LabelKey)
+	require.Equal(t, "Грудь", localized.List.Filters.Groups[1].Items[0].Group.Label)
+	require.Empty(t, localized.List.Filters.Groups[1].Items[0].Group.LabelKey)
 	require.Equal(t, "Проверен", localized.List.CardSchema.Badges[0].Label)
 	require.Empty(t, localized.List.CardSchema.Badges[0].LabelKey)
 	action := localized.List.CardSchema.Actions[0]
