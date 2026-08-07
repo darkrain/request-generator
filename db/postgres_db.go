@@ -362,14 +362,12 @@ func (db *DB) List(
 
 	// Filters
 	if len(filter) > 0 {
-		// Build lookup maps from allFields (all module fields, not just SELECT columns)
 		fieldTypeMap := make(map[string]fields.ModuleFieldType)
 		formTypeMap := make(map[string]fields.ModuleFieldFormType)
-		for _, f := range allFields {
-			fieldTypeMap[f.ColumnName()] = f.Type
-			formTypeMap[f.ColumnName()] = f.FormType
+		for _, field := range allFields {
+			fieldTypeMap[field.ColumnName()] = field.Type
+			formTypeMap[field.ColumnName()] = field.FormType
 		}
-
 		for key, value := range filter {
 			parts := strings.Split(key, ".")
 			colName := key

@@ -131,7 +131,7 @@ func (localizer textLocalizer) localizeFilterRangePresets(groups []FilterRangePr
 
 func (localizer textLocalizer) localizeFilterText(text *FilterText) {
 	if text != nil {
-		localizer.localizeTextFields(&text.SearchPlaceholder, &text.ResetLabel, &text.ResetAllLabel, &text.ApplyLabel, &text.LoadingLabel, &text.EmptyLabel, &text.NoResultsLabel, &text.CancelLabel, &text.CloseLabel)
+		localizer.localizeTextFields(&text.SearchPlaceholder, &text.ResetLabel, &text.ResetAllLabel, &text.ApplyLabel, &text.LoadingLabel, &text.EmptyLabel, &text.NoResultsLabel, &text.CancelLabel, &text.CloseLabel, &text.RangeMinLabel, &text.RangeMaxLabel)
 	}
 }
 

@@ -29,25 +29,12 @@ func (generator *Generator) getPagination(page int64, size int64) (int64, int64,
 	return limit, offset, page
 }
 
-func (generator *Generator) normalizeFilters(c *gin.Context, data map[string]string, module *BaseModule, listAction actions.ListModuleAction, lang locale.Lang) map[string]string {
+func (generator *Generator) normalizeFilters(data map[string]string, filters map[string]fields.ModuleFilterField, lang locale.Lang) map[string]string {
 	resultFilterMap := make(map[string]string)
 
-	// Resolve allowed filter columns: static Filter + dynamic FilterFunc
-	allowedCols := listAction.Filter
-	if listAction.FilterFunc != nil {
-		allowedCols = append(allowedCols, listAction.FilterFunc(c)...)
-	}
-
-	filters := make(map[string]fields.ModuleField)
-	for _, realField := range module.Fields {
-		if containsColumn(allowedCols, realField.Column) {
-			filters[realField.ColumnName()] = realField
-		}
-	}
-
 parentLoop:
-	for _, filter := range filters {
-		filterValue, ok := data[filter.ColumnName()]
+	for key, filter := range filters {
+		filterValue, ok := data[key]
 		if !ok || len(filterValue) == 0 {
 			continue
 		}
@@ -58,7 +45,7 @@ parentLoop:
 			}
 		}
 
-		resultFilterMap[filter.ColumnName()] = filterValue
+		resultFilterMap[key] = filterValue
 	}
 
 	for key, value := range data {
@@ -69,6 +56,59 @@ parentLoop:
 	}
 
 	return resultFilterMap
+}
+
+// effectiveListFilters is the sole typed registry for a list action. Virtual
+// definitions intentionally override the same logical key for that action.
+func (generator *Generator) effectiveListFilters(c *gin.Context, module *BaseModule, action actions.ListModuleAction, lang locale.Lang) map[string]fields.ModuleFilterField {
+	allowedColumns := append([]pg.Column{}, action.Filter...)
+	if action.FilterFunc != nil {
+		allowedColumns = append(allowedColumns, action.FilterFunc(c)...)
+	}
+	registry := make(map[string]fields.ModuleFilterField)
+	role := string(actions.GetRoleFromContext(c))
+	for _, field := range module.Fields {
+		if field.FilterCondition != nil && !field.FilterCondition(c) || !containsColumn(allowedColumns, field.Column) {
+			continue
+		}
+		registry[field.ColumnName()] = fields.ModuleFilterField{
+			Column: field.Column, Title: generator.Translate(lang, field.Title), Type: field.Type, FormType: field.FormType,
+			Example: field.Example, AllLabel: generator.Translate(lang, field.AllLabel), Options: generator.fieldOptions(c, field, role, lang),
+			OptionsSource: field.OptionsSource, Check: field.Check, Convert: field.Convert,
+		}
+	}
+	for _, field := range action.VirtualFilters {
+		if field.FilterCondition != nil && !field.FilterCondition(c) {
+			continue
+		}
+		key := field.FieldName
+		if key == "" && field.Column != nil {
+			key = field.Column.Name()
+		}
+		if key == "" {
+			continue
+		}
+		options := append([]fields.ModuleFieldOptions(nil), field.Options...)
+		for i := range options {
+			options[i].Label = generator.Translate(lang, options[i].Label)
+		}
+		field.Title = generator.Translate(lang, field.Title)
+		field.AllLabel = generator.Translate(lang, field.AllLabel)
+		field.Options = options
+		registry[key] = field
+	}
+	return registry
+}
+
+func effectiveListFilterFields(registry map[string]fields.ModuleFilterField) []fields.ModuleField {
+	result := make([]fields.ModuleField, 0, len(registry))
+	for _, filter := range registry {
+		if filter.Column == nil {
+			continue
+		}
+		result = append(result, fields.ModuleField{Column: filter.Column, Type: filter.Type, FormType: filter.FormType})
+	}
+	return result
 }
 
 func (generator *Generator) checkRequest(

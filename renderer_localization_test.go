@@ -23,6 +23,8 @@ func TestLocalizeRenderer_LocalizesPublicTextOnly(t *testing.T) {
 			"filter.no_results":  "Нет результатов",
 			"filter.cancel":      "Отмена",
 			"filter.close":       "Закрыть",
+			"filter.range_min":   "Минимум",
+			"filter.range_max":   "Максимум",
 			"filter.price":       "Цена",
 			"filter.incall":      "Инколл",
 			"filter.others":      "Другие",
@@ -78,6 +80,8 @@ func TestLocalizeRenderer_LocalizesPublicTextOnly(t *testing.T) {
 				NoResultsLabel:    "filter.no_results",
 				CancelLabel:       "filter.cancel",
 				CloseLabel:        "filter.close",
+				RangeMinLabel:     "filter.range_min",
+				RangeMaxLabel:     "filter.range_max",
 			}},
 			Summary: &renderer.Summary{Title: "summary.title"},
 			CardSchema: &renderer.CardSchema{
@@ -152,6 +156,8 @@ func TestLocalizeRenderer_LocalizesPublicTextOnly(t *testing.T) {
 	require.Equal(t, "Нет результатов", localized.List.Filters.Text.NoResultsLabel)
 	require.Equal(t, "Отмена", localized.List.Filters.Text.CancelLabel)
 	require.Equal(t, "Закрыть", localized.List.Filters.Text.CloseLabel)
+	require.Equal(t, "Минимум", localized.List.Filters.Text.RangeMinLabel)
+	require.Equal(t, "Максимум", localized.List.Filters.Text.RangeMaxLabel)
 	require.Equal(t, "Цена", localized.List.Filters.Groups[0].Label)
 	require.Empty(t, localized.List.Filters.Groups[0].LabelKey)
 	require.Equal(t, "Инколл", localized.List.Filters.Groups[0].Sections[0].Label)
