@@ -207,6 +207,7 @@ const (
 	RendererCollectionManager   RendererKey = "collection.manager"
 	RendererFieldMatrix         RendererKey = "field.matrix"
 	RendererAvatar              RendererKey = "avatar"
+	RendererBadge               RendererKey = "badge"
 	RendererChipSelect          RendererKey = "chip_select"
 	RendererPrimaryRadio        RendererKey = "primary_radio"
 )
