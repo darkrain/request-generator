@@ -817,7 +817,7 @@ Pagination: `count`, `size`, `page`.
 }
 ```
 
-Все поля группы, включая section fields, обязаны присутствовать в top-level `filters` при `addFilters=true`; generator проверяет это до сериализации ответа. Поле может принадлежать только одному placement или одной section группы.
+Все поля группы, включая section fields, обязаны присутствовать в top-level `filters` при `addFilters=true`; generator проверяет это до сериализации ответа. Поле принадлежит ровно одному flat placement либо одной группе: `group.fields` для generic group или одной section для group с presentation.
 
 ## Card Schema
 
