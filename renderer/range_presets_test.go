@@ -45,4 +45,9 @@ func TestUniversalValidateRejectsInvalidFilterRangePresets(t *testing.T) {
 			require.EqualError(t, err, test.err)
 		})
 	}
+
+	t.Run("field declared in group", func(t *testing.T) {
+		filters := &Filters{Groups: []FilterGroup{{ID: "price", Label: "Price", Placement: FilterGroupPlacementPrimary, Fields: []string{"rating"}}}, RangePresets: []FilterRangePresets{{Field: "rating", Presets: []FilterRangePreset{{Min: 0, Max: 5}}}}}
+		require.NoError(t, (Universal{List: &ListPage{Filters: filters}}).Validate())
+	})
 }

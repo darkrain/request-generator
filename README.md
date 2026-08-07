@@ -228,6 +228,9 @@ Render: renderer.Universal{
             Primary:          []string{"status", "category_id", "price"},
             Secondary:        []string{"created_at", "owner_id"},
             More:             []string{"rating", "tags"},
+			Groups: []renderer.FilterGroup{
+				{ID: "price", Label: "catalog.filters.price", Placement: renderer.FilterGroupPlacementPrimary, Fields: []string{"price", "discount_price"}},
+			},
         },
         Grid: &renderer.Grid{Enabled: true, Mode: renderer.GridModeCards},
         Pagination: &renderer.Pagination{

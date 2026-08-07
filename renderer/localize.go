@@ -89,6 +89,7 @@ func (localizer textLocalizer) localizeListPage(page *ListPage) {
 	if page.Filters != nil {
 		localizer.localizeFilterPills(page.Filters.PillRows)
 		localizer.localizeFilterPills(page.Filters.SecondaryPillRows)
+		localizer.localizeFilterGroups(page.Filters.Groups)
 		localizer.localizeFilterText(page.Filters.Text)
 		localizer.localizeFilterRangePresets(page.Filters.RangePresets)
 	}
@@ -97,6 +98,13 @@ func (localizer textLocalizer) localizeListPage(page *ListPage) {
 	}
 	if page.CardSchema != nil {
 		localizer.localizeCardSchema(page.CardSchema)
+	}
+}
+
+func (localizer textLocalizer) localizeFilterGroups(groups []FilterGroup) {
+	for i := range groups {
+		groups[i].Label = localizer.localizeRendererText(groups[i].Label, groups[i].LabelKey)
+		groups[i].LabelKey = ""
 	}
 }
 

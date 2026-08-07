@@ -381,6 +381,13 @@ func validateListFilterAvailability(page *renderer.ListPage, filters map[string]
 			}
 		}
 	}
+	for _, group := range page.Filters.Groups {
+		for _, field := range group.Fields {
+			if _, ok := filters[field]; !ok {
+				return fmt.Errorf("renderer filter group %q field %q is not available for the current request", group.ID, field)
+			}
+		}
+	}
 	return nil
 }
 
