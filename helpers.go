@@ -100,16 +100,6 @@ func (generator *Generator) effectiveListFilters(c *gin.Context, module *BaseMod
 	return registry
 }
 
-func effectiveListFilterFields(registry map[string]fields.ModuleFilterField) []fields.ModuleField {
-	result := make([]fields.ModuleField, 0, len(registry))
-	for _, filter := range registry {
-		if filter.Column == nil {
-			continue
-		}
-		result = append(result, fields.ModuleField{Column: filter.Column, Type: filter.Type, FormType: filter.FormType})
-	}
-	return result
-}
 
 func (generator *Generator) checkRequest(
 	context *gin.Context,

@@ -35,7 +35,7 @@ func (db *scopedActionDB) List(
 	table pg.Table,
 	_ pg.Column,
 	_ []fields.ModuleField,
-	_ []fields.ModuleField,
+	_ map[string]fields.ModuleFilterField,
 	_ int64,
 	_ int64,
 	_ []pg.Column,

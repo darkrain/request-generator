@@ -125,6 +125,14 @@ func testModuleFields() []fields.ModuleField {
 	}
 }
 
+func testFilterRegistry(values []fields.ModuleField) map[string]fields.ModuleFilterField {
+	registry := make(map[string]fields.ModuleFilterField, len(values))
+	for _, field := range values {
+		registry[field.ColumnName()] = fields.ModuleFilterField{Column: field.Column, Type: field.Type, FormType: field.FormType}
+	}
+	return registry
+}
+
 func seedItem(t *testing.T, name, email string, age int, role string) int64 {
 	mf := testModuleFields()
 	input := map[string]interface{}{
@@ -232,11 +240,25 @@ func TestViewNotFound(t *testing.T) {
 
 // --- List ---
 
+func TestListUsesLogicalVirtualFilterKey(t *testing.T) {
+	cleanTable(t)
+	seedItem(t, "Alice", "alice@test.com", 25, "admin")
+	seedItem(t, "Bob", "bob@test.com", 30, "user")
+	mf := testModuleFields()
+	registry := testFilterRegistry(mf)
+	registry["appearance"] = fields.ModuleFilterField{Column: tbl.Role, Type: fields.ModuleFieldTypeString, FormType: fields.ModuleFieldFormTypeMultiselect}
+
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, registry, 0, 100, nil, "", map[string]string{"appearance": "{admin,user}"}, nil, nil, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), count)
+	require.Len(t, results, 2)
+}
+
 func TestListEmpty(t *testing.T) {
 	cleanTable(t)
 
 	mf := testModuleFields()
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, nil, "", nil, nil, nil, nil, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, testFilterRegistry(mf), 0, 100, nil, "", nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), count)
 	assert.Empty(t, results)
@@ -249,7 +271,7 @@ func TestListMultipleItems(t *testing.T) {
 	seedItem(t, "Charlie", "charlie@test.com", 35, "user")
 
 	mf := testModuleFields()
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, nil, "", nil, nil, nil, nil, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, testFilterRegistry(mf), 0, 100, nil, "", nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), count)
 	assert.Len(t, results, 3)
@@ -263,11 +285,11 @@ func TestListPagination(t *testing.T) {
 
 	mf := testModuleFields()
 
-	results, _, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 2, nil, "", nil, nil, nil, nil, nil)
+	results, _, err := testDB.List(testLog, tbl, tbl.ID, mf, testFilterRegistry(mf), 0, 2, nil, "", nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Len(t, results, 2)
 
-	results, _, err = testDB.List(testLog, tbl, tbl.ID, mf, mf, 1, 2, nil, "", nil, nil, nil, nil, nil)
+	results, _, err = testDB.List(testLog, tbl, tbl.ID, mf, testFilterRegistry(mf), 1, 2, nil, "", nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 }
@@ -280,7 +302,7 @@ func TestListSearch(t *testing.T) {
 	mf := testModuleFields()
 	searchColumns := []postgres.Column{tbl.Email}
 
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, searchColumns, "alice", nil, nil, nil, nil, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, testFilterRegistry(mf), 0, 100, searchColumns, "alice", nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 	assert.Len(t, results, 1)
@@ -295,7 +317,7 @@ func TestListFilter(t *testing.T) {
 	mf := testModuleFields()
 	filter := map[string]string{"role": "user"}
 
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, nil, "", filter, nil, nil, nil, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, testFilterRegistry(mf), 0, 100, nil, "", filter, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), count)
 	assert.Len(t, results, 2)
@@ -317,7 +339,7 @@ func TestListDateRangeFilter(t *testing.T) {
 	mf := testModuleFields()
 	filter := map[string]string{"creation_date": "2026-06-01..2026-06-30"}
 
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, nil, "", filter, nil, nil, nil, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, testFilterRegistry(mf), 0, 100, nil, "", filter, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), count)
 	assert.Len(t, results, 2)
@@ -331,7 +353,7 @@ func TestListWhere(t *testing.T) {
 	mf := testModuleFields()
 	where := postgres.RawBool(`test_items."age" > #age`, postgres.RawArgs{"#age": 26})
 
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, nil, "", nil, where, nil, nil, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, testFilterRegistry(mf), 0, 100, nil, "", nil, where, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 	assert.Len(t, results, 1)
@@ -393,7 +415,7 @@ func TestDelete(t *testing.T) {
 	require.NoError(t, err)
 
 	mf := testModuleFields()
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, nil, "", nil, nil, nil, nil, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, testFilterRegistry(mf), 0, 100, nil, "", nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), count)
 	assert.Empty(t, results)
@@ -432,7 +454,7 @@ func TestListWithJoin(t *testing.T) {
 	}
 
 	mf := testModuleFields()
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, nil, "", nil, nil, []actions.ModuleActionJoin{join}, nil, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, testFilterRegistry(mf), 0, 100, nil, "", nil, nil, []actions.ModuleActionJoin{join}, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 	assert.Len(t, results, 1)
@@ -466,7 +488,7 @@ func TestListSearchJoinedColumn(t *testing.T) {
 	}
 
 	mf := testModuleFields()
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, []postgres.Column{tagCol}, "rust", nil, nil, []actions.ModuleActionJoin{join}, nil, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, testFilterRegistry(mf), 0, 100, []postgres.Column{tagCol}, "rust", nil, nil, []actions.ModuleActionJoin{join}, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 	assert.Len(t, results, 1)
@@ -487,7 +509,7 @@ func TestAddRollbackOnError(t *testing.T) {
 	_, err = testDB.Add(testLog, tbl, tbl.ID, mf, input2, nil)
 	assert.Error(t, err)
 
-	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, mf, 0, 100, nil, "", nil, nil, nil, nil, nil)
+	results, count, err := testDB.List(testLog, tbl, tbl.ID, mf, testFilterRegistry(mf), 0, 100, nil, "", nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), count)
 	assert.Len(t, results, 1)

@@ -558,7 +558,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			module.Table,
 			module.PrimaryKey,
 			realFields,
-			effectiveListFilterFields(filter),
+			filter,
 			page,
 			size,
 			action.Search,

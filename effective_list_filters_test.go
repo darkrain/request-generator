@@ -31,7 +31,4 @@ func TestEffectiveListFilters_VirtualDefinitionOverridesModuleField(t *testing.T
 	require.Equal(t, fields.ModuleFieldFormTypeMultiselect, registry["ethnicity"].FormType)
 	normalized := generator.normalizeFilters(map[string]string{"ethnicity": "{asian,latin}"}, registry, locale.EN)
 	require.Equal(t, "{asian,latin}", normalized["ethnicity"])
-	effective := effectiveListFilterFields(registry)
-	require.Len(t, effective, 1)
-	require.Equal(t, fields.ModuleFieldFormTypeMultiselect, effective[0].FormType)
 }
