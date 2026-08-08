@@ -154,6 +154,9 @@ func (r Universal) Validate() error {
 			return err
 		}
 		if r.ResourceGrid.Card != nil {
+			if err := r.ResourceGrid.Card.Validate(); err != nil {
+				return err
+			}
 			if err := validateActions("resource grid card", r.ResourceGrid.Card.Actions); err != nil {
 				return err
 			}
@@ -170,6 +173,9 @@ func validateListPage(scope string, page *ListPage) error {
 		return err
 	}
 	if page.CardSchema != nil {
+		if err := page.CardSchema.Validate(); err != nil {
+			return err
+		}
 		if err := validateActions(scope+" card schema", page.CardSchema.Actions); err != nil {
 			return err
 		}
@@ -585,25 +591,45 @@ type Summary struct {
 	ShowAction    *bool  `json:"show_action,omitempty"`
 }
 
+type CardActionLayout string
+
+const (
+	CardActionLayoutInline   CardActionLayout = "inline"
+	CardActionLayoutEdgeFill CardActionLayout = "edge_fill"
+)
+
 type CardSchema struct {
-	Type             string         `json:"type,omitempty"`
-	Variant          CardVariant    `json:"variant,omitempty"`
-	Size             SizeToken      `json:"size,omitempty"`
-	SurfaceVariant   SurfaceVariant `json:"surface_variant,omitempty"`
-	SurfaceEffect    SurfaceEffect  `json:"surface_effect,omitempty"`
-	BadgeSize        SizeToken      `json:"badge_size,omitempty"`
-	ActionSize       SizeToken      `json:"action_size,omitempty"`
-	DeleteActionSize SizeToken      `json:"delete_action_size,omitempty"`
-	PrimaryAction    string         `json:"primary_action,omitempty"`
-	Media            *Media         `json:"media,omitempty"`
-	Title            *TextBinding   `json:"title,omitempty"`
-	Subtitle         *TextBinding   `json:"subtitle,omitempty"`
-	SubtitleTone     string         `json:"subtitle_tone,omitempty"`
-	Description      *TextBinding   `json:"description,omitempty"`
-	Status           *StatusBinding `json:"status,omitempty"`
-	Badges           []Badge        `json:"badges,omitempty"`
-	Stats            []Badge        `json:"stats,omitempty"`
-	Actions          []Action       `json:"actions,omitempty"`
+	Type             string           `json:"type,omitempty"`
+	Variant          CardVariant      `json:"variant,omitempty"`
+	Size             SizeToken        `json:"size,omitempty"`
+	SurfaceVariant   SurfaceVariant   `json:"surface_variant,omitempty"`
+	SurfaceEffect    SurfaceEffect    `json:"surface_effect,omitempty"`
+	BadgeSize        SizeToken        `json:"badge_size,omitempty"`
+	ActionSize       SizeToken        `json:"action_size,omitempty"`
+	DeleteActionSize SizeToken        `json:"delete_action_size,omitempty"`
+	ActionLayout     CardActionLayout `json:"action_layout,omitempty"`
+	PrimaryAction    string           `json:"primary_action,omitempty"`
+	Media            *Media           `json:"media,omitempty"`
+	Title            *TextBinding     `json:"title,omitempty"`
+	Subtitle         *TextBinding     `json:"subtitle,omitempty"`
+	SubtitleTone     string           `json:"subtitle_tone,omitempty"`
+	Description      *TextBinding     `json:"description,omitempty"`
+	Status           *StatusBinding   `json:"status,omitempty"`
+	Badges           []Badge          `json:"badges,omitempty"`
+	Stats            []Badge          `json:"stats,omitempty"`
+	Actions          []Action         `json:"actions,omitempty"`
+}
+
+func (schema *CardSchema) Validate() error {
+	if schema == nil {
+		return nil
+	}
+	switch schema.ActionLayout {
+	case "", CardActionLayoutInline, CardActionLayoutEdgeFill:
+		return nil
+	default:
+		return fmt.Errorf("renderer.CardSchema: unsupported action layout %q", schema.ActionLayout)
+	}
 }
 
 type Media struct {
