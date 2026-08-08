@@ -765,6 +765,7 @@ Renderer-specific enum values должны быть описаны в разде
 | `card_schema.variant` | `default`, `media`, `compact` |
 | `card_schema.surface_variant` | `default`, `primary`, `secondary` |
 | `card_schema.surface_effect` | `none`, `flat`, `elevated` |
+| `card_schema.action_layout` | `inline`, `edge_fill` |
 | `card_schema.media.ratio` | `square`, `portrait`, `landscape`, `wide` |
 | `card_schema.media.size` | `thumb`, `card`, `hero` |
 | `form_page.layout` | `one_column`, `two_column`, `three_column` |
@@ -854,6 +855,7 @@ Pagination: `count`, `size`, `page`.
   "surface_effect": "flat",
   "badge_size": "sm",
   "action_size": "sm",
+  "action_layout": "edge_fill",
   "primary_action": "open",
   "media": {"field": "avatar", "ratio": "portrait", "size": "card"},
   "title": {"field": "name"},
@@ -865,6 +867,8 @@ Pagination: `count`, `size`, `page`.
   "actions": []
 }
 ```
+
+`action_layout` определяет раскладку `actions`: пустое значение и `inline` используют обычный ряд. При `edge_fill` действия сохраняют объявленный порядок, а свободное место заполняет только действие без `icon_only`. `block` не меняет поведение этого поля.
 
 ## Action Contract
 
