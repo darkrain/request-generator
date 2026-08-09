@@ -237,6 +237,29 @@ func TestAtomicAdd_RollsBackOnPrimaryDuplicateAndRelatedFailure(t *testing.T) {
 	}
 }
 
+func TestAtomicAdd_RollsBackInvalidResultBeforeCommit(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	engine := setupAtomicAddRouter(t, sqlDB, func(context.Context, actions.AtomicExecutor, actions.AtomicInput) (actions.AtomicRecord, error) {
+		return actions.AtomicRecord{
+			Value:      41,
+			PrimaryKey: "id",
+			Fields: []actions.AtomicField{{
+				Name:  "broken",
+				Value: actions.AtomicValue{JSON: []byte("{")},
+			}},
+		}, nil
+	})
+	mock.ExpectBegin()
+	mock.ExpectRollback()
+
+	w := executeJSONRequest(engine, http.MethodPut, "/admin/atomic-items", map[string]interface{}{"title": "hello"})
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	require.NotEqual(t, http.StatusOK, w.Code)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestAtomicAdd_RejectsHooksAtConfigurationTime(t *testing.T) {
 	for _, testCase := range []struct {
 		name       string

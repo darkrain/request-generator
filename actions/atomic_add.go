@@ -33,6 +33,38 @@ func AtomicInt(value int64) AtomicValue     { return AtomicValue{Int: &value} }
 func AtomicFloat(value float64) AtomicValue { return AtomicValue{Float: &value} }
 func AtomicBool(value bool) AtomicValue     { return AtomicValue{Bool: &value} }
 
+func (value AtomicValue) Validate() error {
+	variants := 0
+	if value.String != nil {
+		variants++
+	}
+	if value.Int != nil {
+		variants++
+	}
+	if value.Float != nil {
+		variants++
+	}
+	if value.Bool != nil {
+		variants++
+	}
+	if value.Strings != nil {
+		variants++
+	}
+	if value.Ints != nil {
+		variants++
+	}
+	if value.JSON != nil {
+		variants++
+		if !json.Valid(value.JSON) {
+			return fmt.Errorf("atomic JSON value is invalid")
+		}
+	}
+	if variants != 1 {
+		return fmt.Errorf("atomic value must contain exactly one variant")
+	}
+	return nil
+}
+
 func (value AtomicValue) Interface() interface{} {
 	switch {
 	case value.String != nil:
@@ -129,6 +161,9 @@ func (record AtomicRecord) Validate() error {
 			return fmt.Errorf("atomic record field %q is duplicated or reserved", field.Name)
 		}
 		seen[field.Name] = struct{}{}
+		if err := field.Value.Validate(); err != nil {
+			return fmt.Errorf("atomic record field %q: %w", field.Name, err)
+		}
 	}
 	return nil
 }

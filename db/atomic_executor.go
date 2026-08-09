@@ -35,6 +35,9 @@ func (executor atomicExecutor) Insert(ctx context.Context, insert actions.Atomic
 		if field.Column == nil {
 			return actions.AtomicRecord{}, fmt.Errorf("atomic insert field %d has no column", index)
 		}
+		if err := field.Value.Validate(); err != nil {
+			return actions.AtomicRecord{}, fmt.Errorf("atomic insert field %q: %w", field.Column.Name(), err)
+		}
 		keys = append(keys, fmt.Sprintf(`"%s"`, field.Column.Name()))
 		placeholders = append(placeholders, fmt.Sprintf("$%d", index+1))
 		values = append(values, atomicDBValue(field.Value))
