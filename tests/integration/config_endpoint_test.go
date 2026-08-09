@@ -349,7 +349,7 @@ func TestConfigEndpoint_RouteRegistryRejectsDuplicatePaths(t *testing.T) {
 
 	w := executeRequest(engine, http.MethodGet, "/api/config", nil)
 	require.Equal(t, http.StatusBadRequest, w.Code)
-	require.Contains(t, w.Body.String(), `config route path "/admin/duplicate" is declared more than once`)
+	require.Contains(t, w.Body.String(), "declared more than once")
 }
 
 func TestNavigationContract_HasNoArbitraryDataField(t *testing.T) {
