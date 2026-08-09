@@ -2,8 +2,8 @@ package actions
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"strings"
 
 	pg "github.com/go-jet/jet/v2/postgres"
 )
@@ -111,12 +111,47 @@ type AtomicInsertField struct {
 }
 
 // AtomicRecord is both the atomic add response and the source for route
-// interpolation. Fields such as nick must be explicitly returned by the
-// operation when a follow-up route needs them.
+// interpolation. Fields are serialized at the top level of the response, so a
+// renderer can resolve routes such as /profiles/{nick} from the HTTP result.
 type AtomicRecord struct {
 	Value      int64         `json:"value"`
 	PrimaryKey string        `json:"primary_key"`
 	Fields     []AtomicField `json:"fields,omitempty"`
+}
+
+func (record AtomicRecord) Validate() error {
+	seen := map[string]struct{}{"value": {}, "primary_key": {}}
+	for _, field := range record.Fields {
+		if field.Name == "" {
+			return fmt.Errorf("atomic record field name is required")
+		}
+		if _, exists := seen[field.Name]; exists {
+			return fmt.Errorf("atomic record field %q is duplicated or reserved", field.Name)
+		}
+		seen[field.Name] = struct{}{}
+	}
+	return nil
+}
+
+func (record AtomicRecord) MarshalJSON() ([]byte, error) {
+	if err := record.Validate(); err != nil {
+		return nil, err
+	}
+	result := map[string]interface{}{
+		"value":       record.Value,
+		"primary_key": record.PrimaryKey,
+	}
+	for _, field := range record.Fields {
+		result[field.Name] = atomicResponseValue(field.Value)
+	}
+	return json.Marshal(result)
+}
+
+func atomicResponseValue(value AtomicValue) interface{} {
+	if value.JSON != nil {
+		return json.RawMessage(value.JSON)
+	}
+	return value.Interface()
 }
 
 func (record AtomicRecord) Field(name string) (AtomicValue, bool) {
@@ -134,24 +169,6 @@ func (record AtomicRecord) String(name string) (string, bool) {
 		return "", false
 	}
 	return *value.String, true
-}
-
-// InterpolateRoute resolves a renderer AfterSuccess.Route template from this
-// record only. It intentionally has no secondary binding source.
-func (record AtomicRecord) InterpolateRoute(template string) (string, error) {
-	result := template
-	for _, field := range record.Fields {
-		if field.Value.String != nil {
-			result = strings.ReplaceAll(result, "{"+field.Name+"}", *field.Value.String)
-		}
-		if field.Value.Int != nil {
-			result = strings.ReplaceAll(result, "{"+field.Name+"}", fmt.Sprintf("%d", *field.Value.Int))
-		}
-	}
-	if strings.Contains(result, "{") || strings.Contains(result, "}") {
-		return "", fmt.Errorf("route has unresolved record fields")
-	}
-	return result, nil
 }
 
 // AtomicExecutor deliberately exposes only the operations needed by domain

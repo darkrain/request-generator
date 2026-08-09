@@ -1364,7 +1364,7 @@ actions.AddModuleAction{
 }
 ```
 
-`AtomicRecord` является ответом add action. Поля из `Fields` также используются для интерполяции `AfterSuccess.Route`: например, `record.InterpolateRoute("/profiles/{nick}")` вернёт маршрут только на основании самого record. Отдельный источник route bindings не предусмотрен.
+`AtomicRecord` является ответом add action. Его `Fields` сериализуются на верхнем уровне ответа: поле `{Name: "nick", ...}` станет JSON-полем `nick`. Поэтому `AfterSuccess.Route` интерполируется shell только из response record, например `/profiles/{nick}`. Отдельный источник route bindings не предусмотрен.
 
 ## API эндпоинты
 

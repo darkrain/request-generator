@@ -865,6 +865,16 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 			if output.PrimaryKey == "" {
 				output.PrimaryKey = module.PrimaryKey.Name()
 			}
+			if err := output.Validate(); err != nil {
+				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{err.Error()})
+				return
+			}
+			if tc != nil {
+				if err := db.InsertTranslations(tx, tc, output.Value, realFields, mapInput); err != nil {
+					response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{err.Error()})
+					return
+				}
+			}
 			if err := tx.Commit(); err != nil {
 				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{err.Error()})
 				return

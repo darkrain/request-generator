@@ -3,9 +3,11 @@ package integration
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -102,12 +104,91 @@ func TestAtomicAdd_CommitsTypedRecordAndInterpolatesRoute(t *testing.T) {
 
 	w := executeJSONRequest(engine, http.MethodPut, "/admin/atomic-items", map[string]interface{}{"title": "hello"})
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
-	require.JSONEq(t, `{"value":41,"primary_key":"id","fields":[{"name":"nick","value":{"string":"atomic-item"}}]}`, w.Body.String())
+	require.JSONEq(t, `{"value":41,"primary_key":"id","nick":"atomic-item"}`, w.Body.String())
 	require.NoError(t, mock.ExpectationsWereMet())
 
-	route, err := (actions.AtomicRecord{Fields: []actions.AtomicField{{Name: "nick", Value: actions.AtomicString("atomic-item")}}}).InterpolateRoute("/profiles/{nick}")
-	require.NoError(t, err)
+	var record map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &record))
+	route := strings.ReplaceAll("/profiles/{nick}", "{nick}", record["nick"].(string))
 	require.Equal(t, "/profiles/atomic-item", route)
+}
+
+func TestAtomicAdd_PersistsTranslationsInsideTransaction(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	id := pg.IntegerColumn("id")
+	title := pg.StringColumn("title")
+	itemID := pg.IntegerColumn("item_id")
+	name := pg.StringColumn("name")
+	items := pg.NewTable("public", "atomic_items", "", id, title, name)
+	related := pg.NewTable("public", "atomic_related", "", id, itemID)
+	atomicModule := &module.BaseModule{
+		Name: "atomic-items", Path: "/admin", Table: items, PrimaryKey: id,
+		Fields: []fields.ModuleField{
+			{Column: title, Title: "Title", Type: fields.ModuleFieldTypeString, FormType: fields.ModuleFieldFormTypeText},
+			{Column: name, FieldName: "name", Title: "Name", Type: fields.ModuleFieldTypeObject, FormType: fields.ModuleFieldFormTypeText, Translatable: true},
+		},
+		Actions: []actions.ModuleAction{actions.AddModuleAction{
+			Mode: actions.AddModeAtomic, Atomic: &actions.AtomicAddConfig{Operation: atomicCreateOperation(items, related, id, title, itemID)}, Columns: []pg.Column{title, name}, Permission: []actions.Role{actions.RoleAll}, Auth: true,
+		}},
+	}
+	engine := gin.New()
+	group := engine.Group("")
+	generator := module.NewGenerator(func(*module.BaseModule) dbpkg.DBExecutor { return dbpkg.NewDB(sqlDB) }, *group, []*module.BaseModule{atomicModule}, func(_ actions.ModuleAction, _ []actions.Role) gin.HandlerFunc {
+		return func(c *gin.Context) { c.Next() }
+	}, createMockAuthMiddleware(&icontext.UserInfo{ID: 1, Role: "admin"}))
+	generator.Run()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("INSERT INTO public").WithArgs("hello").WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(41))
+	mock.ExpectQuery("INSERT INTO public").WithArgs(int64(41)).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(77))
+	mock.ExpectExec(regexp.QuoteMeta(`INSERT INTO translations (entity, entity_id, field, lang, value) VALUES ($1, $2, $3, $4, $5)`)).WithArgs("atomic_items", int64(41), "name", "en", "Hello").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+
+	w := executeJSONRequest(engine, http.MethodPut, "/admin/atomic-items", map[string]interface{}{"title": "hello", "name": map[string]interface{}{"en": "Hello"}})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAtomicAdd_RollsBackWhenTranslationInsertFails(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	id := pg.IntegerColumn("id")
+	title := pg.StringColumn("title")
+	itemID := pg.IntegerColumn("item_id")
+	name := pg.StringColumn("name")
+	items := pg.NewTable("public", "atomic_items", "", id, title, name)
+	related := pg.NewTable("public", "atomic_related", "", id, itemID)
+	atomicModule := &module.BaseModule{
+		Name: "atomic-items", Path: "/admin", Table: items, PrimaryKey: id,
+		Fields: []fields.ModuleField{
+			{Column: title, Title: "Title", Type: fields.ModuleFieldTypeString, FormType: fields.ModuleFieldFormTypeText},
+			{Column: name, FieldName: "name", Title: "Name", Type: fields.ModuleFieldTypeObject, FormType: fields.ModuleFieldFormTypeText, Translatable: true},
+		},
+		Actions: []actions.ModuleAction{actions.AddModuleAction{
+			Mode: actions.AddModeAtomic, Atomic: &actions.AtomicAddConfig{Operation: atomicCreateOperation(items, related, id, title, itemID)}, Columns: []pg.Column{title, name}, Permission: []actions.Role{actions.RoleAll}, Auth: true,
+		}},
+	}
+	engine := gin.New()
+	group := engine.Group("")
+	generator := module.NewGenerator(func(*module.BaseModule) dbpkg.DBExecutor { return dbpkg.NewDB(sqlDB) }, *group, []*module.BaseModule{atomicModule}, func(_ actions.ModuleAction, _ []actions.Role) gin.HandlerFunc {
+		return func(c *gin.Context) { c.Next() }
+	}, createMockAuthMiddleware(&icontext.UserInfo{ID: 1, Role: "admin"}))
+	generator.Run()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("INSERT INTO public").WithArgs("hello").WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(41))
+	mock.ExpectQuery("INSERT INTO public").WithArgs(int64(41)).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(77))
+	mock.ExpectExec("INSERT INTO translations").WithArgs("atomic_items", int64(41), "name", "en", "Hello").WillReturnError(errors.New("translation insert failed"))
+	mock.ExpectRollback()
+
+	w := executeJSONRequest(engine, http.MethodPut, "/admin/atomic-items", map[string]interface{}{"title": "hello", "name": map[string]interface{}{"en": "Hello"}})
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestAtomicAdd_RollsBackOnPrimaryDuplicateAndRelatedFailure(t *testing.T) {
