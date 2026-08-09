@@ -1,6 +1,7 @@
 package module
 
 import (
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -240,16 +241,16 @@ func (generator *Generator) buildNavigation(c *gin.Context, role string, lang lo
 func (generator *Generator) buildRouteRegistry(c *gin.Context, role string) ([]ConfigRouteEntry, error) {
 	result := make([]ConfigRouteEntry, 0)
 	seen := make(map[string]struct{})
-	appendRoute := func(module *BaseModule, path string, action actions.ModuleAction, targetConfig NavigationTarget) error {
+	appendRoute := func(module *BaseModule, path string, action actions.ModuleAction, targetConfig NavigationTarget, queryParams map[string]interface{}) error {
 		if path == "" || targetConfig.Type != "" && targetConfig.Type != "page" {
 			return nil
 		}
-		target, err := generator.buildPageTarget(c, module, action, targetConfig, nil, role)
+		target, err := generator.buildPageTarget(c, module, action, targetConfig, queryParams, role)
 		if err != nil {
 			return err
 		}
 		if _, exists := seen[path]; exists {
-			return nil
+			return fmt.Errorf("config route path %q is declared more than once", path)
 		}
 		seen[path] = struct{}{}
 		result = append(result, ConfigRouteEntry{Path: path, Target: target})
@@ -265,7 +266,7 @@ func (generator *Generator) buildRouteRegistry(c *gin.Context, role string) ([]C
 			if !ok || !hasPermission(action, role) {
 				continue
 			}
-			if err := appendRoute(module, navigationPath(module, entry, "page"), action, entry.Target); err != nil {
+			if err := appendRoute(module, navigationPath(module, entry, "page"), action, entry.Target, entry.Query); err != nil {
 				return nil, err
 			}
 		}
@@ -274,7 +275,7 @@ func (generator *Generator) buildRouteRegistry(c *gin.Context, role string) ([]C
 			if !ok || !hasPermission(action, role) || !routeRolesAllowed(page, role) {
 				continue
 			}
-			if err := appendRoute(module, page.Path, action, page.Target); err != nil {
+			if err := appendRoute(module, page.Path, action, page.Target, nil); err != nil {
 				return nil, err
 			}
 		}

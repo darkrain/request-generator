@@ -43,6 +43,7 @@ func setupTestRouter(authMiddleware func(actions.ModuleAction) gin.HandlerFunc) 
 				Icon:       "user",
 				Show:       true,
 				Path:       "/admin/users",
+				Query:      map[string]interface{}{"scope": "active"},
 			},
 			{
 				ActionName: "add",
@@ -304,6 +305,7 @@ func TestConfigEndpoint_RouteRegistry(t *testing.T) {
 		paths[route.Path] = route
 	}
 	require.Contains(t, paths, "/admin/users")
+	require.Equal(t, map[string]interface{}{"scope": "active"}, paths["/admin/users"].Target.Query.Params)
 	create, ok := paths["/admin/users/create"]
 	require.True(t, ok)
 	require.Equal(t, renderer.PageTypeForm, create.Target.PageType)
@@ -319,6 +321,35 @@ func TestConfigEndpoint_RouteRegistry(t *testing.T) {
 	for _, route := range managerConfig.Routes {
 		require.NotEqual(t, "/admin/users/create", route.Path)
 	}
+}
+
+func TestConfigEndpoint_RouteRegistryRejectsDuplicatePaths(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	group := engine.Group("")
+	generator := module.NewGenerator(
+		nil,
+		*group,
+		[]*module.BaseModule{{
+			Name:    "duplicate-routes",
+			Path:    "/admin",
+			Render:  renderer.Universal{List: &renderer.ListPage{ID: "duplicate-routes"}},
+			Actions: []actions.ModuleAction{actions.ListModuleAction{Permission: []actions.Role{"admin"}}},
+			Navigation: []module.NavigationEntry{
+				{ActionName: "list", Show: true, Path: "/admin/duplicate", Title: "One"},
+				{ActionName: "list", Show: true, Path: "/admin/duplicate", Title: "Two"},
+			},
+		}},
+		func(_ actions.ModuleAction, _ []actions.Role) gin.HandlerFunc {
+			return func(c *gin.Context) { c.Next() }
+		},
+		createMockAuthMiddleware(&icontext.UserInfo{ID: 1, Role: "admin"}),
+	)
+	generator.Run()
+
+	w := executeRequest(engine, http.MethodGet, "/api/config", nil)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), `config route path "/admin/duplicate" is declared more than once`)
 }
 
 func TestNavigationContract_HasNoArbitraryDataField(t *testing.T) {
