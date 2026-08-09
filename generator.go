@@ -115,6 +115,9 @@ func (generator *Generator) Run() {
 	generator.initRealtime()
 
 	for _, module := range generator.Modules {
+		if err := validateAtomicAddActions(module); err != nil {
+			panic(fmt.Sprintf("invalid atomic add config in module %s: %v", module.Name, err))
+		}
 		if err := module.Render.Validate(); err != nil {
 			if module.RenderFunc != nil {
 				panic(fmt.Sprintf("invalid base renderer config in module %s: %v", module.Name, err))
@@ -318,6 +321,32 @@ func (generator *Generator) Run() {
 			c.Data(http.StatusOK, "application/json; charset=utf-8", specJSON)
 		})
 	}
+}
+
+func validateAtomicAddActions(module *BaseModule) error {
+	for _, moduleAction := range module.Actions {
+		action, ok := moduleAction.(actions.AddModuleAction)
+		if !ok {
+			continue
+		}
+		switch action.Mode {
+		case "", actions.AddModeStandard:
+			continue
+		case actions.AddModeAtomic:
+			if action.Atomic == nil || action.Atomic.Operation == nil {
+				return fmt.Errorf("atomic add action requires an operation")
+			}
+			if action.BeforeAction != nil || action.AfterAction != nil {
+				return fmt.Errorf("atomic add action cannot define before or after hooks")
+			}
+			if len(module.RoleBeforeHook) > 0 || len(module.RoleAfterHook) > 0 {
+				return fmt.Errorf("atomic add action cannot be used by a module with role hooks")
+			}
+		default:
+			return fmt.Errorf("unsupported add mode %q", action.Mode)
+		}
+	}
+	return nil
 }
 
 func validateModuleFieldMedia(module *BaseModule) error {
@@ -714,33 +743,35 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 		lang := generator.getLang(c)
 		generator.setTranslationContext(c, lang)
 
-		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
-			if err := hook(c); err != nil {
-				response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+		if action.Mode != actions.AddModeAtomic {
+			if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
+				if err := hook(c); err != nil {
+					response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+					return
+				}
+			}
+			defer func() {
+				if hook := actions.ResolveRoleAfterHook(module.RoleAfterHook, role); hook != nil {
+					hook(c)
+				}
+			}()
+
+			err := action.BeforeRequest(c)
+			if err != nil {
+				if !c.Writer.Written() {
+					response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{
+						err.Error(),
+					})
+				}
+				return
+			}
+			if c.Writer.Written() {
 				return
 			}
 		}
-		defer func() {
-			if hook := actions.ResolveRoleAfterHook(module.RoleAfterHook, role); hook != nil {
-				hook(c)
-			}
-		}()
-
-		err := action.BeforeRequest(c)
-		if err != nil {
-			if !c.Writer.Written() {
-				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{
-					err.Error(),
-				})
-			}
-			return
-		}
-		if c.Writer.Written() {
-			return
-		}
 
 		var input map[string]interface{}
-		err = utils.ParseJson(c.Request, &input)
+		err := utils.ParseJson(c.Request, &input)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{
 				"Parse Input Error",
@@ -804,6 +835,46 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{err.Error()})
 			return
 		}
+		if action.Mode == actions.AddModeAtomic {
+			atomicInput, err := atomicInputFromFields(realFields, mapInput)
+			if err != nil {
+				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{err.Error()})
+				return
+			}
+			rawDB := generator.db(module).RawDB()
+			if rawDB == nil {
+				response.ErrorResponse(l, c, http.StatusInternalServerError, GeneratorErrorAdd, []string{"atomic add requires a SQL database"})
+				return
+			}
+			tx, err := rawDB.BeginTx(ctx, nil)
+			if err != nil {
+				response.ErrorResponse(l, c, http.StatusInternalServerError, GeneratorErrorAdd, []string{err.Error()})
+				return
+			}
+			committed := false
+			defer func() {
+				if !committed {
+					_ = tx.Rollback()
+				}
+			}()
+			output, err := action.Atomic.Operation(ctx, db.NewAtomicExecutor(tx), atomicInput)
+			if err != nil {
+				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{err.Error()})
+				return
+			}
+			if output.PrimaryKey == "" {
+				output.PrimaryKey = module.PrimaryKey.Name()
+			}
+			if err := tx.Commit(); err != nil {
+				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{err.Error()})
+				return
+			}
+			committed = true
+			response.Response(l, c, output)
+			generator.publishRealtime(c, module, actions.ModuleActionNameAdd, output)
+			return
+		}
+
 		output, err := generator.db(module).Add(l, module.Table, module.PrimaryKey, realFields, mapInput, tc)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{
