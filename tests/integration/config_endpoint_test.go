@@ -30,6 +30,9 @@ func setupTestRouter(authMiddleware func(actions.ModuleAction) gin.HandlerFunc) 
 			List: &renderer.ListPage{
 				ID: "users",
 			},
+			Form: &renderer.FormPage{
+				ID: "users-form",
+			},
 		},
 		Navigation: []module.NavigationEntry{
 			{
@@ -50,6 +53,9 @@ func setupTestRouter(authMiddleware func(actions.ModuleAction) gin.HandlerFunc) 
 				Show:       true,
 				Path:       "/admin/users/add",
 			},
+		},
+		Routes: []module.RoutablePage{
+			{ActionName: "defrec", Path: "/admin/users/create", Roles: []actions.Role{"admin"}},
 		},
 		Actions: []actions.ModuleAction{
 			&actions.ListModuleAction{
@@ -283,6 +289,35 @@ func TestConfigEndpoint_NavigationStructure(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotContains(t, string(encoded), `"data"`, "Navigation must not emit arbitrary legacy data")
 		assert.NotContains(t, string(encoded), "view_adapter", "Navigation must not emit legacy view adapters")
+	}
+}
+
+func TestConfigEndpoint_RouteRegistry(t *testing.T) {
+	_, adminEngine := setupTestRouter(createMockAuthMiddleware(&icontext.UserInfo{ID: 1, Role: "admin"}))
+	adminResponse := executeRequest(adminEngine, http.MethodGet, "/api/config", nil)
+	require.Equal(t, http.StatusOK, adminResponse.Code)
+
+	var adminConfig module.ConfigResponse
+	require.NoError(t, json.Unmarshal(adminResponse.Body.Bytes(), &adminConfig))
+	paths := make(map[string]module.ConfigRouteEntry, len(adminConfig.Routes))
+	for _, route := range adminConfig.Routes {
+		paths[route.Path] = route
+	}
+	require.Contains(t, paths, "/admin/users")
+	create, ok := paths["/admin/users/create"]
+	require.True(t, ok)
+	require.Equal(t, renderer.PageTypeForm, create.Target.PageType)
+	require.NotNil(t, create.Target.Query)
+	require.Equal(t, "/api/admin/users/defrec/", create.Target.Query.Url)
+	require.Equal(t, http.MethodGet, create.Target.Query.Method)
+
+	_, managerEngine := setupTestRouter(createMockAuthMiddleware(&icontext.UserInfo{ID: 2, Role: "manager"}))
+	managerResponse := executeRequest(managerEngine, http.MethodGet, "/api/config", nil)
+	require.Equal(t, http.StatusOK, managerResponse.Code)
+	var managerConfig module.ConfigResponse
+	require.NoError(t, json.Unmarshal(managerResponse.Body.Bytes(), &managerConfig))
+	for _, route := range managerConfig.Routes {
+		require.NotEqual(t, "/admin/users/create", route.Path)
 	}
 }
 
