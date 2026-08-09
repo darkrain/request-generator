@@ -205,6 +205,12 @@ func (generator *Generator) Run() {
 				if addAction.Auth && generator.AuthMiddleware != nil {
 					defrecGroup.Use(generator.AuthMiddleware(addAction))
 				}
+				if len(addAction.Permission) > 0 {
+					if generator.PermissionMiddleware == nil {
+						panic(fmt.Sprintf("permission middleware not implemented in module: %s", module.Name))
+					}
+					defrecGroup.Use(generator.PermissionMiddleware(addAction, addAction.Permission))
+				}
 				defrecGroup.GET("/", generator.actionDefrec(module))
 
 			case actions.ModuleActionNameView:
