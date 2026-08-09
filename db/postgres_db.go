@@ -164,8 +164,9 @@ func buildTranslationSubquery(tc *TranslationContext, tableRef string, pkName st
 	return pg.Raw(subquery)
 }
 
-// insertTranslations inserts translation rows within a transaction.
-func insertTranslations(tx *sql.Tx, tc *TranslationContext, entityID int64, moduleFields []fields.ModuleField, input map[string]interface{}) error {
+// InsertTranslations inserts translation rows within an existing transaction.
+// It is used by both standard and atomic add paths; modules never receive tx.
+func InsertTranslations(tx *sql.Tx, tc *TranslationContext, entityID int64, moduleFields []fields.ModuleField, input map[string]interface{}) error {
 	for _, field := range moduleFields {
 		if !field.Translatable {
 			continue
@@ -917,7 +918,7 @@ func (db *DB) Add(log *log.Entry, table pg.Table, primaryKey pg.Column, moduleFi
 
 	// Insert translations
 	if tc != nil {
-		if err = insertTranslations(tx, tc, output.Value, moduleFields, input); err != nil {
+		if err = InsertTranslations(tx, tc, output.Value, moduleFields, input); err != nil {
 			log.Errorln("ADD TRANSLATIONS ERR: ", err)
 			return nil, err
 		}

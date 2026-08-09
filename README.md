@@ -1324,6 +1324,48 @@ type TranslationContext struct {
 
 ---
 
+## Атомарное создание связанных записей
+
+Обычный `AddModuleAction` остаётся CRUD-операцией для одной записи. Если доменный сценарий создаёт несколько связанных записей, используйте отдельный `Mode: actions.AddModeAtomic`.
+
+Generator сам выполняет нормализацию и validation input, открывает transaction, вызывает операцию и делает commit или rollback. Atomic operation не получает `*sql.Tx` или типы драйвера: ей доступен только `actions.AtomicExecutor`. Нельзя добавлять `BeforeAction`, `AfterAction`, `RoleBeforeHook` или `RoleAfterHook` в модуль с atomic add: generator завершит запуск configuration error.
+
+```go
+actions.AddModuleAction{
+    Mode: actions.AddModeAtomic,
+    Columns: []pg.Column{profiles.Nick},
+    Atomic: &actions.AtomicAddConfig{
+        Operation: func(ctx context.Context, executor actions.AtomicExecutor, input actions.AtomicInput) (actions.AtomicRecord, error) {
+            nick, err := input.RequireString("nick")
+            if err != nil {
+                return actions.AtomicRecord{}, err
+            }
+
+            profile, err := executor.Insert(ctx, actions.AtomicInsert{
+                Table: profiles,
+                PrimaryKey: profiles.ID,
+                Fields: []actions.AtomicInsertField{
+                    {Column: profiles.Nick, Value: actions.AtomicString(nick)},
+                },
+            })
+            if err != nil {
+                return actions.AtomicRecord{}, err
+            }
+
+            return actions.AtomicRecord{
+                Value: profile.Value,
+                PrimaryKey: "id",
+                Fields: []actions.AtomicField{
+                    {Name: "nick", Value: actions.AtomicString(nick)},
+                },
+            }, nil
+        },
+    },
+}
+```
+
+`AtomicRecord` является ответом add action. Его `Fields` сериализуются на верхнем уровне ответа: поле `{Name: "nick", ...}` станет JSON-полем `nick`. Поэтому `AfterSuccess.Route` интерполируется shell только из response record, например `/profiles/{nick}`. Отдельный источник route bindings не предусмотрен.
+
 ## API эндпоинты
 
 Для модуля с `Name: "courses"` и `Path: ""` генерируются:
