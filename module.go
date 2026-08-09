@@ -31,6 +31,15 @@ type NavigationTarget struct {
 	PageType renderer.PageType      `json:"page_type,omitempty"`
 }
 
+// RoutablePage declares a page that can be opened by a typed route action but
+// is not necessarily visible in sidebar navigation.
+type RoutablePage struct {
+	ActionName string           `json:"action"`
+	Path       string           `json:"path"`
+	Target     NavigationTarget `json:"target,omitempty"`
+	Roles      []actions.Role   `json:"roles,omitempty"`
+}
+
 type RenderFunc func(c *gin.Context, base renderer.Universal) (renderer.Universal, error)
 
 type RelationScope struct {
@@ -62,6 +71,7 @@ type BaseModule struct {
 	RoleAfterHook  []actions.RoleAfterHook    `json:"-"`
 	EntityName     string                     `json:"-"`
 	Navigation     []NavigationEntry          `json:"navigation,omitempty"`
+	Routes         []RoutablePage             `json:"routes,omitempty"`
 	Render         renderer.Universal         `json:"-"`
 	RenderFunc     RenderFunc                 `json:"-"`
 	Relations      []ModuleRelation           `json:"-"`

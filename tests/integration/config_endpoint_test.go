@@ -30,6 +30,9 @@ func setupTestRouter(authMiddleware func(actions.ModuleAction) gin.HandlerFunc) 
 			List: &renderer.ListPage{
 				ID: "users",
 			},
+			Form: &renderer.FormPage{
+				ID: "users-form",
+			},
 		},
 		Navigation: []module.NavigationEntry{
 			{
@@ -40,6 +43,7 @@ func setupTestRouter(authMiddleware func(actions.ModuleAction) gin.HandlerFunc) 
 				Icon:       "user",
 				Show:       true,
 				Path:       "/admin/users",
+				Query:      map[string]interface{}{"scope": "active"},
 			},
 			{
 				ActionName: "add",
@@ -50,6 +54,9 @@ func setupTestRouter(authMiddleware func(actions.ModuleAction) gin.HandlerFunc) 
 				Show:       true,
 				Path:       "/admin/users/add",
 			},
+		},
+		Routes: []module.RoutablePage{
+			{ActionName: "defrec", Path: "/admin/users/create", Roles: []actions.Role{"admin"}},
 		},
 		Actions: []actions.ModuleAction{
 			&actions.ListModuleAction{
@@ -284,6 +291,65 @@ func TestConfigEndpoint_NavigationStructure(t *testing.T) {
 		assert.NotContains(t, string(encoded), `"data"`, "Navigation must not emit arbitrary legacy data")
 		assert.NotContains(t, string(encoded), "view_adapter", "Navigation must not emit legacy view adapters")
 	}
+}
+
+func TestConfigEndpoint_RouteRegistry(t *testing.T) {
+	_, adminEngine := setupTestRouter(createMockAuthMiddleware(&icontext.UserInfo{ID: 1, Role: "admin"}))
+	adminResponse := executeRequest(adminEngine, http.MethodGet, "/api/config", nil)
+	require.Equal(t, http.StatusOK, adminResponse.Code)
+
+	var adminConfig module.ConfigResponse
+	require.NoError(t, json.Unmarshal(adminResponse.Body.Bytes(), &adminConfig))
+	paths := make(map[string]module.ConfigRouteEntry, len(adminConfig.Routes))
+	for _, route := range adminConfig.Routes {
+		paths[route.Path] = route
+	}
+	require.Contains(t, paths, "/admin/users")
+	require.Equal(t, map[string]interface{}{"scope": "active"}, paths["/admin/users"].Target.Query.Params)
+	create, ok := paths["/admin/users/create"]
+	require.True(t, ok)
+	require.Equal(t, renderer.PageTypeForm, create.Target.PageType)
+	require.NotNil(t, create.Target.Query)
+	require.Equal(t, "/api/admin/users/defrec/", create.Target.Query.Url)
+	require.Equal(t, http.MethodGet, create.Target.Query.Method)
+
+	_, managerEngine := setupTestRouter(createMockAuthMiddleware(&icontext.UserInfo{ID: 2, Role: "manager"}))
+	managerResponse := executeRequest(managerEngine, http.MethodGet, "/api/config", nil)
+	require.Equal(t, http.StatusOK, managerResponse.Code)
+	var managerConfig module.ConfigResponse
+	require.NoError(t, json.Unmarshal(managerResponse.Body.Bytes(), &managerConfig))
+	for _, route := range managerConfig.Routes {
+		require.NotEqual(t, "/admin/users/create", route.Path)
+	}
+}
+
+func TestConfigEndpoint_RouteRegistryRejectsDuplicatePaths(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	group := engine.Group("")
+	generator := module.NewGenerator(
+		nil,
+		*group,
+		[]*module.BaseModule{{
+			Name:    "duplicate-routes",
+			Path:    "/admin",
+			Render:  renderer.Universal{List: &renderer.ListPage{ID: "duplicate-routes"}},
+			Actions: []actions.ModuleAction{actions.ListModuleAction{Permission: []actions.Role{"admin"}}},
+			Navigation: []module.NavigationEntry{
+				{ActionName: "list", Show: true, Path: "/admin/duplicate", Title: "One"},
+				{ActionName: "list", Show: true, Path: "/admin/duplicate", Title: "Two"},
+			},
+		}},
+		func(_ actions.ModuleAction, _ []actions.Role) gin.HandlerFunc {
+			return func(c *gin.Context) { c.Next() }
+		},
+		createMockAuthMiddleware(&icontext.UserInfo{ID: 1, Role: "admin"}),
+	)
+	generator.Run()
+
+	w := executeRequest(engine, http.MethodGet, "/api/config", nil)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.Contains(t, w.Body.String(), "declared more than once")
 }
 
 func TestNavigationContract_HasNoArbitraryDataField(t *testing.T) {

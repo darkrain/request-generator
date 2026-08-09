@@ -1,6 +1,7 @@
 package module
 
 import (
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -16,8 +17,14 @@ import (
 // ConfigResponse структурирует ответ эндпоинта /api/config
 type ConfigResponse struct {
 	Navigation []ConfigNavigationEntry `json:"navigation"`
+	Routes     []ConfigRouteEntry      `json:"routes"`
 	Widgets    []ConfigWidget          `json:"widgets"`
 	Role       string                  `json:"role"`
+}
+
+type ConfigRouteEntry struct {
+	Path   string               `json:"path"`
+	Target NavigationPageTarget `json:"target"`
 }
 
 type ConfigNavigationEntry struct {
@@ -90,6 +97,11 @@ func (generator *Generator) actionConfigEndpoint() gin.HandlerFunc {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
+		routes, err := generator.buildRouteRegistry(c, role)
+		if err != nil {
+			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			return
+		}
 		widgets, err := generator.buildWidgets(c, role)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
@@ -98,6 +110,7 @@ func (generator *Generator) actionConfigEndpoint() gin.HandlerFunc {
 
 		config := ConfigResponse{
 			Navigation: navigation,
+			Routes:     routes,
 			Widgets:    widgets,
 			Role:       role,
 		}
@@ -197,24 +210,9 @@ func (generator *Generator) buildNavigation(c *gin.Context, role string, lang lo
 				continue
 			}
 
-			target := navigationTarget(entry)
-			if target.Type == "page" {
-				render, err := module.RenderFor(c)
-				if err != nil {
-					return nil, err
-				}
-				route := generator.buildRouteForAction(module, render, action, role)
-				if entry.Target.PageType != "" {
-					route.Renderer = viewRouteIdentity(render, entry.Target.PageType)
-					route.PageType = viewRoutePageType(render, entry.Target.PageType)
-				}
-				target.Renderer = route.Renderer
-				target.PageType = route.PageType
-				target.Query = route.Query
-				target.Children = route.Children
-				if target.Query != nil && entry.Query != nil {
-					target.Query.Params = entry.Query
-				}
+			target, err := generator.buildPageTarget(c, module, action, entry.Target, entry.Query, role)
+			if err != nil {
+				return nil, err
 			}
 
 			result = append(result, ConfigNavigationEntry{
@@ -240,6 +238,75 @@ func (generator *Generator) buildNavigation(c *gin.Context, role string, lang lo
 	return result, nil
 }
 
+func (generator *Generator) buildRouteRegistry(c *gin.Context, role string) ([]ConfigRouteEntry, error) {
+	result := make([]ConfigRouteEntry, 0)
+	seen := make(map[string]struct{})
+	appendRoute := func(module *BaseModule, path string, action actions.ModuleAction, targetConfig NavigationTarget, queryParams map[string]interface{}) error {
+		if path == "" || targetConfig.Type != "" && targetConfig.Type != "page" {
+			return nil
+		}
+		target, err := generator.buildPageTarget(c, module, action, targetConfig, queryParams, role)
+		if err != nil {
+			return err
+		}
+		if _, exists := seen[path]; exists {
+			return fmt.Errorf("config route path %q is declared more than once", path)
+		}
+		seen[path] = struct{}{}
+		result = append(result, ConfigRouteEntry{Path: path, Target: target})
+		return nil
+	}
+
+	for _, module := range generator.Modules {
+		for _, entry := range module.Navigation {
+			if !entry.Show || !navigationRoleAllowed(entry, role) {
+				continue
+			}
+			action, ok := findModuleAction(module, entry.ActionName)
+			if !ok || !hasPermission(action, role) {
+				continue
+			}
+			if err := appendRoute(module, navigationPath(module, entry, "page"), action, entry.Target, entry.Query); err != nil {
+				return nil, err
+			}
+		}
+		for _, page := range module.Routes {
+			action, ok := findModuleAction(module, page.ActionName)
+			if !ok || !hasPermission(action, role) || !routeRolesAllowed(page, role) {
+				continue
+			}
+			if err := appendRoute(module, page.Path, action, page.Target, nil); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return result, nil
+}
+
+func (generator *Generator) buildPageTarget(c *gin.Context, module *BaseModule, action actions.ModuleAction, targetConfig NavigationTarget, queryParams map[string]interface{}, role string) (NavigationPageTarget, error) {
+	target := navigationTarget(NavigationEntry{Target: targetConfig})
+	if target.Type != "page" {
+		return target, nil
+	}
+	render, err := module.RenderFor(c)
+	if err != nil {
+		return NavigationPageTarget{}, err
+	}
+	route := generator.buildRouteForAction(module, render, action, role)
+	if targetConfig.PageType != "" {
+		route.Renderer = viewRouteIdentity(render, targetConfig.PageType)
+		route.PageType = viewRoutePageType(render, targetConfig.PageType)
+	}
+	target.Renderer = route.Renderer
+	target.PageType = route.PageType
+	target.Query = route.Query
+	target.Children = route.Children
+	if target.Query != nil && queryParams != nil {
+		target.Query.Params = queryParams
+	}
+	return target, nil
+}
+
 func navigationRoleAllowed(entry NavigationEntry, role string) bool {
 	if len(entry.Roles) == 0 {
 		return true
@@ -252,7 +319,22 @@ func navigationRoleAllowed(entry NavigationEntry, role string) bool {
 	return false
 }
 
+func routeRolesAllowed(route RoutablePage, role string) bool {
+	if len(route.Roles) == 0 {
+		return true
+	}
+	for _, allowed := range route.Roles {
+		if string(allowed) == role || allowed == actions.RoleAll {
+			return true
+		}
+	}
+	return false
+}
+
 func findModuleAction(module *BaseModule, actionName string) (actions.ModuleAction, bool) {
+	if actionName == string(actions.ModuleActionNameDefrec) {
+		return module.Defrec, true
+	}
 	for _, action := range module.Actions {
 		if string(action.Action()) == actionName {
 			return action, true
