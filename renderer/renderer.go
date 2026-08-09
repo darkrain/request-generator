@@ -1293,6 +1293,7 @@ type ModalAction struct {
 type Confirm struct {
 	Title        string `json:"title,omitempty"`
 	Message      string `json:"message,omitempty"`
+	CancelLabel  string `json:"cancel_label,omitempty"`
 	ConfirmLabel string `json:"confirm_label,omitempty"`
 }
 

@@ -909,6 +909,7 @@ Actions используются в `card_schema.actions`, `record_page.actions`
   "confirm": {
     "title": "ui.confirm",
     "message": "ui.confirm_message",
+    "cancel_label": "ui.cancel",
     "confirm_label": "ui.confirm"
   },
   "after_success": {
