@@ -34,7 +34,7 @@ func (localizer textLocalizer) localizeRendererAction(action *Action) {
 		localizer.localizeTextFields(&action.Modal.Title)
 	}
 	if action.Confirm != nil {
-		localizer.localizeTextFields(&action.Confirm.Title, &action.Confirm.Message, &action.Confirm.ConfirmLabel)
+		localizer.localizeTextFields(&action.Confirm.Title, &action.Confirm.Message, &action.Confirm.CancelLabel, &action.Confirm.ConfirmLabel)
 	}
 	if action.AfterSuccess != nil {
 		localizer.localizeTextFields(&action.AfterSuccess.Toast)
