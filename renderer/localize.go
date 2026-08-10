@@ -271,8 +271,28 @@ func (localizer textLocalizer) localizeRecordPage(page *RecordPage) {
 		for j := range section.Components {
 			component := &section.Components[j]
 			localizer.localizeTextFields(&component.ValueLabel, &component.ValueFallback, &component.MatrixLabel, &component.Title, &component.TitleFallback, &component.Subtitle, &component.SubtitleFallback)
+			for index := range component.Items {
+				item := &component.Items[index]
+				item.Label = localizer.localizeWithFallback(item.Label, item.LabelFallback)
+				item.LabelFallback = ""
+			}
+			if component.CollectionGroups != nil {
+				for index := range component.CollectionGroups.Groups {
+					group := &component.CollectionGroups.Groups[index]
+					group.Label = localizer.localizeWithFallback(group.Label, group.LabelFallback)
+					group.LabelFallback = ""
+				}
+			}
 		}
 	}
+}
+
+func (localizer textLocalizer) localizeWithFallback(value string, fallback string) string {
+	localized := localizer.localizeRendererText(value, "")
+	if localized == value && fallback != "" {
+		return fallback
+	}
+	return localized
 }
 
 func (localizer textLocalizer) localizeResourceGridPage(page *ResourceGridPage) {

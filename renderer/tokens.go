@@ -321,6 +321,7 @@ type ComponentDisplayType string
 
 const (
 	ComponentDisplayKeyValueGrid ComponentDisplayType = "key_value_grid"
+	ComponentDisplayTileGrid     ComponentDisplayType = "tile_grid"
 )
 
 type ComponentRatio string
