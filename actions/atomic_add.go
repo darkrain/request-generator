@@ -142,6 +142,33 @@ type AtomicInsertField struct {
 	Value  AtomicValue `json:"value"`
 }
 
+// AtomicValueKind declares the SQL result shape requested by AtomicSelect.
+// Keeping it explicit avoids leaking driver scan values into domain operations.
+type AtomicValueKind string
+
+const (
+	AtomicValueKindString  AtomicValueKind = "string"
+	AtomicValueKindInt     AtomicValueKind = "int"
+	AtomicValueKindFloat   AtomicValueKind = "float"
+	AtomicValueKindBool    AtomicValueKind = "bool"
+	AtomicValueKindStrings AtomicValueKind = "strings"
+	AtomicValueKindInts    AtomicValueKind = "ints"
+)
+
+type AtomicSelectField struct {
+	Name   string          `json:"name"`
+	Column pg.Column       `json:"-"`
+	Kind   AtomicValueKind `json:"kind"`
+}
+
+// AtomicSelect describes a typed read executed inside the same transaction as
+// the following atomic writes.
+type AtomicSelect struct {
+	Table  pg.Table            `json:"-"`
+	Fields []AtomicSelectField `json:"-"`
+	Where  pg.BoolExpression   `json:"-"`
+}
+
 // AtomicRecord is both the atomic add response and the source for route
 // interpolation. Fields are serialized at the top level of the response, so a
 // renderer can resolve routes such as /profiles/{nick} from the HTTP result.
@@ -210,6 +237,7 @@ func (record AtomicRecord) String(name string) (string, bool) {
 // creation logic, not a driver transaction or connection.
 type AtomicExecutor interface {
 	Insert(context.Context, AtomicInsert) (AtomicRecord, error)
+	SelectOne(context.Context, AtomicSelect) (AtomicRecord, error)
 }
 
 type AtomicAddOperation func(context.Context, AtomicExecutor, AtomicInput) (AtomicRecord, error)

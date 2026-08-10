@@ -1330,6 +1330,8 @@ type TranslationContext struct {
 
 Generator сам выполняет нормализацию и validation input, открывает transaction, вызывает операцию и делает commit или rollback. Atomic operation не получает `*sql.Tx` или типы драйвера: ей доступен только `actions.AtomicExecutor`. Нельзя добавлять `BeforeAction`, `AfterAction`, `RoleBeforeHook` или `RoleAfterHook` в модуль с atomic add: generator завершит запуск configuration error.
 
+Если перед вставками нужен контекст из БД, operation вызывает `executor.SelectOne`. Запрос описывается таблицей, типизированными select-полями и Jet `Where`; он выполняется в той же transaction. Нельзя читать этот контекст через отдельный `*sql.DB` до atomic operation.
+
 ```go
 actions.AddModuleAction{
     Mode: actions.AddModeAtomic,

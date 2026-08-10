@@ -260,6 +260,72 @@ func TestAtomicAdd_RollsBackInvalidResultBeforeCommit(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestAtomicAdd_SelectOneAndInsertsShareTransaction(t *testing.T) {
+	for _, testCase := range []struct {
+		name      string
+		selectErr error
+		status    int
+	}{
+		{name: "success", status: http.StatusOK},
+		{name: "select failure", selectErr: errors.New("agency context not found"), status: http.StatusBadRequest},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			sqlDB, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = sqlDB.Close() })
+			id := pg.IntegerColumn("id")
+			title := pg.StringColumn("title")
+			ownerID := pg.IntegerColumn("owner_id")
+			items := pg.NewTable("public", "atomic_items", "", id, title)
+			related := pg.NewTable("public", "atomic_related", "", id, ownerID)
+			owners := pg.NewTable("public", "atomic_owners", "", id, ownerID)
+			operation := func(ctx context.Context, executor actions.AtomicExecutor, input actions.AtomicInput) (actions.AtomicRecord, error) {
+				owner, err := executor.SelectOne(ctx, actions.AtomicSelect{
+					Table:  owners,
+					Fields: []actions.AtomicSelectField{{Name: "owner_id", Column: ownerID, Kind: actions.AtomicValueKindInt}},
+					Where:  ownerID.EQ(pg.Int(1)),
+				})
+				if err != nil {
+					return actions.AtomicRecord{}, err
+				}
+				ownerValue, ok := owner.Field("owner_id")
+				if !ok || ownerValue.Int == nil {
+					return actions.AtomicRecord{}, errors.New("owner id missing")
+				}
+				titleValue, err := input.RequireString("title")
+				if err != nil {
+					return actions.AtomicRecord{}, err
+				}
+				item, err := executor.Insert(ctx, actions.AtomicInsert{Table: items, PrimaryKey: id, Fields: []actions.AtomicInsertField{{Column: title, Value: actions.AtomicString(titleValue)}}})
+				if err != nil {
+					return actions.AtomicRecord{}, err
+				}
+				_, err = executor.Insert(ctx, actions.AtomicInsert{Table: related, PrimaryKey: id, Fields: []actions.AtomicInsertField{{Column: ownerID, Value: actions.AtomicInt(*ownerValue.Int)}}})
+				if err != nil {
+					return actions.AtomicRecord{}, err
+				}
+				return actions.AtomicRecord{Value: item.Value, PrimaryKey: "id"}, nil
+			}
+			engine := setupAtomicAddRouter(t, sqlDB, operation)
+			mock.ExpectBegin()
+			selectExpectation := mock.ExpectQuery("SELECT")
+			if testCase.selectErr != nil {
+				selectExpectation.WillReturnError(testCase.selectErr)
+				mock.ExpectRollback()
+			} else {
+				selectExpectation.WillReturnRows(sqlmock.NewRows([]string{"owner_id"}).AddRow(9))
+				mock.ExpectQuery("INSERT INTO public").WithArgs("hello").WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(41))
+				mock.ExpectQuery("INSERT INTO public").WithArgs(int64(9)).WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(77))
+				mock.ExpectCommit()
+			}
+
+			w := executeJSONRequest(engine, http.MethodPut, "/admin/atomic-items", map[string]interface{}{"title": "hello"})
+			require.Equal(t, testCase.status, w.Code, w.Body.String())
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
 func TestAtomicAdd_RejectsHooksAtConfigurationTime(t *testing.T) {
 	for _, testCase := range []struct {
 		name       string
