@@ -58,8 +58,8 @@ func (executor atomicExecutor) Insert(ctx context.Context, insert actions.Atomic
 }
 
 func (executor atomicExecutor) SelectOne(ctx context.Context, selectRequest actions.AtomicSelect) (actions.AtomicRecord, error) {
-	if selectRequest.Table == nil || len(selectRequest.Fields) == 0 {
-		return actions.AtomicRecord{}, fmt.Errorf("atomic select requires table and fields")
+	if selectRequest.Table == nil || len(selectRequest.Fields) == 0 || selectRequest.Where == nil {
+		return actions.AtomicRecord{}, fmt.Errorf("atomic select requires table, fields, and where")
 	}
 	projections := make([]pg.Projection, 0, len(selectRequest.Fields))
 	scans := make([]interface{}, 0, len(selectRequest.Fields))
@@ -76,11 +76,7 @@ func (executor atomicExecutor) SelectOne(ctx context.Context, selectRequest acti
 		scans = append(scans, scan)
 		values = append(values, value)
 	}
-	query := pg.SELECT(projections[0], projections[1:]...).FROM(selectRequest.Table)
-	if selectRequest.Where != nil {
-		query = query.WHERE(selectRequest.Where)
-	}
-	query = query.LIMIT(1)
+	query := pg.SELECT(projections[0], projections[1:]...).FROM(selectRequest.Table).WHERE(selectRequest.Where).LIMIT(1)
 	statement, args := query.Sql()
 	if err := executor.tx.QueryRowContext(ctx, statement, args...).Scan(scans...); err != nil {
 		return actions.AtomicRecord{}, err

@@ -43,3 +43,24 @@ func TestAtomicExecutorSelectOneReturnsTypedValues(t *testing.T) {
 	require.NoError(t, tx.Rollback())
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestAtomicExecutorSelectOneRequiresWhere(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	id := pg.IntegerColumn("id")
+	table := pg.NewTable("public", "profiles", "", id)
+
+	mock.ExpectBegin()
+	tx, err := sqlDB.Begin()
+	require.NoError(t, err)
+	mock.ExpectRollback()
+
+	_, err = NewAtomicExecutor(tx).SelectOne(context.Background(), actions.AtomicSelect{
+		Table:  table,
+		Fields: []actions.AtomicSelectField{{Name: "id", Column: id, Kind: actions.AtomicValueKindInt}},
+	})
+	require.Error(t, err)
+	require.NoError(t, tx.Rollback())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
