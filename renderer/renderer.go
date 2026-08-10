@@ -142,6 +142,9 @@ func (r Universal) Validate() error {
 		if err := validateActions("record page", r.Record.Actions); err != nil {
 			return err
 		}
+		if err := validateRecordComponents(r.Record); err != nil {
+			return err
+		}
 	}
 	if r.ResourceGrid != nil {
 		if err := validateAction("resource grid create", r.ResourceGrid.Create); err != nil {
@@ -163,6 +166,80 @@ func (r Universal) Validate() error {
 		}
 	}
 	return nil
+}
+
+func validateRecordComponents(page *RecordPage) error {
+	for _, section := range page.Sections {
+		for _, component := range section.Components {
+			if err := component.Validate(); err != nil {
+				return fmt.Errorf("renderer.Universal: record section %q component %q: %w", section.ID, component.ID, err)
+			}
+		}
+	}
+	return nil
+}
+
+func (component DisplayComponent) Validate() error {
+	if component.DisplayType != "" {
+		if component.Type != DisplayDataList {
+			return fmt.Errorf("display type requires component type %q", DisplayDataList)
+		}
+		switch component.DisplayType {
+		case ComponentDisplayKeyValueGrid, ComponentDisplayTileGrid:
+		default:
+			return fmt.Errorf("unsupported display type %q", component.DisplayType)
+		}
+	}
+	if len(component.Items) > 0 {
+		if component.Type != DisplayDataList {
+			return fmt.Errorf("items require component type %q", DisplayDataList)
+		}
+		seen := make(map[string]struct{}, len(component.Items))
+		for _, item := range component.Items {
+			if item.Field == "" {
+				return fmt.Errorf("item field is required")
+			}
+			if _, exists := seen[item.Field]; exists {
+				return fmt.Errorf("item field %q is duplicated", item.Field)
+			}
+			seen[item.Field] = struct{}{}
+		}
+	}
+	if component.CollectionGroups != nil {
+		if component.Type != DisplayAccordionGroups {
+			return fmt.Errorf("collection groups require component type %q", DisplayAccordionGroups)
+		}
+		if component.CollectionGroups.SourceField == "" {
+			return fmt.Errorf("collection groups source field is required")
+		}
+		if len(component.CollectionGroups.Groups) == 0 {
+			return fmt.Errorf("collection groups are required")
+		}
+		seen := make(map[string]struct{}, len(component.CollectionGroups.Groups))
+		for _, group := range component.CollectionGroups.Groups {
+			if group.ID == "" {
+				return fmt.Errorf("collection group id is required")
+			}
+			if _, exists := seen[group.ID]; exists {
+				return fmt.Errorf("collection group id %q is duplicated", group.ID)
+			}
+			seen[group.ID] = struct{}{}
+			if !hasCondition(group.ItemCondition) {
+				return fmt.Errorf("collection group %q item condition is required", group.ID)
+			}
+		}
+	}
+	if component.Type == DisplayAccordionGroups && component.CollectionGroups == nil {
+		return fmt.Errorf("accordion groups require collection groups")
+	}
+	return nil
+}
+
+func hasCondition(condition *Condition) bool {
+	if condition == nil {
+		return false
+	}
+	return condition.Path != "" || len(condition.All) > 0 || len(condition.Any) > 0 || condition.Not != nil
 }
 
 func validateListPage(scope string, page *ListPage) error {
@@ -1124,6 +1201,8 @@ type DisplayComponent struct {
 	Columns             int                      `json:"columns,omitempty"`
 	ReadonlyColumns     int                      `json:"readonly_columns,omitempty"`
 	DisplayType         ComponentDisplayType     `json:"display_type,omitempty"`
+	Items               []DisplayFieldRef        `json:"items,omitempty"`
+	CollectionGroups    *DisplayCollectionGroups `json:"collection_groups,omitempty"`
 	SeparatorVariant    ToneToken                `json:"separator_variant,omitempty"`
 	SeparatorAppearance SeparatorAppearance      `json:"separator_appearance,omitempty"`
 	MatrixColumns       []map[string]interface{} `json:"matrix_columns,omitempty"`
@@ -1139,6 +1218,24 @@ type DisplayComponent struct {
 	TitleLevel          int                      `json:"title_level,omitempty"`
 	TitleTone           ToneToken                `json:"title_tone,omitempty"`
 	BodyClass           string                   `json:"body_class,omitempty"`
+}
+
+type DisplayFieldRef struct {
+	Field         string `json:"field"`
+	Label         string `json:"label,omitempty"`
+	LabelFallback string `json:"label_fallback,omitempty"`
+}
+
+type DisplayCollectionGroup struct {
+	ID            string     `json:"id"`
+	Label         string     `json:"label,omitempty"`
+	LabelFallback string     `json:"label_fallback,omitempty"`
+	ItemCondition *Condition `json:"item_condition,omitempty"`
+}
+
+type DisplayCollectionGroups struct {
+	SourceField string                   `json:"source_field"`
+	Groups      []DisplayCollectionGroup `json:"groups"`
 }
 
 type RecordPage struct {

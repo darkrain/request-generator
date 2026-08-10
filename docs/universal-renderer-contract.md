@@ -1211,7 +1211,26 @@ Generator behavior:
             "id": "facts",
             "type": "data_list",
             "fields": ["created_at", "updated_at"],
-            "display_type": "key_value_grid"
+            "display_type": "key_value_grid",
+            "items": [
+              {"field": "created_at", "label": "Created", "label_fallback": "Created"},
+              {"field": "updated_at", "label": "Updated", "label_fallback": "Updated"}
+            ]
+          },
+          {
+            "id": "offers",
+            "type": "accordion_groups",
+            "collection_groups": {
+              "source_field": "offers",
+              "groups": [
+                {
+                  "id": "available",
+                  "label": "Available",
+                  "label_fallback": "Available",
+                  "item_condition": {"path": "status", "equals": "available"}
+                }
+              ]
+            }
           }
         ]
       }
@@ -1230,6 +1249,10 @@ Generator behavior:
 ```
 
 `record_page.sections[].components` и `record_page.sections[].stack` являются canonical metadata для display renderer.
+
+Для `data_list` поле `items` задает типизированные ссылки на поля и их короткие локализованные подписи. Если `items` отсутствует, renderer использует `fields`, сохраняя совместимость с существующим описанием. `display_type` принимает `key_value_grid` или `tile_grid`; `tile_grid` предназначен для универсальных пар key/value.
+
+`accordion_groups` использует `collection_groups`: `source_field` указывает поле-коллекцию записи, а каждая группа задает уникальный `id`, локализуемую подпись и `item_condition`. Условие вычисляется относительно каждого элемента этой коллекции, а не относительно корневой записи.
 
 ## Renderer Registry
 

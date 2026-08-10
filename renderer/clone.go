@@ -491,6 +491,8 @@ func cloneDisplayComponents(values []DisplayComponent) []DisplayComponent {
 	for i, v := range values {
 		out[i] = v
 		out[i].Fields = cloneSlice(v.Fields)
+		out[i].Items = cloneSlice(v.Items)
+		out[i].CollectionGroups = cloneDisplayCollectionGroups(v.CollectionGroups)
 		out[i].Block = cloneBlock(v.Block)
 		if v.Visible != nil {
 			visible := *v.Visible
@@ -512,6 +514,19 @@ func cloneDisplayComponents(values []DisplayComponent) []DisplayComponent {
 		}
 	}
 	return out
+}
+
+func cloneDisplayCollectionGroups(value *DisplayCollectionGroups) *DisplayCollectionGroups {
+	if value == nil {
+		return nil
+	}
+	cp := *value
+	cp.Groups = make([]DisplayCollectionGroup, len(value.Groups))
+	for index, group := range value.Groups {
+		cp.Groups[index] = group
+		cp.Groups[index].ItemCondition = cloneCondition(group.ItemCondition)
+	}
+	return &cp
 }
 
 func cloneActions(values []Action) []Action {
