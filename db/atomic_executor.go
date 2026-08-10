@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/darkrain/request-generator/actions"
+	pg "github.com/go-jet/jet/v2/postgres"
 	"github.com/lib/pq"
 )
 
@@ -54,6 +55,90 @@ func (executor atomicExecutor) Insert(ctx context.Context, insert actions.Atomic
 		return actions.AtomicRecord{}, err
 	}
 	return actions.AtomicRecord{Value: value, PrimaryKey: insert.PrimaryKey.Name()}, nil
+}
+
+func (executor atomicExecutor) SelectOne(ctx context.Context, selectRequest actions.AtomicSelect) (actions.AtomicRecord, error) {
+	if selectRequest.Table == nil || len(selectRequest.Fields) == 0 {
+		return actions.AtomicRecord{}, fmt.Errorf("atomic select requires table and fields")
+	}
+	projections := make([]pg.Projection, 0, len(selectRequest.Fields))
+	scans := make([]interface{}, 0, len(selectRequest.Fields))
+	values := make([]func() (actions.AtomicValue, error), 0, len(selectRequest.Fields))
+	for _, field := range selectRequest.Fields {
+		if field.Name == "" || field.Column == nil {
+			return actions.AtomicRecord{}, fmt.Errorf("atomic select field requires name and column")
+		}
+		scan, value, err := atomicSelectScan(field.Kind)
+		if err != nil {
+			return actions.AtomicRecord{}, fmt.Errorf("atomic select field %q: %w", field.Name, err)
+		}
+		projections = append(projections, field.Column)
+		scans = append(scans, scan)
+		values = append(values, value)
+	}
+	query := pg.SELECT(projections[0], projections[1:]...).FROM(selectRequest.Table)
+	if selectRequest.Where != nil {
+		query = query.WHERE(selectRequest.Where)
+	}
+	query = query.LIMIT(1)
+	statement, args := query.Sql()
+	if err := executor.tx.QueryRowContext(ctx, statement, args...).Scan(scans...); err != nil {
+		return actions.AtomicRecord{}, err
+	}
+	record := actions.AtomicRecord{Fields: make([]actions.AtomicField, 0, len(selectRequest.Fields))}
+	for index, field := range selectRequest.Fields {
+		value, err := values[index]()
+		if err != nil {
+			return actions.AtomicRecord{}, fmt.Errorf("atomic select field %q: %w", field.Name, err)
+		}
+		record.Fields = append(record.Fields, actions.AtomicField{Name: field.Name, Value: value})
+	}
+	return record, nil
+}
+
+func atomicSelectScan(kind actions.AtomicValueKind) (interface{}, func() (actions.AtomicValue, error), error) {
+	switch kind {
+	case actions.AtomicValueKindString:
+		value := &sql.NullString{}
+		return value, func() (actions.AtomicValue, error) {
+			if !value.Valid {
+				return actions.AtomicValue{}, fmt.Errorf("value is null")
+			}
+			return actions.AtomicString(value.String), nil
+		}, nil
+	case actions.AtomicValueKindInt:
+		value := &sql.NullInt64{}
+		return value, func() (actions.AtomicValue, error) {
+			if !value.Valid {
+				return actions.AtomicValue{}, fmt.Errorf("value is null")
+			}
+			return actions.AtomicInt(value.Int64), nil
+		}, nil
+	case actions.AtomicValueKindFloat:
+		value := &sql.NullFloat64{}
+		return value, func() (actions.AtomicValue, error) {
+			if !value.Valid {
+				return actions.AtomicValue{}, fmt.Errorf("value is null")
+			}
+			return actions.AtomicFloat(value.Float64), nil
+		}, nil
+	case actions.AtomicValueKindBool:
+		value := &sql.NullBool{}
+		return value, func() (actions.AtomicValue, error) {
+			if !value.Valid {
+				return actions.AtomicValue{}, fmt.Errorf("value is null")
+			}
+			return actions.AtomicBool(value.Bool), nil
+		}, nil
+	case actions.AtomicValueKindInts:
+		value := &pq.Int64Array{}
+		return value, func() (actions.AtomicValue, error) { return actions.AtomicValue{Ints: []int64(*value)}, nil }, nil
+	case actions.AtomicValueKindStrings:
+		value := &pq.StringArray{}
+		return value, func() (actions.AtomicValue, error) { return actions.AtomicValue{Strings: []string(*value)}, nil }, nil
+	default:
+		return nil, nil, fmt.Errorf("unsupported kind %q", kind)
+	}
 }
 
 func atomicDBValue(value actions.AtomicValue) interface{} {
