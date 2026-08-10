@@ -115,6 +115,10 @@ func TestDisplayComponentValidation(t *testing.T) {
 			name:      "empty group condition",
 			component: DisplayComponent{Type: DisplayAccordionGroups, CollectionGroups: &DisplayCollectionGroups{SourceField: "offers", Groups: []DisplayCollectionGroup{{ID: "available", ItemCondition: &Condition{}}}}},
 		},
+		{
+			name:      "group condition with path but no predicate",
+			component: DisplayComponent{Type: DisplayAccordionGroups, CollectionGroups: &DisplayCollectionGroups{SourceField: "offers", Groups: []DisplayCollectionGroup{{ID: "available", ItemCondition: &Condition{Path: "status"}}}}},
+		},
 	}
 
 	for _, test := range tests {

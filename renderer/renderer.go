@@ -239,7 +239,45 @@ func hasCondition(condition *Condition) bool {
 	if condition == nil {
 		return false
 	}
-	return condition.Path != "" || len(condition.All) > 0 || len(condition.Any) > 0 || condition.Not != nil
+	hasDirectPredicate := condition.Equals != nil ||
+		condition.NotEquals != nil ||
+		len(condition.In) > 0 ||
+		len(condition.NotIn) > 0 ||
+		condition.Empty != nil ||
+		condition.NotEmpty != nil ||
+		condition.Truthy != nil ||
+		condition.Falsy != nil
+	if hasDirectPredicate && condition.Path == "" {
+		return false
+	}
+
+	hasPredicate := hasDirectPredicate
+	for index := range condition.All {
+		if !hasCondition(&condition.All[index]) {
+			return false
+		}
+		hasPredicate = true
+	}
+	for index := range condition.Any {
+		if !hasCondition(&condition.Any[index]) {
+			return false
+		}
+		hasPredicate = true
+	}
+	if condition.Not != nil {
+		switch value := condition.Not.(type) {
+		case Condition:
+			if !hasCondition(&value) {
+				return false
+			}
+		case *Condition:
+			if !hasCondition(value) {
+				return false
+			}
+		}
+		hasPredicate = true
+	}
+	return hasPredicate
 }
 
 func validateListPage(scope string, page *ListPage) error {
