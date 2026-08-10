@@ -274,6 +274,8 @@ func hasCondition(condition *Condition) bool {
 			if !hasCondition(value) {
 				return false
 			}
+		default:
+			return false
 		}
 		hasPredicate = true
 	}

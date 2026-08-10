@@ -119,6 +119,10 @@ func TestDisplayComponentValidation(t *testing.T) {
 			name:      "group condition with path but no predicate",
 			component: DisplayComponent{Type: DisplayAccordionGroups, CollectionGroups: &DisplayCollectionGroups{SourceField: "offers", Groups: []DisplayCollectionGroup{{ID: "available", ItemCondition: &Condition{Path: "status"}}}}},
 		},
+		{
+			name:      "group condition with unsupported not value",
+			component: DisplayComponent{Type: DisplayAccordionGroups, CollectionGroups: &DisplayCollectionGroups{SourceField: "offers", Groups: []DisplayCollectionGroup{{ID: "available", ItemCondition: &Condition{Not: "invalid"}}}}},
+		},
 	}
 
 	for _, test := range tests {
