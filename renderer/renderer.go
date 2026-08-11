@@ -1270,6 +1270,7 @@ type DisplayCollectionGroup struct {
 	ID            string     `json:"id"`
 	Label         string     `json:"label,omitempty"`
 	LabelFallback string     `json:"label_fallback,omitempty"`
+	Tone          string     `json:"tone,omitempty"`
 	ItemCondition *Condition `json:"item_condition,omitempty"`
 }
 
