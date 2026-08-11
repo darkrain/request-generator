@@ -468,6 +468,7 @@ func cloneBlock(v *Block) *Block {
 		return nil
 	}
 	cp := *v
+	cp.Overlays = cloneBlockOverlays(v.Overlays)
 	return &cp
 }
 
@@ -512,6 +513,19 @@ func cloneDisplayComponents(values []DisplayComponent) []DisplayComponent {
 				out[i].MatrixColumns[j] = cloneMap(column)
 			}
 		}
+	}
+	return out
+}
+
+func cloneBlockOverlays(values []BlockOverlay) []BlockOverlay {
+	if values == nil {
+		return nil
+	}
+	out := make([]BlockOverlay, len(values))
+	for index, overlay := range values {
+		out[index] = overlay
+		out[index].Badges = cloneBadges(overlay.Badges)
+		out[index].Wrap = clonePtr(overlay.Wrap)
 	}
 	return out
 }

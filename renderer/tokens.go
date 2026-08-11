@@ -331,6 +331,15 @@ const (
 	ComponentRatioPortrait ComponentRatio = "portrait"
 )
 
+type MediaOverlayPosition string
+
+const (
+	MediaOverlayTopLeft     MediaOverlayPosition = "top-left"
+	MediaOverlayTopRight    MediaOverlayPosition = "top-right"
+	MediaOverlayBottomLeft  MediaOverlayPosition = "bottom-left"
+	MediaOverlayBottomRight MediaOverlayPosition = "bottom-right"
+)
+
 type DirectionToken string
 
 const (
