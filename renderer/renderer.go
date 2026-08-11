@@ -170,6 +170,9 @@ func (r Universal) Validate() error {
 
 func validateRecordComponents(page *RecordPage) error {
 	for _, section := range page.Sections {
+		if err := section.Block.Validate(); err != nil {
+			return fmt.Errorf("renderer.Universal: record section %q block: %w", section.ID, err)
+		}
 		for _, component := range section.Components {
 			if err := component.Validate(); err != nil {
 				return fmt.Errorf("renderer.Universal: record section %q component %q: %w", section.ID, component.ID, err)
@@ -233,6 +236,35 @@ func (component DisplayComponent) Validate() error {
 		return fmt.Errorf("accordion groups require collection groups")
 	}
 	return nil
+}
+
+func (block *Block) Validate() error {
+	if block == nil {
+		return nil
+	}
+	seen := make(map[MediaOverlayPosition]struct{}, len(block.Overlays))
+	for _, overlay := range block.Overlays {
+		if !validMediaOverlayPosition(overlay.Position) {
+			return fmt.Errorf("unsupported block overlay position %q", overlay.Position)
+		}
+		if _, exists := seen[overlay.Position]; exists {
+			return fmt.Errorf("block overlay position %q is duplicated", overlay.Position)
+		}
+		seen[overlay.Position] = struct{}{}
+		if len(overlay.Badges) == 0 {
+			return fmt.Errorf("block overlay %q badges are required", overlay.Position)
+		}
+	}
+	return nil
+}
+
+func validMediaOverlayPosition(position MediaOverlayPosition) bool {
+	switch position {
+	case MediaOverlayTopLeft, MediaOverlayTopRight, MediaOverlayBottomLeft, MediaOverlayBottomRight:
+		return true
+	default:
+		return false
+	}
 }
 
 func hasCondition(condition *Condition) bool {
@@ -1204,6 +1236,17 @@ type Block struct {
 	BorderStyle    string          `json:"border_style,omitempty"`
 	HoverEnabled   *bool           `json:"hover_enabled,omitempty"`
 	Effect         string          `json:"effect,omitempty"`
+	Overlays       []BlockOverlay  `json:"overlays,omitempty"`
+}
+
+// BlockOverlay places typed badge data over any visual block.
+// The renderer resolves badge values against the current record.
+type BlockOverlay struct {
+	ID       string               `json:"id,omitempty"`
+	Position MediaOverlayPosition `json:"position"`
+	Badges   []Badge              `json:"badges"`
+	Size     SizeToken            `json:"size,omitempty"`
+	Wrap     *bool                `json:"wrap,omitempty"`
 }
 
 type Stack struct {

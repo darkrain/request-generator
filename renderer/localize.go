@@ -268,6 +268,7 @@ func (localizer textLocalizer) localizeRecordPage(page *RecordPage) {
 	for i := range page.Sections {
 		section := &page.Sections[i]
 		localizer.localizeTextFields(&section.Title, &section.TitleFallback)
+		localizer.localizeBlock(section.Block)
 		for j := range section.Components {
 			component := &section.Components[j]
 			localizer.localizeTextFields(&component.ValueLabel, &component.ValueFallback, &component.MatrixLabel, &component.Title, &component.TitleFallback, &component.Subtitle, &component.SubtitleFallback)
@@ -283,6 +284,17 @@ func (localizer textLocalizer) localizeRecordPage(page *RecordPage) {
 					group.LabelFallback = ""
 				}
 			}
+		}
+	}
+}
+
+func (localizer textLocalizer) localizeBlock(block *Block) {
+	if block == nil {
+		return
+	}
+	for overlayIndex := range block.Overlays {
+		for badgeIndex := range block.Overlays[overlayIndex].Badges {
+			localizer.localizeBadge(&block.Overlays[overlayIndex].Badges[badgeIndex])
 		}
 	}
 }

@@ -1254,6 +1254,36 @@ Generator behavior:
 
 `accordion_groups` использует `collection_groups`: `source_field` указывает поле-коллекцию записи, а каждая группа задает уникальный `id`, локализуемую подпись, необязательный renderer-token `tone` для элементов группы и `item_condition`. `tone` является строкой: библиотека не ограничивает палитру конкретного приложения. Условие вычисляется относительно каждого элемента этой коллекции, а не относительно корневой записи.
 
+`block.overlays` задает поверхностный слой для любого визуального блока. Каждый overlay имеет одну из фиксированных позиций `top-left`, `top-right`, `bottom-left`, `bottom-right` и типизированный список `badges`. Используется существующая структура `Badge`, поэтому доступны привязка к полю, `tone`, `tone_map`, `marker` и условные `if_field` / `then` / `else`. Значения бейджей renderer получает из текущей записи; библиотека не задает визуальные токены приложения.
+
+```json
+{
+  "type": "GlassesPanel",
+  "overlays": [
+    {
+      "id": "availability",
+      "position": "top-left",
+      "size": "sm",
+      "badges": [
+        {"id": "state", "field": "state", "tone_map": {"active": "glass-success"}}
+      ]
+    },
+    {
+      "id": "ownership",
+      "position": "top-right",
+      "badges": [
+        {
+          "id": "ownership",
+          "if_field": "owner_id",
+          "then": {"label": "Assigned", "tone": "glass-cyan", "marker": false},
+          "else": {"label": "Independent", "tone": "glass-cyan", "marker": false}
+        }
+      ]
+    }
+  ]
+}
+```
+
 ## Renderer Registry
 
 В текущей схеме renderer задается строкой.

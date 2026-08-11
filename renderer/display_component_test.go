@@ -39,6 +39,17 @@ func TestDisplayComponentJSONAndLocalization(t *testing.T) {
 		}
 	]`, string(encoded))
 
+	encodedBlock, err := json.Marshal(source.Record.Sections[0].Block)
+	require.NoError(t, err)
+	require.JSONEq(t, `{
+		"overlays":[{
+			"id":"availability",
+			"position":"top-left",
+			"badges":[{"id":"status","field":"status","tone":"glass-success"}],
+			"size":"sm"
+		}]
+	}`, string(encodedBlock))
+
 	localized := Localize(source, func(value, key string) string {
 		translations := map[string]string{
 			"display.incall":  "Incall price",
@@ -134,6 +145,26 @@ func TestDisplayComponentValidation(t *testing.T) {
 	}
 }
 
+func TestBlockOverlayValidation(t *testing.T) {
+	tests := []struct {
+		name  string
+		block *Block
+		valid bool
+	}{
+		{name: "valid", block: &Block{Overlays: []BlockOverlay{{Position: MediaOverlayTopLeft, Badges: []Badge{{Field: "status"}}}}}, valid: true},
+		{name: "without badges", block: &Block{Overlays: []BlockOverlay{{Position: MediaOverlayTopLeft}}}},
+		{name: "unsupported position", block: &Block{Overlays: []BlockOverlay{{Position: MediaOverlayPosition("corner"), Badges: []Badge{{Field: "status"}}}}}},
+		{name: "duplicate position", block: &Block{Overlays: []BlockOverlay{{Position: MediaOverlayTopLeft, Badges: []Badge{{Field: "status"}}}, {Position: MediaOverlayTopLeft, Badges: []Badge{{Field: "type"}}}}}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := (Universal{Record: &RecordPage{Sections: []RecordSection{{ID: "details", Block: test.block}}}}).Validate()
+			assert.Equal(t, test.valid, err == nil, err)
+		})
+	}
+}
+
 func TestDisplayComponentClone(t *testing.T) {
 	original := displayComponentsUniversal()
 	cloned := original.Clone()
@@ -141,15 +172,23 @@ func TestDisplayComponentClone(t *testing.T) {
 	cloned.Record.Sections[0].Components[0].Items[0].Label = "changed"
 	cloned.Record.Sections[0].Components[1].CollectionGroups.Groups[0].ItemCondition.Path = "changed"
 	cloned.Record.Sections[0].Components[1].CollectionGroups.Groups[0].Tone = "changed"
+	cloned.Record.Sections[0].Block.Overlays[0].Badges[0].Tone = "changed"
 
 	assert.Equal(t, "display.incall", original.Record.Sections[0].Components[0].Items[0].Label)
 	assert.Equal(t, "status", original.Record.Sections[0].Components[1].CollectionGroups.Groups[0].ItemCondition.Path)
 	assert.Equal(t, "rect-cyan", original.Record.Sections[0].Components[1].CollectionGroups.Groups[0].Tone)
+	assert.Equal(t, "glass-success", original.Record.Sections[0].Block.Overlays[0].Badges[0].Tone)
 }
 
 func displayComponentsUniversal() Universal {
 	return Universal{Record: &RecordPage{Sections: []RecordSection{{
 		ID: "details",
+		Block: &Block{Overlays: []BlockOverlay{{
+			ID:       "availability",
+			Position: MediaOverlayTopLeft,
+			Badges:   []Badge{{ID: "status", Field: "status", Tone: "glass-success"}},
+			Size:     SizeSM,
+		}}},
 		Components: []DisplayComponent{
 			{
 				ID:          "rates",
