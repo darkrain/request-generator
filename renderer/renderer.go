@@ -1263,6 +1263,7 @@ type DisplayComponent struct {
 	ID                  string                   `json:"id,omitempty"`
 	Type                DisplayComponentType     `json:"type,omitempty"`
 	Fields              []string                 `json:"fields,omitempty"`
+	MediaItems          []MediaGalleryItem       `json:"media_items,omitempty"`
 	Value               interface{}              `json:"value,omitempty"`
 	Default             interface{}              `json:"default,omitempty"`
 	Visible             *bool                    `json:"visible,omitempty"`

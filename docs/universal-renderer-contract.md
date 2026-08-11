@@ -566,6 +566,7 @@ frontend использует обычный список. `query` содерж�
 | `media.item.kind` | Тип media: `photo`, `video`, `file`. |
 | `media.item.poster` | Постер видео для основного просмотра. |
 | `media.item.thumbnail` | Компактная миниатюра для лент и списков. |
+| `display_component.media_items` | Упорядоченные элементы для `media_gallery`; не требует дублировать их в module fields. |
 | `media.item.usage` | Назначение media: `gallery`, `avatar`, `poster`. |
 | `media.item.src` | URI значения. В `view` request-generator может подставить сюда `item[field].value`, если producer не указал `src` явно. |
 | `media.upload` | `MediaUploadConfig`: ограничения upload UI и localized labels. |
