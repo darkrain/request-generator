@@ -1084,6 +1084,7 @@ type MediaGalleryItem struct {
 	Kind        MediaKind       `json:"kind,omitempty"`
 	Src         string          `json:"src,omitempty"`
 	Poster      string          `json:"poster,omitempty"`
+	Thumbnail   string          `json:"thumbnail,omitempty"`
 	Visibility  MediaVisibility `json:"visibility,omitempty"`
 	Usage       MediaUsage      `json:"usage,omitempty"`
 	SortOrder   int             `json:"sort_order"`
@@ -1262,6 +1263,7 @@ type DisplayComponent struct {
 	ID                  string                   `json:"id,omitempty"`
 	Type                DisplayComponentType     `json:"type,omitempty"`
 	Fields              []string                 `json:"fields,omitempty"`
+	MediaItems          []MediaGalleryItem       `json:"media_items,omitempty"`
 	Value               interface{}              `json:"value,omitempty"`
 	Default             interface{}              `json:"default,omitempty"`
 	Visible             *bool                    `json:"visible,omitempty"`
