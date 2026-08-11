@@ -32,6 +32,7 @@ func TestDisplayComponentJSONAndLocalization(t *testing.T) {
 					"id":"available",
 					"label":"group.available",
 					"label_fallback":"Available",
+					"tone":"rect-cyan",
 					"item_condition":{"path":"status","equals":"available"}
 				}]
 			}
@@ -139,9 +140,11 @@ func TestDisplayComponentClone(t *testing.T) {
 
 	cloned.Record.Sections[0].Components[0].Items[0].Label = "changed"
 	cloned.Record.Sections[0].Components[1].CollectionGroups.Groups[0].ItemCondition.Path = "changed"
+	cloned.Record.Sections[0].Components[1].CollectionGroups.Groups[0].Tone = "changed"
 
 	assert.Equal(t, "display.incall", original.Record.Sections[0].Components[0].Items[0].Label)
 	assert.Equal(t, "status", original.Record.Sections[0].Components[1].CollectionGroups.Groups[0].ItemCondition.Path)
+	assert.Equal(t, "rect-cyan", original.Record.Sections[0].Components[1].CollectionGroups.Groups[0].Tone)
 }
 
 func displayComponentsUniversal() Universal {
@@ -166,6 +169,7 @@ func displayComponentsUniversal() Universal {
 						ID:            "available",
 						Label:         "group.available",
 						LabelFallback: "Available",
+						Tone:          "rect-cyan",
 						ItemCondition: &Condition{Path: "status", Equals: "available"},
 					}},
 				},
