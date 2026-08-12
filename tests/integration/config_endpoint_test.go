@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
 	"github.com/darkrain/request-generator"
 	"github.com/darkrain/request-generator/actions"
 	"github.com/darkrain/request-generator/icontext"
+	"github.com/darkrain/request-generator/locale"
 	"github.com/darkrain/request-generator/renderer"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -291,6 +294,37 @@ func TestConfigEndpoint_NavigationStructure(t *testing.T) {
 		assert.NotContains(t, string(encoded), `"data"`, "Navigation must not emit arbitrary legacy data")
 		assert.NotContains(t, string(encoded), "view_adapter", "Navigation must not emit legacy view adapters")
 	}
+}
+
+func TestConfigEndpoint_NavigationGroupTitleIsLocalized(t *testing.T) {
+	generator, engine := setupTestRouter(createMockAuthMiddleware(&icontext.UserInfo{ID: 1, Role: "admin"}))
+	generator.GroupTitles = map[string]string{"Управление": "navigation.groups.management"}
+	translationsDir := t.TempDir()
+	ruPath := filepath.Join(translationsDir, "ru.json")
+	enPath := filepath.Join(translationsDir, "en.json")
+	require.NoError(t, os.WriteFile(ruPath, []byte(`{"navigation":{"groups":{"management":"Управление"}}}`), 0o600))
+	require.NoError(t, os.WriteFile(enPath, []byte(`{"navigation":{"groups":{"management":"Management"}}}`), 0o600))
+	require.NoError(t, generator.LoadTranslationsFile(locale.RU, ruPath))
+	require.NoError(t, generator.LoadTranslationsFile(locale.EN, enPath))
+	generator.Locales = []locale.Lang{locale.RU, locale.EN}
+	generator.DefaultLocale = locale.EN
+
+	findTitle := func(language string) string {
+		response := executeRequest(engine, http.MethodGet, "/api/config?lang="+language, nil)
+		require.Equal(t, http.StatusOK, response.Code)
+		var config module.ConfigResponse
+		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &config))
+		require.NotEmpty(t, config.Navigation)
+		return config.Navigation[0].GroupTitle
+	}
+	require.Equal(t, "Управление", findTitle("ru"))
+	require.Equal(t, "Management", findTitle("en"))
+
+	generator.GroupTitles = nil
+	response := executeRequest(engine, http.MethodGet, "/api/config?lang=en", nil)
+	var config module.ConfigResponse
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &config))
+	require.Empty(t, config.Navigation[0].GroupTitle)
 }
 
 func TestConfigEndpoint_RouteRegistry(t *testing.T) {

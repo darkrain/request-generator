@@ -28,14 +28,15 @@ type ConfigRouteEntry struct {
 }
 
 type ConfigNavigationEntry struct {
-	ID     string                 `json:"id,omitempty"`
-	Path   string                 `json:"path,omitempty"`
-	Target NavigationPageTarget   `json:"target"`
-	Title  string                 `json:"title"`
-	Icon   string                 `json:"icon,omitempty"`
-	Order  int                    `json:"order,omitempty"`
-	Group  string                 `json:"group,omitempty"`
-	Query  map[string]interface{} `json:"query,omitempty"`
+	ID         string                 `json:"id,omitempty"`
+	Path       string                 `json:"path,omitempty"`
+	Target     NavigationPageTarget   `json:"target"`
+	Title      string                 `json:"title"`
+	Icon       string                 `json:"icon,omitempty"`
+	Order      int                    `json:"order,omitempty"`
+	Group      string                 `json:"group,omitempty"`
+	GroupTitle string                 `json:"group_title,omitempty"`
+	Query      map[string]interface{} `json:"query,omitempty"`
 }
 
 type NavigationPageTarget struct {
@@ -215,7 +216,7 @@ func (generator *Generator) buildNavigation(c *gin.Context, role string, lang lo
 				return nil, err
 			}
 
-			result = append(result, ConfigNavigationEntry{
+			configEntry := ConfigNavigationEntry{
 				ID:     navigationID(module, entry),
 				Path:   navigationPath(module, entry, target.Type),
 				Title:  generator.Translate(lang, entry.Title),
@@ -224,7 +225,11 @@ func (generator *Generator) buildNavigation(c *gin.Context, role string, lang lo
 				Order:  entry.Order,
 				Target: target,
 				Query:  entry.Query,
-			})
+			}
+			if titleKey, ok := generator.GroupTitles[entry.Group]; ok {
+				configEntry.GroupTitle = generator.Translate(lang, titleKey)
+			}
+			result = append(result, configEntry)
 		}
 	}
 
