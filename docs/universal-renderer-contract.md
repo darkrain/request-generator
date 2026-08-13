@@ -753,9 +753,15 @@ Color values (`color`, `tone`, `accent` и аналогичные поля) до
 
 Shared color registry описывается отдельно в theme/config contract. UniversalRenderer мапит token values на CSS variables текущего UI kit.
 
-### Renderer-Specific Enums
+### Renderer-Specific Enums And Open Tokens
 
 Renderer-specific enum values должны быть описаны в разделе contract, который владеет полем. Если поле является global design-token field, оно использует enum из `Design Tokens`. Если поле является renderer-specific, его допустимые значения перечисляются отдельно. Неизвестное значение renderer-specific enum является нарушением contract.
+
+Исключение составляют поля, явно обозначенные как **open token**. Их значение
+является непустой строкой: generator сохраняет его без whitelist-валидации, а
+integration отвечает за визуальную реализацию application-defined token. Open
+token не является причиной добавлять project-specific constant или условие в
+request-generator.
 
 Минимальные enum для core renderers:
 
@@ -775,7 +781,7 @@ Renderer-specific enum values должны быть описаны в разде
 | `form_page.sections[].block.type` | `none`, `panel`, `card` |
 | `form_page.sections[].block.variant` | `default`, `compact` |
 | `action.variant` | `default`, `primary`, `secondary`, `success`, `warning`, `danger` |
-| `action.appearance` | `solid`, `outline`, `ghost`, `soft`, `link` |
+| `action.appearance`, `action.active_appearance` | open token. Гарантированные UI kit варианты: `solid`, `outline`, `outline-fill`, `ghost`, `soft`, `link`; integration может передать свой string token. |
 
 ### Filters
 

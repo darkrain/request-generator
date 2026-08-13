@@ -247,6 +247,9 @@ const (
 	ActionVariantDanger    ActionVariant = "danger"
 )
 
+// ActionAppearance is an open presentation token. The constants below are
+// common conveniences, not a closed enum: applications may pass their own
+// appearance strings and the generator preserves them without validation.
 type ActionAppearance string
 
 const (

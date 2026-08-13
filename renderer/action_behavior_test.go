@@ -26,6 +26,24 @@ func TestActionBehaviorJSONAndClone(t *testing.T) {
 	require.Empty(t, cloned.Form.Actions[2].Behavior)
 }
 
+func TestActionAppearanceIsOpenToken(t *testing.T) {
+	render := Universal{Form: &FormPage{Actions: []Action{{
+		ID:               "custom-style",
+		Appearance:       "service",
+		ActiveAppearance: "service-active",
+	}}}}
+
+	require.NoError(t, render.Validate())
+	encoded, err := json.Marshal(render)
+	require.NoError(t, err)
+	require.Contains(t, string(encoded), `"appearance":"service"`)
+	require.Contains(t, string(encoded), `"active_appearance":"service-active"`)
+
+	cloned := render.Clone()
+	require.Equal(t, ActionAppearance("service"), cloned.Form.Actions[0].Appearance)
+	require.Equal(t, ActionAppearance("service-active"), cloned.Form.Actions[0].ActiveAppearance)
+}
+
 func TestUniversalValidateActionBehavior(t *testing.T) {
 	for _, behavior := range []ActionBehavior{"", ActionBehaviorSubmit, ActionBehaviorReset} {
 		render := Universal{Form: &FormPage{Actions: []Action{{ID: "action", Type: ActionAPI, Behavior: behavior}}}}
