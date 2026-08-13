@@ -1,5 +1,9 @@
 # Request Generator
 
+> Нормативные правила для агентов и изменения public renderer contract:
+> [AGENTS.md](AGENTS.md). Полная исполняемая frontend-спецификация:
+> [docs/universal-renderer-contract.md](docs/universal-renderer-contract.md).
+
 CRUD REST API framework for Go + Gin + PostgreSQL (go-jet). Автоматически генерирует эндпоинты на основе декларативных описаний модулей с поддержкой ролей, валидации, мультиязычности и OpenAPI.
 
 ## Содержание
