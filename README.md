@@ -653,7 +653,19 @@ Actions: []actions.ModuleAction{
 | `ModuleFieldTypeFloat`     | `"float"`  | Дробное число              |
 | `ModuleFieldTypeArray`     | `"array"`  | Массив                     |
 
-For `ModuleFieldTypeArray` fields, add/update accepts JSON arrays and converts them to PostgreSQL arrays before executing SQL. List filters for array columns use PostgreSQL overlap syntax with array literals, for example `filter[tags]={global,featured}`.
+`ModuleFieldTypeArray` всегда возвращается renderer-у как JSON-массив. По умолчанию add/update преобразуют входной JSON-массив в PostgreSQL array. Для колонки `JSON`/`JSONB` producer явно указывает `ArrayStorage: fields.ModuleFieldArrayStorageJSON`; тогда standard и atomic add сериализуют значение как JSON-массив, без project-level converter-а:
+
+```go
+{
+    Column:       table.Messages.Media,
+    Title:        "messages.fields.media",
+    Type:         fields.ModuleFieldTypeArray,
+    FormType:     fields.ModuleFieldFormTypeOnlyView,
+    ArrayStorage: fields.ModuleFieldArrayStorageJSON,
+}
+```
+
+Фильтры `array` используют PostgreSQL overlap syntax с array literal, например `filter[tags]={global,featured}`. Для JSON storage такой фильтр намеренно не разрешён: его семантику нужно описать отдельным typed contract-ом, а не подменять SQL-оператором.
 | `ModuleFieldTypeObject`    | `"object"` | Объект (используется для translatable) |
 
 #### Типы форм (ModuleFieldFormType)

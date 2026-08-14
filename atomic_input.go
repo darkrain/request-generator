@@ -61,6 +61,13 @@ func atomicValueFromField(field fields.ModuleField, value interface{}) (actions.
 		}
 		return actions.AtomicFloat(value), nil
 	case fields.ModuleFieldTypeArray:
+		if field.ArrayStorage.Normalize() == fields.ModuleFieldArrayStorageJSON {
+			encoded, err := fields.MarshalJSONArray(value)
+			if err != nil {
+				return actions.AtomicValue{}, err
+			}
+			return actions.AtomicValue{JSON: encoded}, nil
+		}
 		switch value := value.(type) {
 		case []string:
 			return actions.AtomicValue{Strings: value}, nil

@@ -517,6 +517,19 @@ request-generator до выдачи JSON. `icon` является стабиль
 }
 ```
 
+Тип `array` не меняется, когда данные хранятся в `JSON`/`JSONB`. Это является producer-only настройкой storage, не частью renderer contract-а:
+
+```go
+{
+    Column:       table.Messages.Media,
+    Title:        "messages.fields.media",
+    Type:         fields.ModuleFieldTypeArray,
+    ArrayStorage: fields.ModuleFieldArrayStorageJSON,
+}
+```
+
+Для PostgreSQL array `ArrayStorage` не указывается. JSON array storage нельзя использовать в стандартном list filter: фильтрация JSON-массивов требует отдельной явно описанной семантики.
+
 `endpoint` обязателен. `mode` допускает `list` или `tree`; при отсутствии поля
 frontend использует обычный список. `query` содержит статические параметры
 запроса, `search_param` задает имя параметра поиска.

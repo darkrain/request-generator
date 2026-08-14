@@ -2,8 +2,10 @@ package fields
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/darkrain/request-generator/locale"
 	"github.com/darkrain/request-generator/renderer"
@@ -40,6 +42,45 @@ func ModuleFieldTypeOf(value string) (ModuleFieldType, error) {
 		return ModuleFieldTypeObject, nil
 	}
 	return ModuleFieldTypeString, errors.New(ErrorUnknownFormType)
+}
+
+// ModuleFieldArrayStorage controls how a typed array is persisted. It does
+// not affect the renderer contract: both variants are returned as `array`.
+type ModuleFieldArrayStorage string
+
+const (
+	ModuleFieldArrayStoragePostgres ModuleFieldArrayStorage = "postgres_array"
+	ModuleFieldArrayStorageJSON     ModuleFieldArrayStorage = "json"
+)
+
+func (storage ModuleFieldArrayStorage) Normalize() ModuleFieldArrayStorage {
+	if storage == "" {
+		return ModuleFieldArrayStoragePostgres
+	}
+	return storage
+}
+
+func (storage ModuleFieldArrayStorage) Validate() error {
+	switch storage.Normalize() {
+	case ModuleFieldArrayStoragePostgres, ModuleFieldArrayStorageJSON:
+		return nil
+	default:
+		return fmt.Errorf("unsupported array storage %q", storage)
+	}
+}
+
+// MarshalJSONArray validates and serializes a value for a JSON/JSONB array
+// column. Keeping this beside the field contract prevents producer-level
+// converters from defining incompatible array encodings.
+func MarshalJSONArray(value interface{}) ([]byte, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.HasPrefix(strings.TrimSpace(string(encoded)), "[") {
+		return nil, fmt.Errorf("expected JSON array")
+	}
+	return encoded, nil
 }
 
 type ModuleFieldFormType string
@@ -106,6 +147,7 @@ type ModuleField struct {
 	FormType         ModuleFieldFormType                             `json:"form_type,omitempty"`
 	Example          string                                          `json:"example,omitempty"`
 	AllLabel         string                                          `json:"all_label,omitempty"`
+	ArrayStorage     ModuleFieldArrayStorage                         `json:"-"`
 	Presentation     *renderer.FieldPresentation                     `json:"presentation,omitempty"`
 	Media            *renderer.FieldMediaConfig                      `json:"media,omitempty"`
 	Options          []ModuleFieldOptions                            `json:"options,omitempty"`

@@ -78,3 +78,19 @@ func TestModuleFieldResultValueUsesExplicitConverter(t *testing.T) {
 		t.Fatalf("expected explicit converter result, got %#v", value)
 	}
 }
+
+func TestDBValueEncodesJSONArrayStorage(t *testing.T) {
+	field := fields.ModuleField{Type: fields.ModuleFieldTypeArray, ArrayStorage: fields.ModuleFieldArrayStorageJSON}
+
+	value := dbValue(field, []interface{}{
+		map[string]interface{}{"cid": "bafy-test", "kind": "image"},
+	})
+
+	encoded, ok := value.(string)
+	if !ok {
+		t.Fatalf("expected JSON string, got %T", value)
+	}
+	if encoded != `[{"cid":"bafy-test","kind":"image"}]` {
+		t.Fatalf("unexpected JSON encoding: %s", encoded)
+	}
+}

@@ -1041,6 +1041,13 @@ func dbValue(field fields.ModuleField, value interface{}) interface{} {
 	if field.Type != fields.ModuleFieldTypeArray {
 		return value
 	}
+	if field.ArrayStorage.Normalize() == fields.ModuleFieldArrayStorageJSON {
+		encoded, err := fields.MarshalJSONArray(value)
+		if err == nil {
+			return string(encoded)
+		}
+		return value
+	}
 
 	switch typed := value.(type) {
 	case []interface{}:
