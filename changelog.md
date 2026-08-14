@@ -4,6 +4,10 @@
 
 ### Added
 
+- **`AtomicExecutor.SelectMany`** — ограниченное и детерминированное typed
+  чтение нескольких строк внутри generator-owned transaction. Контракт требует
+  `ORDER BY` и положительный `LIMIT`; пустой результат не является ошибкой.
+
 - **`AtomicExecutor.Upsert` и atomic realtime publish** — конфликтобезопасное
   идемпотентное создание без доступа модуля к transaction/raw SQL, а также
   typed публикация actor-scoped realtime-события только после commit.

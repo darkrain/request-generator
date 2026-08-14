@@ -195,6 +195,14 @@ type AtomicSelect struct {
 	Where  pg.BoolExpression   `json:"-"`
 }
 
+// AtomicSelectMany describes a bounded, deterministic typed read executed
+// inside the same transaction as the following atomic writes.
+type AtomicSelectMany struct {
+	AtomicSelect
+	OrderBy []pg.OrderByClause `json:"-"`
+	Limit   int                `json:"-"`
+}
+
 // AtomicRecord is both the atomic add response and the source for route
 // interpolation. Fields are serialized at the top level of the response, so a
 // renderer can resolve routes such as /profiles/{nick} from the HTTP result.
@@ -257,6 +265,14 @@ func (record AtomicRecord) String(name string) (string, bool) {
 		return "", false
 	}
 	return *value.String, true
+}
+
+func (record AtomicRecord) Int(name string) (int64, bool) {
+	value, ok := record.Field(name)
+	if !ok || value.Int == nil {
+		return 0, false
+	}
+	return *value.Int, true
 }
 
 // AtomicResultField declares a typed field an atomic operation may use as a
@@ -331,6 +347,7 @@ type AtomicExecutor interface {
 	Insert(context.Context, AtomicInsert) (AtomicRecord, error)
 	Upsert(context.Context, AtomicUpsert) (AtomicUpsertResult, error)
 	SelectOne(context.Context, AtomicSelect) (AtomicRecord, error)
+	SelectMany(context.Context, AtomicSelectMany) ([]AtomicRecord, error)
 }
 
 type AtomicAddOperation func(context.Context, AtomicExecutor, AtomicInput) (AtomicRecord, error)

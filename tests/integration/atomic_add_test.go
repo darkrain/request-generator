@@ -327,6 +327,62 @@ func TestAtomicAdd_SelectOneAndInsertsShareTransaction(t *testing.T) {
 	}
 }
 
+func TestAtomicAdd_SelectManyReadsInsideTransactionAndRollsBack(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	id := pg.IntegerColumn("id")
+	title := pg.StringColumn("title")
+	userID := pg.IntegerColumn("user_id")
+	items := pg.NewTable("public", "atomic_items", "", id, title)
+	recipients := pg.NewTable("public", "atomic_recipients", "", id, userID)
+	operation := func(ctx context.Context, executor actions.AtomicExecutor, input actions.AtomicInput) (actions.AtomicRecord, error) {
+		titleValue, err := input.RequireString("title")
+		if err != nil {
+			return actions.AtomicRecord{}, err
+		}
+		item, err := executor.Insert(ctx, actions.AtomicInsert{
+			Table:      items,
+			PrimaryKey: id,
+			Fields:     []actions.AtomicInsertField{{Column: title, Value: actions.AtomicString(titleValue)}},
+		})
+		if err != nil {
+			return actions.AtomicRecord{}, err
+		}
+		records, err := executor.SelectMany(ctx, actions.AtomicSelectMany{
+			AtomicSelect: actions.AtomicSelect{
+				Table:  recipients,
+				Fields: []actions.AtomicSelectField{{Name: "user_id", Column: userID, Kind: actions.AtomicValueKindInt}},
+				Where:  userID.GT(pg.Int(0)),
+			},
+			OrderBy: []pg.OrderByClause{userID.ASC()},
+			Limit:   2,
+		})
+		if err != nil {
+			return actions.AtomicRecord{}, err
+		}
+		if len(records) != 2 {
+			return actions.AtomicRecord{}, errors.New("expected two recipients")
+		}
+		firstUserID, ok := records[0].Int("user_id")
+		if !ok || firstUserID != 10 {
+			return actions.AtomicRecord{}, errors.New("first recipient is unavailable")
+		}
+		return actions.AtomicRecord{Value: item.Value, PrimaryKey: "id"}, errors.New("force rollback after select many")
+	}
+	engine := setupAtomicAddRouter(t, sqlDB, operation)
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO public."atomic_items" ("title") VALUES ($1) RETURNING "id"`)).WithArgs("hello").WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(41))
+	mock.ExpectQuery(`ORDER BY atomic_recipients\.user_id ASC[\s\S]*LIMIT \$2`).WithArgs(int64(0), int64(2)).WillReturnRows(sqlmock.NewRows([]string{"user_id"}).AddRow(10).AddRow(20))
+	mock.ExpectRollback()
+
+	w := executeJSONRequest(engine, http.MethodPut, "/admin/atomic-items", map[string]interface{}{"title": "hello"})
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestAtomicAdd_RejectsHooksAtConfigurationTime(t *testing.T) {
 	for _, testCase := range []struct {
 		name       string

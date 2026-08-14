@@ -67,6 +67,134 @@ func TestAtomicExecutorSelectOneRequiresWhere(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestAtomicExecutorSelectManyReturnsTypedRows(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	id := pg.IntegerColumn("id")
+	name := pg.StringColumn("name")
+	rating := pg.FloatColumn("rating")
+	active := pg.BoolColumn("active")
+	memberIDs := pg.StringColumn("member_ids")
+	tags := pg.StringColumn("tags")
+	profiles := pg.NewTable("public", "profiles", "", id, name, rating, active, memberIDs, tags)
+
+	mock.ExpectBegin()
+	tx, err := sqlDB.Begin()
+	require.NoError(t, err)
+	mock.ExpectQuery("ORDER BY").WillReturnRows(sqlmock.NewRows([]string{"name", "id", "rating", "active", "member_ids", "tags"}).
+		AddRow("Ada", 17, 4.5, true, "{101,102}", "{vip,verified}").
+		AddRow("Lin", 19, 3.25, false, "{}", "{}"))
+	mock.ExpectRollback()
+
+	records, err := NewAtomicExecutor(tx).SelectMany(context.Background(), actions.AtomicSelectMany{
+		AtomicSelect: actions.AtomicSelect{
+			Table: profiles,
+			Fields: []actions.AtomicSelectField{
+				{Name: "name", Column: name, Kind: actions.AtomicValueKindString},
+				{Name: "id", Column: id, Kind: actions.AtomicValueKindInt},
+				{Name: "rating", Column: rating, Kind: actions.AtomicValueKindFloat},
+				{Name: "active", Column: active, Kind: actions.AtomicValueKindBool},
+				{Name: "member_ids", Column: memberIDs, Kind: actions.AtomicValueKindInts},
+				{Name: "tags", Column: tags, Kind: actions.AtomicValueKindStrings},
+			},
+			Where: active.IS_TRUE(),
+		},
+		OrderBy: []pg.OrderByClause{id.ASC()},
+		Limit:   10,
+	})
+	require.NoError(t, err)
+	require.Len(t, records, 2)
+
+	firstID, ok := records[0].Int("id")
+	require.True(t, ok)
+	require.Equal(t, int64(17), firstID)
+	firstName, ok := records[0].String("name")
+	require.True(t, ok)
+	require.Equal(t, "Ada", firstName)
+	ratingValue, ok := records[0].Field("rating")
+	require.True(t, ok)
+	require.Equal(t, 4.5, *ratingValue.Float)
+	activeValue, ok := records[0].Field("active")
+	require.True(t, ok)
+	require.True(t, *activeValue.Bool)
+	memberIDsValue, ok := records[0].Field("member_ids")
+	require.True(t, ok)
+	require.Equal(t, []int64{101, 102}, memberIDsValue.Ints)
+	tagsValue, ok := records[0].Field("tags")
+	require.True(t, ok)
+	require.Equal(t, []string{"vip", "verified"}, tagsValue.Strings)
+
+	require.NoError(t, tx.Rollback())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAtomicExecutorSelectManyReturnsEmptySlice(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	id := pg.IntegerColumn("id")
+	profiles := pg.NewTable("public", "profiles", "", id)
+	mock.ExpectBegin()
+	tx, err := sqlDB.Begin()
+	require.NoError(t, err)
+	mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectRollback()
+
+	records, err := NewAtomicExecutor(tx).SelectMany(context.Background(), actions.AtomicSelectMany{
+		AtomicSelect: actions.AtomicSelect{
+			Table:  profiles,
+			Fields: []actions.AtomicSelectField{{Name: "id", Column: id, Kind: actions.AtomicValueKindInt}},
+			Where:  id.GT(pg.Int(0)),
+		},
+		OrderBy: []pg.OrderByClause{id.ASC()},
+		Limit:   5,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, records)
+	require.Empty(t, records)
+	require.NoError(t, tx.Rollback())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAtomicExecutorSelectManyRequiresBoundedOrder(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	id := pg.IntegerColumn("id")
+	profiles := pg.NewTable("public", "profiles", "", id)
+	mock.ExpectBegin()
+	tx, err := sqlDB.Begin()
+	require.NoError(t, err)
+	mock.ExpectRollback()
+
+	_, err = NewAtomicExecutor(tx).SelectMany(context.Background(), actions.AtomicSelectMany{
+		AtomicSelect: actions.AtomicSelect{
+			Table:  profiles,
+			Fields: []actions.AtomicSelectField{{Name: "id", Column: id, Kind: actions.AtomicValueKindInt}},
+			Where:  id.GT(pg.Int(0)),
+		},
+		Limit: 5,
+	})
+	require.EqualError(t, err, "atomic select many requires order by")
+
+	_, err = NewAtomicExecutor(tx).SelectMany(context.Background(), actions.AtomicSelectMany{
+		AtomicSelect: actions.AtomicSelect{
+			Table:  profiles,
+			Fields: []actions.AtomicSelectField{{Name: "id", Column: id, Kind: actions.AtomicValueKindInt}},
+			Where:  id.GT(pg.Int(0)),
+		},
+		OrderBy: []pg.OrderByClause{id.ASC()},
+	})
+	require.EqualError(t, err, "atomic select many requires a positive limit")
+
+	require.NoError(t, tx.Rollback())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestAtomicExecutorUpsertReturnsInsertAndConflictPaths(t *testing.T) {
 	for _, testCase := range []struct {
 		name     string
