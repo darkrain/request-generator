@@ -1366,6 +1366,37 @@ Generator сам выполняет нормализацию и validation input
 
 Если перед вставками нужен контекст из БД, operation вызывает `executor.SelectOne`. Запрос описывается таблицей, типизированными select-полями и Jet `Where`; он выполняется в той же transaction. Нельзя читать этот контекст через отдельный `*sql.DB` до atomic operation.
 
+Для нескольких строк используйте `executor.SelectMany`. У него обязательны typed
+`OrderBy` и положительный `Limit`, поэтому операция не создаёт неограниченный или
+недетерминированный read внутри transaction. Пустой результат возвращается как
+пустой `[]AtomicRecord`, а не как ошибка. Значения читаются через типизированные
+accessors `record.String("field")`, `record.Int("field")` или `record.Field("field")`.
+
+```go
+recipients, err := executor.SelectMany(ctx, actions.AtomicSelectMany{
+    AtomicSelect: actions.AtomicSelect{
+        Table: users,
+        Fields: []actions.AtomicSelectField{
+            {Name: "user_id", Column: users.ID, Kind: actions.AtomicValueKindInt},
+        },
+        Where: users.Active.EQ(pg.Bool(true)),
+    },
+    OrderBy: []pg.OrderByClause{users.ID.ASC()},
+    Limit:   500,
+})
+if err != nil {
+    return actions.AtomicRecord{}, err
+}
+for _, recipient := range recipients {
+    userID, ok := recipient.Int("user_id")
+    if !ok {
+        return actions.AtomicRecord{}, errors.New("recipient user id is unavailable")
+    }
+    // Собрать только server-derived результат для post-commit side effect.
+    _ = userID
+}
+```
+
 Для идемпотентного создания с уникальным ключом используется `executor.Upsert`.
 Он получает typed insert, conflict columns и при необходимости typed update fields.
 Без `UpdateFields` executor выполняет `ON CONFLICT DO NOTHING`; в конфликтном

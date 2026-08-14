@@ -138,31 +138,103 @@ func (executor atomicExecutor) Upsert(ctx context.Context, upsert actions.Atomic
 }
 
 func (executor atomicExecutor) SelectOne(ctx context.Context, selectRequest actions.AtomicSelect) (actions.AtomicRecord, error) {
-	if selectRequest.Table == nil || len(selectRequest.Fields) == 0 || selectRequest.Where == nil {
-		return actions.AtomicRecord{}, fmt.Errorf("atomic select requires table, fields, and where")
+	if err := validateAtomicSelect(selectRequest); err != nil {
+		return actions.AtomicRecord{}, err
 	}
+	rows, err := executor.selectRows(ctx, selectRequest, nil, 1)
+	if err != nil {
+		return actions.AtomicRecord{}, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return actions.AtomicRecord{}, err
+		}
+		return actions.AtomicRecord{}, sql.ErrNoRows
+	}
+	record, err := scanAtomicRecord(rows, selectRequest.Fields)
+	if err != nil {
+		return actions.AtomicRecord{}, err
+	}
+	if err := rows.Err(); err != nil {
+		return actions.AtomicRecord{}, err
+	}
+	return record, nil
+}
+
+func (executor atomicExecutor) SelectMany(ctx context.Context, selectRequest actions.AtomicSelectMany) ([]actions.AtomicRecord, error) {
+	if err := validateAtomicSelect(selectRequest.AtomicSelect); err != nil {
+		return nil, err
+	}
+	if len(selectRequest.OrderBy) == 0 {
+		return nil, fmt.Errorf("atomic select many requires order by")
+	}
+	if selectRequest.Limit <= 0 {
+		return nil, fmt.Errorf("atomic select many requires a positive limit")
+	}
+	rows, err := executor.selectRows(ctx, selectRequest.AtomicSelect, selectRequest.OrderBy, selectRequest.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	records := make([]actions.AtomicRecord, 0)
+	for rows.Next() {
+		record, err := scanAtomicRecord(rows, selectRequest.Fields)
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+func validateAtomicSelect(selectRequest actions.AtomicSelect) error {
+	if selectRequest.Table == nil || len(selectRequest.Fields) == 0 || selectRequest.Where == nil {
+		return fmt.Errorf("atomic select requires table, fields, and where")
+	}
+	return nil
+}
+
+func (executor atomicExecutor) selectRows(ctx context.Context, selectRequest actions.AtomicSelect, orderBy []pg.OrderByClause, limit int) (*sql.Rows, error) {
 	projections := make([]pg.Projection, 0, len(selectRequest.Fields))
-	scans := make([]interface{}, 0, len(selectRequest.Fields))
-	values := make([]func() (actions.AtomicValue, error), 0, len(selectRequest.Fields))
 	for _, field := range selectRequest.Fields {
 		if field.Name == "" || field.Column == nil {
-			return actions.AtomicRecord{}, fmt.Errorf("atomic select field requires name and column")
+			return nil, fmt.Errorf("atomic select field requires name and column")
 		}
+		if _, _, err := atomicSelectScan(field.Kind); err != nil {
+			return nil, fmt.Errorf("atomic select field %q: %w", field.Name, err)
+		}
+		projections = append(projections, field.Column)
+	}
+	query := pg.SELECT(projections[0], projections[1:]...).FROM(selectRequest.Table).WHERE(selectRequest.Where)
+	if len(orderBy) > 0 {
+		query = query.ORDER_BY(orderBy...)
+	}
+	query = query.LIMIT(int64(limit))
+	statement, args := query.Sql()
+	return executor.tx.QueryContext(ctx, statement, args...)
+}
+
+func scanAtomicRecord(rows *sql.Rows, fields []actions.AtomicSelectField) (actions.AtomicRecord, error) {
+	scans := make([]interface{}, 0, len(fields))
+	values := make([]func() (actions.AtomicValue, error), 0, len(fields))
+	for _, field := range fields {
 		scan, value, err := atomicSelectScan(field.Kind)
 		if err != nil {
 			return actions.AtomicRecord{}, fmt.Errorf("atomic select field %q: %w", field.Name, err)
 		}
-		projections = append(projections, field.Column)
 		scans = append(scans, scan)
 		values = append(values, value)
 	}
-	query := pg.SELECT(projections[0], projections[1:]...).FROM(selectRequest.Table).WHERE(selectRequest.Where).LIMIT(1)
-	statement, args := query.Sql()
-	if err := executor.tx.QueryRowContext(ctx, statement, args...).Scan(scans...); err != nil {
+	if err := rows.Scan(scans...); err != nil {
 		return actions.AtomicRecord{}, err
 	}
-	record := actions.AtomicRecord{Fields: make([]actions.AtomicField, 0, len(selectRequest.Fields))}
-	for index, field := range selectRequest.Fields {
+	record := actions.AtomicRecord{Fields: make([]actions.AtomicField, 0, len(fields))}
+	for index, field := range fields {
 		value, err := values[index]()
 		if err != nil {
 			return actions.AtomicRecord{}, fmt.Errorf("atomic select field %q: %w", field.Name, err)
