@@ -136,6 +136,9 @@ func (generator *Generator) Run() {
 		if err := validateModuleFieldMedia(module); err != nil {
 			panic(fmt.Sprintf("invalid field media config in module %s: %v", module.Name, err))
 		}
+		if err := validateModuleFieldArrayStorage(module); err != nil {
+			panic(fmt.Sprintf("invalid array storage config in module %s: %v", module.Name, err))
+		}
 		if err := validateModuleFieldOptionsSources(module); err != nil {
 			panic(fmt.Sprintf("invalid field options source in module %s: %v", module.Name, err))
 		}
@@ -370,6 +373,40 @@ func validateModuleFieldMedia(module *BaseModule) error {
 	for _, field := range module.Fields {
 		if err := field.Media.Validate(); err != nil {
 			return fmt.Errorf("field %q: %w", field.ColumnName(), err)
+		}
+	}
+	return nil
+}
+
+func validateModuleFieldArrayStorage(module *BaseModule) error {
+	for _, field := range module.Fields {
+		if field.ArrayStorage == "" {
+			continue
+		}
+		if field.Type != fields.ModuleFieldTypeArray {
+			return fmt.Errorf("field %q configures array storage but is not an array", field.ColumnName())
+		}
+		if err := field.ArrayStorage.Validate(); err != nil {
+			return fmt.Errorf("field %q: %w", field.ColumnName(), err)
+		}
+	}
+	for _, moduleAction := range module.Actions {
+		var filters []pg.Column
+		switch action := moduleAction.(type) {
+		case actions.ListModuleAction:
+			filters = action.Filter
+		case *actions.ListModuleAction:
+			if action != nil {
+				filters = action.Filter
+			}
+		default:
+			continue
+		}
+		for _, column := range filters {
+			field := module.GetFieldByColumn(column)
+			if field != nil && field.ArrayStorage.Normalize() == fields.ModuleFieldArrayStorageJSON {
+				return fmt.Errorf("field %q uses JSON array storage and cannot use the PostgreSQL array filter", field.ColumnName())
+			}
 		}
 	}
 	return nil

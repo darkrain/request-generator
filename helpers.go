@@ -100,7 +100,6 @@ func (generator *Generator) effectiveListFilters(c *gin.Context, module *BaseMod
 	return registry
 }
 
-
 func (generator *Generator) checkRequest(
 	context *gin.Context,
 	data map[string]interface{},
@@ -195,6 +194,11 @@ func validateRequestField(
 	if field.Convert != nil && value != nil {
 		_, err := field.Convert(context, value)
 		if err != nil {
+			errs[colName] = err.Error()
+		}
+	}
+	if field.Type == fields.ModuleFieldTypeArray && field.ArrayStorage.Normalize() == fields.ModuleFieldArrayStorageJSON && value != nil {
+		if _, err := fields.MarshalJSONArray(value); err != nil {
 			errs[colName] = err.Error()
 		}
 	}
