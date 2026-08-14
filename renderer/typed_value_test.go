@@ -19,3 +19,12 @@ func TestTypedValueMarshalJSONPreservesFalse(t *testing.T) {
 	require.NoError(t, err)
 	require.JSONEq(t, `{"type":"bool","bool":false}`, string(payload))
 }
+
+func TestTypedValueValidate(t *testing.T) {
+	value := false
+	require.NoError(t, (TypedValue{Type: TypedValueString}).Validate())
+	require.NoError(t, (TypedValue{Type: TypedValueNumber, Number: 0}).Validate())
+	require.NoError(t, (TypedValue{Type: TypedValueBool, Bool: &value}).Validate())
+	require.EqualError(t, (TypedValue{Type: TypedValueBool}).Validate(), "boolean typed value requires bool")
+	require.EqualError(t, (TypedValue{}).Validate(), `unsupported typed value type ""`)
+}

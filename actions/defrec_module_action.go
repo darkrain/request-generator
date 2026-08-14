@@ -15,7 +15,8 @@ type DefrecModuleAction struct {
 	Fields       []RoleContext     `json:"-"`
 	BeforeAction func(c *gin.Context) error
 	AfterAction  func(c *gin.Context)
-	Widget       *WidgetConfig `json:"widget,omitempty"`
+	Widget       *WidgetConfig        `json:"widget,omitempty"`
+	Realtime     *RealtimeEventConfig `json:"-"`
 }
 
 func (action DefrecModuleAction) Action() ModuleActionName {

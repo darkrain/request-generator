@@ -19,6 +19,7 @@ type AddModuleAction struct {
 	Auth         bool                             `json:"auth"`
 	Fields       []RoleContext                    `json:"-"`
 	Widget       *WidgetConfig                    `json:"widget,omitempty"`
+	Realtime     *RealtimeEventConfig             `json:"-"`
 }
 
 func (action AddModuleAction) Action() ModuleActionName {

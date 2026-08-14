@@ -565,19 +565,42 @@ Navigation: []module.NavigationEntry{
 
 #### WidgetConfig
 
-Глобальные виджеты описываются на конкретном действии модуля через `Widget`. Config endpoint автоматически возвращает такие действия в `widgets[]`; query строится из действия, на котором висит виджет.
+Глобальные виджеты описываются на конкретном действии модуля через
+типизированный `Widget`. Config endpoint автоматически возвращает их в
+`widgets[]`, а сгенерированный запрос помещает в `load`. Нельзя передавать
+UI-структуру через maps `Config`/`Params`.
 
 ```go
 Actions: []actions.ModuleAction{
-    actions.ListModuleAction{
+    actions.ViewModuleAction{
         Label:      "profile_menu",
         Permission: []actions.Role{actions.RoleAll},
         Auth:       true,
+		By:         []pg.Column{table.Profiles.ID},
         Widget: &actions.WidgetConfig{
-            ID:        "profile-menu",
-            Type:      "module",
-            Placement: "topbar",
-            Order:     10,
+            ID: "profile-menu",
+            Order: 10,
+            Renderer: renderer.GlobalWidget{
+                Surface: renderer.WidgetSurface{
+                    Kind:       renderer.WidgetSurfacePopup,
+                    Placement:  renderer.WidgetPlacementShellEnd,
+                    LoadPolicy: renderer.WidgetLoadOnOpen,
+                },
+            },
+            Bindings: []renderer.WidgetRequestBinding{
+                {
+                    Target: renderer.WidgetRequestBindingPathByKey,
+                    Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{
+                        Type: renderer.TypedValueString, String: "id",
+                    }},
+                },
+                {
+                    Target: renderer.WidgetRequestBindingPathValue,
+                    Source: renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{
+                        Scope: renderer.WidgetRuntimeValueSourceCurrentUser, Field: "id",
+                    }},
+                },
+            },
         },
     },
 },
@@ -1426,7 +1449,7 @@ actions.AddModuleAction{
         "type": "page",
         "renderer": {
           "name": "UniversalRenderer",
-          "version": "1.0.0"
+          "version": "2.0.0"
         },
         "page_type": "list",
         "query": {
@@ -1444,12 +1467,29 @@ actions.AddModuleAction{
   "widgets": [
     {
       "id": "profile-menu",
-      "type": "module",
-      "placement": "topbar",
       "order": 10,
-      "query": {
-        "url": "/api/api/profile-menu",
-        "method": "GET"
+      "renderer": {
+        "name": "UniversalRenderer",
+        "version": "2.0.0"
+      },
+      "widget": {
+        "surface": {
+          "kind": "popup",
+          "placement": "shell_end",
+          "load_policy": "on_open"
+        }
+      },
+      "load": {
+        "resource": {
+          "request": {
+            "method": "GET",
+            "endpoint": "/api/profile-menu/view/:bykey/:value"
+          },
+          "bindings": [
+            {"target": "path_by_key", "source": {"literal": {"type": "string", "string": "id"}}},
+            {"target": "path_value", "source": {"runtime": {"scope": "current_user", "field": "id"}}}
+          ]
+        }
       }
     }
   ],
@@ -1457,4 +1497,4 @@ actions.AddModuleAction{
 }
 ```
 
-Навигация строится из `Navigation` каждого `BaseModule`. Пункты сортируются по `Group`, затем по `Order`. Для `target.type=page` frontend route хранится в `path`, а renderer/query/children находятся прямо в `target`. Для popup/client_action route не требуется. Глобальные виджеты строятся из `WidgetConfig` на действиях модулей и возвращаются в `widgets`.
+Навигация строится из `Navigation` каждого `BaseModule`. Пункты сортируются по `Group`, затем по `Order`. Для `target.type=page` frontend route хранится в `path`, а renderer/query/children находятся прямо в `target`. Для popup/client_action route не требуется. Глобальные виджеты строятся из типизированного `WidgetConfig` на действиях модулей и возвращаются в `widgets`.

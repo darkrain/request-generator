@@ -50,14 +50,11 @@ type NavigationPageTarget struct {
 }
 
 type ConfigWidget struct {
-	ID        string                 `json:"id"`
-	Type      string                 `json:"type"`
-	Placement string                 `json:"placement"`
-	Order     int                    `json:"order,omitempty"`
-	Renderer  string                 `json:"renderer,omitempty"`
-	Query     *RouteQuery            `json:"query,omitempty"`
-	Config    map[string]interface{} `json:"config,omitempty"`
-	Params    map[string]interface{} `json:"params,omitempty"`
+	ID       string                `json:"id"`
+	Order    int                   `json:"order,omitempty"`
+	Renderer renderer.Identity     `json:"renderer"`
+	Widget   renderer.GlobalWidget `json:"widget"`
+	Load     renderer.WidgetLoad   `json:"load"`
 }
 
 // RouteConfig конфигурирует маршрут
@@ -380,50 +377,120 @@ func (generator *Generator) buildWidgets(c *gin.Context, role string) ([]ConfigW
 			if widget == nil || !hasPermission(action, role) {
 				continue
 			}
-			render, err := module.RenderFor(c)
+			config, available, err := generator.buildWidget(c, module, action, *widget, role)
 			if err != nil {
 				return nil, err
 			}
-			route := generator.buildRouteForAction(module, render, action, role)
-			result = append(result, ConfigWidget{
-				ID:        widget.ID,
-				Type:      widget.Type,
-				Placement: widget.Placement,
-				Order:     widget.Order,
-				Renderer:  widget.Renderer,
-				Query:     route.Query,
-				Config:    widget.Config,
-				Params:    widget.Params,
-			})
+			if available {
+				result = append(result, config)
+			}
 		}
 
 		if module.Defrec.Widget != nil && hasPermission(module.Defrec, role) {
-			render, err := module.RenderFor(c)
+			config, available, err := generator.buildWidget(c, module, module.Defrec, *module.Defrec.Widget, role)
 			if err != nil {
 				return nil, err
 			}
-			route := generator.buildDefrecRoute(module, render, module.Defrec)
-			result = append(result, ConfigWidget{
-				ID:        module.Defrec.Widget.ID,
-				Type:      module.Defrec.Widget.Type,
-				Placement: module.Defrec.Widget.Placement,
-				Order:     module.Defrec.Widget.Order,
-				Renderer:  module.Defrec.Widget.Renderer,
-				Query:     route.Query,
-				Config:    module.Defrec.Widget.Config,
-				Params:    module.Defrec.Widget.Params,
-			})
+			if available {
+				result = append(result, config)
+			}
 		}
 	}
 
 	sort.SliceStable(result, func(i, j int) bool {
-		if result[i].Placement == result[j].Placement {
+		if result[i].Widget.Surface.Placement == result[j].Widget.Surface.Placement {
 			return result[i].Order < result[j].Order
 		}
-		return result[i].Placement < result[j].Placement
+		return result[i].Widget.Surface.Placement < result[j].Widget.Surface.Placement
 	})
 
 	return result, nil
+}
+
+func (generator *Generator) buildWidget(c *gin.Context, owner *BaseModule, action actions.ModuleAction, widget actions.WidgetConfig, role string) (ConfigWidget, bool, error) {
+	load, available, err := generator.buildWidgetLoad(c, owner, action, widget, role)
+	if err != nil || !available {
+		return ConfigWidget{}, available, err
+	}
+	localized := renderer.LocalizeGlobalWidget(widget.Renderer, generator.rendererTextResolver(generator.getLang(c)))
+	return ConfigWidget{
+		ID:       widget.ID,
+		Order:    widget.Order,
+		Renderer: localized.Identity(),
+		Widget:   localized,
+		Load:     load,
+	}, true, nil
+}
+
+func (generator *Generator) buildWidgetLoad(c *gin.Context, owner *BaseModule, action actions.ModuleAction, widget actions.WidgetConfig, role string) (renderer.WidgetLoad, bool, error) {
+	if widget.Renderer.Workspace == nil {
+		resource, available, err := generator.buildWidgetResourceLoad(c, owner, action, widget.Bindings, nil)
+		if err != nil || !available {
+			return renderer.WidgetLoad{}, available, err
+		}
+		return renderer.WidgetLoad{Resource: &resource}, true, nil
+	}
+
+	workspace := widget.Renderer.Workspace
+	selection, err := generator.workspaceSelectionScope(widget.ID, *workspace)
+	if err != nil {
+		return renderer.WidgetLoad{}, false, err
+	}
+	master, available, err := generator.buildReferencedWidgetResourceLoad(c, workspace.Master, role, nil)
+	if err != nil || !available {
+		return renderer.WidgetLoad{}, available, err
+	}
+	detail, available, err := generator.buildReferencedWidgetResourceLoad(c, workspace.Detail, role, &selection)
+	if err != nil || !available {
+		return renderer.WidgetLoad{}, available, err
+	}
+	return renderer.WidgetLoad{Master: &master, Detail: &detail}, true, nil
+}
+
+func (generator *Generator) buildReferencedWidgetResourceLoad(c *gin.Context, resource renderer.WorkspaceResource, role string, selection *widgetSelectionScope) (renderer.WidgetResourceLoad, bool, error) {
+	module, ok := generator.moduleByName(resource.Module)
+	if !ok {
+		return renderer.WidgetResourceLoad{}, false, fmt.Errorf("widget resource references unknown module %q", resource.Module)
+	}
+	action, ok := findModuleAction(module, resource.Action)
+	if !ok {
+		return renderer.WidgetResourceLoad{}, false, fmt.Errorf("widget resource %q references unknown action %q", resource.Module, resource.Action)
+	}
+	if !hasPermission(action, role) {
+		return renderer.WidgetResourceLoad{}, false, nil
+	}
+	load, available, err := generator.buildWidgetResourceLoad(c, module, action, resource.Bindings, selection)
+	if err != nil || !available {
+		return renderer.WidgetResourceLoad{}, available, err
+	}
+	return load, true, nil
+}
+
+func (generator *Generator) buildWidgetResourceLoad(c *gin.Context, module *BaseModule, action actions.ModuleAction, bindings []renderer.WidgetRequestBinding, selection *widgetSelectionScope) (renderer.WidgetResourceLoad, bool, error) {
+	available, err := generator.validateWidgetRequestBindingAvailability(c, module, action, bindings, selection)
+	if err != nil || !available {
+		return renderer.WidgetResourceLoad{}, available, err
+	}
+	if _, err := module.RenderFor(c); err != nil {
+		return renderer.WidgetResourceLoad{}, false, err
+	}
+	contract, ok := resolveStandardActionContract(module, action)
+	if !ok {
+		return renderer.WidgetResourceLoad{}, false, fmt.Errorf("widget resource %q action %q has no request", module.Name, action.Action())
+	}
+	return renderer.WidgetResourceLoad{
+		Request:  contract.Request,
+		Bindings: append([]renderer.WidgetRequestBinding(nil), bindings...),
+	}, true, nil
+}
+
+func (generator *Generator) moduleByName(name string) (*BaseModule, bool) {
+	for _, candidate := range generator.Modules {
+		if candidate.Name == name {
+			return candidate, true
+		}
+	}
+	return nil, false
 }
 
 func actionWidget(action actions.ModuleAction) *actions.WidgetConfig {
@@ -458,17 +525,12 @@ func actionWidget(action actions.ModuleAction) *actions.WidgetConfig {
 }
 
 func (generator *Generator) buildListRoute(module *BaseModule, render renderer.Universal, action actions.ListModuleAction, role string) RouteConfig {
-	routePath := module.Path + "/" + module.Name
-
 	route := RouteConfig{
 		Title:     action.Label,
 		MenuTitle: action.Label,
 		Renderer:  render.ListIdentity(),
 		PageType:  render.ListRoutePageType(),
-		Query: &RouteQuery{
-			Url:    apiQueryURL(routePath),
-			Method: "GET",
-		},
+		Query:     standardActionRouteQuery(module, action),
 	}
 
 	route.Children = generator.buildRouteChildren(module, render, role)
@@ -483,10 +545,7 @@ func (generator *Generator) buildViewRoute(module *BaseModule, render renderer.U
 		Title:    action.Label,
 		Renderer: viewRouteIdentity(render, pageType),
 		PageType: viewRoutePageType(render, pageType),
-		Query: &RouteQuery{
-			Url:    apiQueryURL(module.Path + "/" + module.Name + "/view/:bykey/:value"),
-			Method: "GET",
-		},
+		Query:    standardActionRouteQuery(module, action),
 	}
 }
 
@@ -533,10 +592,7 @@ func (generator *Generator) buildAddRoute(module *BaseModule, render renderer.Un
 		Title:    action.Label,
 		Renderer: render.FormIdentity(),
 		PageType: render.FormRoutePageType(),
-		Query: &RouteQuery{
-			Url:    apiQueryURL(module.Path + "/" + module.Name),
-			Method: "PUT",
-		},
+		Query:    standardActionRouteQuery(module, action),
 	}
 }
 
@@ -545,10 +601,7 @@ func (generator *Generator) buildDefrecRoute(module *BaseModule, render renderer
 		Title:    action.Label,
 		Renderer: render.FormIdentity(),
 		PageType: render.FormRoutePageType(),
-		Query: &RouteQuery{
-			Url:    apiQueryURL(module.Path + "/" + module.Name + "/defrec/"),
-			Method: "GET",
-		},
+		Query:    standardActionRouteQuery(module, action),
 	}
 }
 
@@ -604,10 +657,7 @@ func (generator *Generator) buildViewChild(module *BaseModule, render renderer.U
 		Title:    a.Label,
 		Renderer: viewRouteIdentity(render, viewActionPageType(a)),
 		PageType: viewRoutePageType(render, viewActionPageType(a)),
-		Query: &RouteQuery{
-			Url:    apiQueryURL(module.Path + "/" + module.Name + "/view/:bykey/:value"),
-			Method: "GET",
-		},
+		Query:    standardActionRouteQuery(module, a),
 	}, true
 }
 
@@ -620,10 +670,7 @@ func (generator *Generator) buildUpdateChild(module *BaseModule, render renderer
 		Title:    a.Label,
 		Renderer: render.FormIdentity(),
 		PageType: render.FormRoutePageType(),
-		Query: &RouteQuery{
-			Url:    apiQueryURL(module.Path + "/" + module.Name + "/:bykey/:value"),
-			Method: "POST",
-		},
+		Query:    standardActionRouteQuery(module, a),
 	}, true
 }
 
@@ -636,9 +683,6 @@ func (generator *Generator) buildAddChild(module *BaseModule, render renderer.Un
 		Title:    a.Label,
 		Renderer: render.FormIdentity(),
 		PageType: render.FormRoutePageType(),
-		Query: &RouteQuery{
-			Url:    apiQueryURL(module.Path + "/" + module.Name),
-			Method: "PUT",
-		},
+		Query:    standardActionRouteQuery(module, a),
 	}, true
 }

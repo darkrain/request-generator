@@ -1,6 +1,9 @@
 package actions
 
 import (
+	"fmt"
+
+	"github.com/darkrain/request-generator/renderer"
 	"github.com/gin-gonic/gin"
 	pg "github.com/go-jet/jet/v2/postgres"
 )
@@ -25,13 +28,23 @@ type ModuleAction interface {
 }
 
 type WidgetConfig struct {
-	ID        string                 `json:"id"`
-	Type      string                 `json:"type"`
-	Placement string                 `json:"placement"`
-	Order     int                    `json:"order,omitempty"`
-	Renderer  string                 `json:"renderer,omitempty"`
-	Config    map[string]interface{} `json:"config,omitempty"`
-	Params    map[string]interface{} `json:"params,omitempty"`
+	ID       string                          `json:"id"`
+	Order    int                             `json:"order,omitempty"`
+	Renderer renderer.GlobalWidget           `json:"renderer"`
+	Bindings []renderer.WidgetRequestBinding `json:"bindings,omitempty"`
+}
+
+func (config WidgetConfig) Validate() error {
+	if config.ID == "" {
+		return fmt.Errorf("widget id is required")
+	}
+	if err := config.Renderer.Validate(); err != nil {
+		return err
+	}
+	if config.Renderer.Workspace != nil && len(config.Bindings) != 0 {
+		return fmt.Errorf("workspace widget bindings must be declared by a workspace resource")
+	}
+	return renderer.ValidateWidgetRequestBindings(config.Bindings)
 }
 
 type JoinType string
