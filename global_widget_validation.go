@@ -38,25 +38,11 @@ func (generator *Generator) validateGlobalWidgets() error {
 		}
 	}
 	for _, module := range generator.Modules {
-		for _, declaration := range module.Render.WidgetTargetActions() {
-			target := declaration.Target
-			widget, exists := widgets[target.ID]
-			if !exists {
-				return fmt.Errorf("module %q references unknown widget %q", module.Name, target.ID)
+		for _, action := range module.Render.Actions() {
+			if err := generator.validateWidgetActionResult(module, action, action.AfterSuccess, true, widgets); err != nil {
+				return err
 			}
-			if target.Selection == nil {
-				if len(target.Refresh) == 0 {
-					continue
-				}
-				if widget.Renderer.Workspace == nil {
-					return fmt.Errorf("module %q action target %q refreshes a non-workspace widget", module.Name, target.ID)
-				}
-				continue
-			}
-			if widget.Renderer.Workspace == nil {
-				return fmt.Errorf("module %q action target %q sets selection on a non-workspace widget", module.Name, target.ID)
-			}
-			if err := generator.validateWidgetTargetSelection(module, declaration, widget); err != nil {
+			if err := generator.validateWidgetActionResult(module, action, action.AfterError, false, widgets); err != nil {
 				return err
 			}
 		}
@@ -358,12 +344,35 @@ func (generator *Generator) workspaceSelectionScope(widgetID string, workspace r
 	return widgetSelectionScope{Field: workspace.Selection.Field, Type: selectionType}, nil
 }
 
-func (generator *Generator) validateWidgetTargetSelection(owner *BaseModule, declaration renderer.WidgetTargetAction, widget actions.WidgetConfig) error {
-	target := declaration.Target
-	if !declaration.AfterSuccess {
+func (generator *Generator) validateWidgetActionResult(owner *BaseModule, action renderer.Action, result *renderer.ActionResult, afterSuccess bool, widgets map[string]actions.WidgetConfig) error {
+	if result == nil || result.Widget == nil {
+		return nil
+	}
+	target := *result.Widget
+	widget, exists := widgets[target.ID]
+	if !exists {
+		return fmt.Errorf("module %q references unknown widget %q", owner.Name, target.ID)
+	}
+	if target.Selection == nil {
+		if len(target.Refresh) == 0 {
+			return nil
+		}
+		if widget.Renderer.Workspace == nil {
+			return fmt.Errorf("module %q action target %q refreshes a non-workspace widget", owner.Name, target.ID)
+		}
+		return nil
+	}
+	if !afterSuccess {
 		return fmt.Errorf("module %q action target %q selection is only allowed after success", owner.Name, target.ID)
 	}
-	if declaration.ActionType != renderer.ActionAPI || declaration.Request == nil {
+	if widget.Renderer.Workspace == nil {
+		return fmt.Errorf("module %q action target %q sets selection on a non-workspace widget", owner.Name, target.ID)
+	}
+	return generator.validateWidgetTargetSelection(owner, action, target, widget)
+}
+
+func (generator *Generator) validateWidgetTargetSelection(owner *BaseModule, action renderer.Action, target renderer.WidgetTarget, widget actions.WidgetConfig) error {
+	if action.Type != renderer.ActionAPI || action.API == nil {
 		return fmt.Errorf("module %q action target %q selection requires an api action request", owner.Name, target.ID)
 	}
 
@@ -376,16 +385,16 @@ func (generator *Generator) validateWidgetTargetSelection(owner *BaseModule, dec
 	if !ok {
 		return fmt.Errorf("module %q action target %q selection source resource %q references unknown action %q", owner.Name, target.ID, source.Resource.Module, source.Resource.Action)
 	}
-	expected, ok := standardActionRequest(sourceModule, sourceAction)
+	contract, ok := resolveStandardActionContract(sourceModule, sourceAction)
 	if !ok {
 		return fmt.Errorf("module %q action target %q selection source resource %q action %q has no standard request", owner.Name, target.ID, source.Resource.Module, source.Resource.Action)
 	}
-	if declaration.Request.Method != expected.Method || declaration.Request.Endpoint != expected.Endpoint {
-		return fmt.Errorf("module %q action target %q selection source resource %q action %q does not match action request %s %s", owner.Name, target.ID, source.Resource.Module, source.Resource.Action, expected.Method, expected.Endpoint)
+	if action.API.Method != contract.Request.Method || action.API.Endpoint != contract.Request.Endpoint {
+		return fmt.Errorf("module %q action target %q selection source resource %q action %q does not match action request %s %s", owner.Name, target.ID, source.Resource.Module, source.Resource.Action, contract.Request.Method, contract.Request.Endpoint)
 	}
-	sourceType, err := standardActionResponseFieldType(sourceAction, source.Field)
-	if err != nil {
-		return fmt.Errorf("module %q action target %q selection source resource %q action %q: %w", owner.Name, target.ID, source.Resource.Module, source.Resource.Action, err)
+	sourceType, exists := contract.resultFieldType(source.Field)
+	if !exists {
+		return fmt.Errorf("module %q action target %q selection source resource %q action %q: response field %q is not declared", owner.Name, target.ID, source.Resource.Module, source.Resource.Action, source.Field)
 	}
 	selection, err := generator.workspaceSelectionScope(target.ID, *widget.Renderer.Workspace)
 	if err != nil {
@@ -395,40 +404,6 @@ func (generator *Generator) validateWidgetTargetSelection(owner *BaseModule, dec
 		return fmt.Errorf("module %q action target %q selection source field %q has type %q, target field %q has type %q", owner.Name, target.ID, source.Field, sourceType, selection.Field, selection.Type)
 	}
 	return nil
-}
-
-func standardActionRequest(module *BaseModule, action actions.ModuleAction) (renderer.APIAction, bool) {
-	base := apiQueryURL(module.Path + "/" + module.Name)
-	switch action.Action() {
-	case actions.ModuleActionNameList:
-		return renderer.APIAction{Method: "GET", Endpoint: base}, true
-	case actions.ModuleActionNameAdd:
-		return renderer.APIAction{Method: "PUT", Endpoint: base}, true
-	case actions.ModuleActionNameDefrec:
-		return renderer.APIAction{Method: "GET", Endpoint: base + "/defrec/"}, true
-	case actions.ModuleActionNameView:
-		return renderer.APIAction{Method: "GET", Endpoint: base + "/view/:bykey/:value"}, true
-	case actions.ModuleActionNameUpdate:
-		return renderer.APIAction{Method: "POST", Endpoint: base + "/:bykey/:value"}, true
-	case actions.ModuleActionNameDelete:
-		return renderer.APIAction{Method: "DELETE", Endpoint: base + "/delete/:bykey/:value"}, true
-	default:
-		return renderer.APIAction{}, false
-	}
-}
-
-func standardActionResponseFieldType(action actions.ModuleAction, field string) (renderer.TypedValueType, error) {
-	if action.Action() != actions.ModuleActionNameAdd {
-		return "", fmt.Errorf("action does not expose a typed scalar response")
-	}
-	switch field {
-	case "value":
-		return renderer.TypedValueNumber, nil
-	case "primary_key":
-		return renderer.TypedValueString, nil
-	default:
-		return "", fmt.Errorf("response field %q is not declared", field)
-	}
 }
 
 func runtimeModuleFieldType(fieldType fields.ModuleFieldType) (renderer.TypedValueType, bool) {

@@ -424,7 +424,7 @@ func (generator *Generator) buildWidget(c *gin.Context, owner *BaseModule, actio
 
 func (generator *Generator) buildWidgetLoad(c *gin.Context, owner *BaseModule, action actions.ModuleAction, widget actions.WidgetConfig, role string) (renderer.WidgetLoad, bool, error) {
 	if widget.Renderer.Workspace == nil {
-		resource, available, err := generator.buildWidgetResourceLoad(c, owner, action, widget.Bindings, role, nil)
+		resource, available, err := generator.buildWidgetResourceLoad(c, owner, action, widget.Bindings, nil)
 		if err != nil || !available {
 			return renderer.WidgetLoad{}, available, err
 		}
@@ -459,31 +459,27 @@ func (generator *Generator) buildReferencedWidgetResourceLoad(c *gin.Context, re
 	if !hasPermission(action, role) {
 		return renderer.WidgetResourceLoad{}, false, nil
 	}
-	load, available, err := generator.buildWidgetResourceLoad(c, module, action, resource.Bindings, role, selection)
+	load, available, err := generator.buildWidgetResourceLoad(c, module, action, resource.Bindings, selection)
 	if err != nil || !available {
 		return renderer.WidgetResourceLoad{}, available, err
 	}
 	return load, true, nil
 }
 
-func (generator *Generator) buildWidgetResourceLoad(c *gin.Context, module *BaseModule, action actions.ModuleAction, bindings []renderer.WidgetRequestBinding, role string, selection *widgetSelectionScope) (renderer.WidgetResourceLoad, bool, error) {
+func (generator *Generator) buildWidgetResourceLoad(c *gin.Context, module *BaseModule, action actions.ModuleAction, bindings []renderer.WidgetRequestBinding, selection *widgetSelectionScope) (renderer.WidgetResourceLoad, bool, error) {
 	available, err := generator.validateWidgetRequestBindingAvailability(c, module, action, bindings, selection)
 	if err != nil || !available {
 		return renderer.WidgetResourceLoad{}, available, err
 	}
-	render, err := module.RenderFor(c)
-	if err != nil {
+	if _, err := module.RenderFor(c); err != nil {
 		return renderer.WidgetResourceLoad{}, false, err
 	}
-	route := generator.buildRouteForAction(module, render, action, role)
-	if route.Query == nil {
+	contract, ok := resolveStandardActionContract(module, action)
+	if !ok {
 		return renderer.WidgetResourceLoad{}, false, fmt.Errorf("widget resource %q action %q has no request", module.Name, action.Action())
 	}
 	return renderer.WidgetResourceLoad{
-		Request: renderer.APIAction{
-			Method:   route.Query.Method,
-			Endpoint: route.Query.Url,
-		},
+		Request:  contract.Request,
 		Bindings: append([]renderer.WidgetRequestBinding(nil), bindings...),
 	}, true, nil
 }
@@ -529,17 +525,12 @@ func actionWidget(action actions.ModuleAction) *actions.WidgetConfig {
 }
 
 func (generator *Generator) buildListRoute(module *BaseModule, render renderer.Universal, action actions.ListModuleAction, role string) RouteConfig {
-	routePath := module.Path + "/" + module.Name
-
 	route := RouteConfig{
 		Title:     action.Label,
 		MenuTitle: action.Label,
 		Renderer:  render.ListIdentity(),
 		PageType:  render.ListRoutePageType(),
-		Query: &RouteQuery{
-			Url:    apiQueryURL(routePath),
-			Method: "GET",
-		},
+		Query:     standardActionRouteQuery(module, action),
 	}
 
 	route.Children = generator.buildRouteChildren(module, render, role)
@@ -554,10 +545,7 @@ func (generator *Generator) buildViewRoute(module *BaseModule, render renderer.U
 		Title:    action.Label,
 		Renderer: viewRouteIdentity(render, pageType),
 		PageType: viewRoutePageType(render, pageType),
-		Query: &RouteQuery{
-			Url:    apiQueryURL(module.Path + "/" + module.Name + "/view/:bykey/:value"),
-			Method: "GET",
-		},
+		Query:    standardActionRouteQuery(module, action),
 	}
 }
 
@@ -604,10 +592,7 @@ func (generator *Generator) buildAddRoute(module *BaseModule, render renderer.Un
 		Title:    action.Label,
 		Renderer: render.FormIdentity(),
 		PageType: render.FormRoutePageType(),
-		Query: &RouteQuery{
-			Url:    apiQueryURL(module.Path + "/" + module.Name),
-			Method: "PUT",
-		},
+		Query:    standardActionRouteQuery(module, action),
 	}
 }
 
@@ -616,10 +601,7 @@ func (generator *Generator) buildDefrecRoute(module *BaseModule, render renderer
 		Title:    action.Label,
 		Renderer: render.FormIdentity(),
 		PageType: render.FormRoutePageType(),
-		Query: &RouteQuery{
-			Url:    apiQueryURL(module.Path + "/" + module.Name + "/defrec/"),
-			Method: "GET",
-		},
+		Query:    standardActionRouteQuery(module, action),
 	}
 }
 
@@ -675,10 +657,7 @@ func (generator *Generator) buildViewChild(module *BaseModule, render renderer.U
 		Title:    a.Label,
 		Renderer: viewRouteIdentity(render, viewActionPageType(a)),
 		PageType: viewRoutePageType(render, viewActionPageType(a)),
-		Query: &RouteQuery{
-			Url:    apiQueryURL(module.Path + "/" + module.Name + "/view/:bykey/:value"),
-			Method: "GET",
-		},
+		Query:    standardActionRouteQuery(module, a),
 	}, true
 }
 
@@ -691,10 +670,7 @@ func (generator *Generator) buildUpdateChild(module *BaseModule, render renderer
 		Title:    a.Label,
 		Renderer: render.FormIdentity(),
 		PageType: render.FormRoutePageType(),
-		Query: &RouteQuery{
-			Url:    apiQueryURL(module.Path + "/" + module.Name + "/:bykey/:value"),
-			Method: "POST",
-		},
+		Query:    standardActionRouteQuery(module, a),
 	}, true
 }
 
@@ -707,9 +683,6 @@ func (generator *Generator) buildAddChild(module *BaseModule, render renderer.Un
 		Title:    a.Label,
 		Renderer: render.FormIdentity(),
 		PageType: render.FormRoutePageType(),
-		Query: &RouteQuery{
-			Url:    apiQueryURL(module.Path + "/" + module.Name),
-			Method: "PUT",
-		},
+		Query:    standardActionRouteQuery(module, a),
 	}, true
 }

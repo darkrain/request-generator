@@ -32,8 +32,8 @@ func TestValidateGlobalWidgets(t *testing.T) {
 				Surface: renderer.WidgetSurface{Kind: renderer.WidgetSurfaceDrawer, Placement: renderer.WidgetPlacementShellEnd, LoadPolicy: renderer.WidgetLoadOnOpen},
 				Workspace: &renderer.WorkspaceWidget{
 					Selection: renderer.WorkspaceSelection{Field: "id"},
-					Master:    renderer.WorkspaceResource{Module: "unknown", Action: "list"},
-					Detail: renderer.WorkspaceResource{Module: "detail_records", Action: "list", Bindings: []renderer.WidgetRequestBinding{{
+					Master:    renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "unknown", Action: "list"}},
+					Detail: renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "detail_records", Action: "list"}, Bindings: []renderer.WidgetRequestBinding{{
 						Target: renderer.WidgetRequestBindingFilter,
 						Field:  "parent_id",
 						Source: selectionSource("id"),
@@ -198,8 +198,8 @@ func TestWidgetConfigRejectsIgnoredWorkspaceBindings(t *testing.T) {
 			Surface: renderer.WidgetSurface{Kind: renderer.WidgetSurfaceDrawer, Placement: renderer.WidgetPlacementShellEnd, LoadPolicy: renderer.WidgetLoadOnOpen},
 			Workspace: &renderer.WorkspaceWidget{
 				Selection: renderer.WorkspaceSelection{Field: "id"},
-				Master:    renderer.WorkspaceResource{Module: "master", Action: "list"},
-				Detail: renderer.WorkspaceResource{Module: "detail", Action: "list", Bindings: []renderer.WidgetRequestBinding{{
+				Master:    renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "master", Action: "list"}},
+				Detail: renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "detail", Action: "list"}, Bindings: []renderer.WidgetRequestBinding{{
 					Target: renderer.WidgetRequestBindingFilter,
 					Field:  "parent_id",
 					Source: selectionSource("id"),
@@ -248,9 +248,9 @@ func validGlobalWidgetModules() []*BaseModule {
 			ID:    "work-area",
 			State: renderer.WidgetTargetOpen,
 			Selection: &renderer.WidgetSelectionResultBinding{
-				Source: renderer.WidgetActionResultSource{
-					Resource: renderer.WidgetActionResultResource{Module: "workspace_entry", Action: "add"},
-					Field:    "value",
+				Source: renderer.ActionResultSource{
+					Resource: renderer.ActionResource{Module: "workspace_entry", Action: "add"},
+					Field:    renderer.ActionResultFieldValue,
 				},
 			},
 		}},
@@ -262,8 +262,8 @@ func validGlobalWidgetModules() []*BaseModule {
 				Surface: renderer.WidgetSurface{Kind: renderer.WidgetSurfaceDrawer, Placement: renderer.WidgetPlacementShellEnd, LoadPolicy: renderer.WidgetLoadOnOpen},
 				Workspace: &renderer.WorkspaceWidget{
 					Selection: renderer.WorkspaceSelection{Field: "id"},
-					Master:    renderer.WorkspaceResource{Module: "master_records", Action: "list"},
-					Detail: renderer.WorkspaceResource{Module: "detail_records", Action: "list", Bindings: []renderer.WidgetRequestBinding{{
+					Master:    renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "master_records", Action: "list"}},
+					Detail: renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "detail_records", Action: "list"}, Bindings: []renderer.WidgetRequestBinding{{
 						Target: renderer.WidgetRequestBindingFilter,
 						Field:  "parent_id",
 						Source: selectionSource("id"),

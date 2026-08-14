@@ -23,10 +23,9 @@ func validGlobalWorkspace() GlobalWidget {
 		},
 		Workspace: &WorkspaceWidget{
 			Selection: WorkspaceSelection{Field: "id"},
-			Master:    WorkspaceResource{Module: "master_records", Action: "list"},
+			Master:    WorkspaceResource{ActionResource: ActionResource{Module: "master_records", Action: "list"}},
 			Detail: WorkspaceResource{
-				Module: "detail_records",
-				Action: "list",
+				ActionResource: ActionResource{Module: "detail_records", Action: "list"},
 				Bindings: []WidgetRequestBinding{{
 					Target: WidgetRequestBindingFilter,
 					Field:  "parent_id",
@@ -125,9 +124,9 @@ func TestActionResultWidgetTargetUsesResultField(t *testing.T) {
 			ID:    "work-area",
 			State: WidgetTargetOpen,
 			Selection: &WidgetSelectionResultBinding{
-				Source: WidgetActionResultSource{
-					Resource: WidgetActionResultResource{Module: "records", Action: "add"},
-					Field:    "value",
+				Source: ActionResultSource{
+					Resource: ActionResource{Module: "records", Action: "add"},
+					Field:    ActionResultFieldValue,
 				},
 			},
 			Refresh: []WorkspaceRefreshTarget{WorkspaceRefreshDetail},
@@ -138,13 +137,12 @@ func TestActionResultWidgetTargetUsesResultField(t *testing.T) {
 	cloned := render.Clone()
 	cloned.Record.Actions[0].AfterSuccess.Widget.Selection.Source.Field = "changed"
 	cloned.Record.Actions[0].AfterSuccess.Widget.Refresh[0] = WorkspaceRefreshMaster
-	require.Equal(t, "value", render.Record.Actions[0].AfterSuccess.Widget.Selection.Source.Field)
+	require.Equal(t, ActionResultFieldValue, render.Record.Actions[0].AfterSuccess.Widget.Selection.Source.Field)
 	require.Equal(t, WorkspaceRefreshDetail, render.Record.Actions[0].AfterSuccess.Widget.Refresh[0])
 
-	targets := render.WidgetTargetActions()
-	require.Len(t, targets, 1)
-	require.Equal(t, "work-area", targets[0].Target.ID)
-	require.True(t, targets[0].AfterSuccess)
+	actions := render.Actions()
+	require.Len(t, actions, 1)
+	require.Equal(t, "work-area", actions[0].AfterSuccess.Widget.ID)
 	encoded, err := json.Marshal(render)
 	require.NoError(t, err)
 	require.Contains(t, string(encoded), `"selection":{"source":{"resource":{"module":"records","action":"add"},"field":"value"}}`)
@@ -152,8 +150,8 @@ func TestActionResultWidgetTargetUsesResultField(t *testing.T) {
 	invalid := render.Clone()
 	invalid.Record.Actions[0].AfterError = &ActionResult{Widget: &WidgetTarget{
 		ID: "work-area",
-		Selection: &WidgetSelectionResultBinding{Source: WidgetActionResultSource{
-			Resource: WidgetActionResultResource{Module: "records", Action: "add"}, Field: "value",
+		Selection: &WidgetSelectionResultBinding{Source: ActionResultSource{
+			Resource: ActionResource{Module: "records", Action: "add"}, Field: ActionResultFieldValue,
 		}},
 	}}
 	require.EqualError(t, invalid.Validate(), `renderer.Universal: record page action "open": after error: widget selection is only allowed after success`)

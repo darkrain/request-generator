@@ -67,9 +67,9 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 				ID:    "work-area",
 				State: renderer.WidgetTargetOpen,
 				Selection: &renderer.WidgetSelectionResultBinding{
-					Source: renderer.WidgetActionResultSource{
-						Resource: renderer.WidgetActionResultResource{Module: "workspace_entry", Action: "add"},
-						Field:    "value",
+					Source: renderer.ActionResultSource{
+						Resource: renderer.ActionResource{Module: "workspace_entry", Action: "add"},
+						Field:    renderer.ActionResultFieldValue,
 					},
 				},
 				Refresh: []renderer.WorkspaceRefreshTarget{renderer.WorkspaceRefreshDetail},
@@ -90,10 +90,9 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 						},
 						Workspace: &renderer.WorkspaceWidget{
 							Selection: renderer.WorkspaceSelection{Field: "id"},
-							Master:    renderer.WorkspaceResource{Module: "master_records", Action: "list"},
+							Master:    renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "master_records", Action: "list"}},
 							Detail: renderer.WorkspaceResource{
-								Module: "detail_records",
-								Action: "list",
+								ActionResource: renderer.ActionResource{Module: "detail_records", Action: "list"},
 								Bindings: []renderer.WidgetRequestBinding{{
 									Target: renderer.WidgetRequestBindingFilter,
 									Field:  "parent_id",

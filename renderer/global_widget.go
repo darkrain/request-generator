@@ -132,21 +132,33 @@ type WorkspaceSelection struct {
 	Field string `json:"field"`
 }
 
-// WorkspaceResource references an existing module action. Bindings only carry
-// runtime values; URL, method, paging, sorting and response presentation are
-// resolved from the referenced action by the generator.
-type WorkspaceResource struct {
-	Module   string                 `json:"module"`
-	Action   string                 `json:"action"`
-	Bindings []WidgetRequestBinding `json:"bindings,omitempty"`
+// ActionResource is a reference to an existing standard module action.
+// Generator owns its request and response contracts.
+type ActionResource struct {
+	Module string `json:"module"`
+	Action string `json:"action"`
 }
 
-func (resource WorkspaceResource) Validate(name string) error {
+func (resource ActionResource) Validate(name string) error {
 	if resource.Module == "" {
 		return fmt.Errorf("%s module is required", name)
 	}
 	if resource.Action == "" {
 		return fmt.Errorf("%s action is required", name)
+	}
+	return nil
+}
+
+// WorkspaceResource adds request bindings to an ActionResource. URL, method,
+// paging, sorting and response presentation remain owned by the action.
+type WorkspaceResource struct {
+	ActionResource
+	Bindings []WidgetRequestBinding `json:"bindings,omitempty"`
+}
+
+func (resource WorkspaceResource) Validate(name string) error {
+	if err := resource.ActionResource.Validate(name); err != nil {
+		return err
 	}
 	return ValidateWidgetRequestBindings(resource.Bindings)
 }
@@ -329,32 +341,26 @@ type WidgetTarget struct {
 	Refresh   []WorkspaceRefreshTarget      `json:"refresh,omitempty"`
 }
 
-// WidgetActionResultResource identifies the standard action whose successful
-// HTTP response supplies a widget selection value.
-type WidgetActionResultResource struct {
-	Module string `json:"module"`
-	Action string `json:"action"`
+// ActionResultField identifies a scalar field declared by a standard action
+// result contract.
+type ActionResultField string
+
+const (
+	ActionResultFieldValue      ActionResultField = "value"
+	ActionResultFieldPrimaryKey ActionResultField = "primary_key"
+	ActionResultFieldDelete     ActionResultField = "delete"
+)
+
+// ActionResultSource identifies a typed scalar field from a standard action
+// response. Generator resolves Resource and verifies Field against the action
+// result contract.
+type ActionResultSource struct {
+	Resource ActionResource    `json:"resource"`
+	Field    ActionResultField `json:"field"`
 }
 
-func (resource WidgetActionResultResource) Validate() error {
-	if resource.Module == "" {
-		return fmt.Errorf("source resource module is required")
-	}
-	if resource.Action == "" {
-		return fmt.Errorf("source resource action is required")
-	}
-	return nil
-}
-
-// WidgetActionResultSource is a typed scalar field from a standard action
-// response. Generator resolves Resource and verifies Field against its output.
-type WidgetActionResultSource struct {
-	Resource WidgetActionResultResource `json:"resource"`
-	Field    string                     `json:"field"`
-}
-
-func (source WidgetActionResultSource) Validate() error {
-	if err := source.Resource.Validate(); err != nil {
+func (source ActionResultSource) Validate() error {
+	if err := source.Resource.Validate("source resource"); err != nil {
 		return err
 	}
 	if source.Field == "" {
@@ -367,7 +373,7 @@ func (source WidgetActionResultSource) Validate() error {
 // standard action response. The widget selection field is declared only by
 // the target workspace, so source and target cannot be confused.
 type WidgetSelectionResultBinding struct {
-	Source WidgetActionResultSource `json:"source"`
+	Source ActionResultSource `json:"source"`
 }
 
 func (target WidgetTarget) Validate() error {
@@ -390,35 +396,12 @@ func (target WidgetTarget) Validate() error {
 	return ValidateWorkspaceRefreshTargets(target.Refresh)
 }
 
-type WidgetTargetAction struct {
-	Target       WidgetTarget `json:"target"`
-	ActionType   ActionType   `json:"action_type"`
-	Request      *APIAction   `json:"request,omitempty"`
-	AfterSuccess bool         `json:"after_success"`
-}
-
-// WidgetTargetActions returns every typed widget result together with the
-// renderer action that caused it. Generator uses the request metadata to
-// verify that a selection source is the actual successful action response.
-func (render Universal) WidgetTargetActions() []WidgetTargetAction {
-	var targets []WidgetTargetAction
+// Actions returns every action declared by the current renderer tree. The
+// returned values are detached copies and retain their native result fields.
+func (render Universal) Actions() []Action {
+	var result []Action
 	appendAction := func(action Action) {
-		if action.AfterSuccess != nil && action.AfterSuccess.Widget != nil {
-			targets = append(targets, WidgetTargetAction{
-				Target:       *cloneWidgetTarget(action.AfterSuccess.Widget),
-				ActionType:   action.Type,
-				Request:      cloneAPIAction(action.API),
-				AfterSuccess: true,
-			})
-		}
-		if action.AfterError != nil && action.AfterError.Widget != nil {
-			targets = append(targets, WidgetTargetAction{
-				Target:       *cloneWidgetTarget(action.AfterError.Widget),
-				ActionType:   action.Type,
-				Request:      cloneAPIAction(action.API),
-				AfterSuccess: false,
-			})
-		}
+		result = append(result, cloneActionValue(action))
 	}
 	appendActions := func(actions []Action) {
 		for _, action := range actions {
@@ -474,7 +457,7 @@ func (render Universal) WidgetTargetActions() []WidgetTargetAction {
 			appendActions(render.ResourceGrid.Card.Actions)
 		}
 	}
-	return targets
+	return result
 }
 
 // WidgetResourceLoad is the resolved request for one global widget resource.

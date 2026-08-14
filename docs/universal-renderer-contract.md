@@ -828,12 +828,16 @@ Widget: &actions.WidgetConfig{
         Workspace: &renderer.WorkspaceWidget{
             Selection: renderer.WorkspaceSelection{Field: "id"},
             Master: renderer.WorkspaceResource{
-                Module: "master_records",
-                Action: "list",
+                ActionResource: renderer.ActionResource{
+                    Module: "master_records",
+                    Action: "list",
+                },
             },
             Detail: renderer.WorkspaceResource{
-                Module: "detail_records",
-                Action: "list",
+                ActionResource: renderer.ActionResource{
+                    Module: "detail_records",
+                    Action: "list",
+                },
                 Bindings: []renderer.WidgetRequestBinding{{
                     Target: renderer.WidgetRequestBindingFilter,
                     Field:  "parent_id",
@@ -848,10 +852,11 @@ Widget: &actions.WidgetConfig{
 }
 ```
 
-`WorkspaceResource` ссылается на существующий module action. Generator сам
-выдаёт его URL и HTTP method в `load`; response этого action уже содержит
-существующие `list_page`, `record_page` или `form_page`. Widget не повторяет
-pagination, sort, field schema или presentation.
+`ActionResource` является единственной ссылкой на существующий module action.
+`WorkspaceResource` добавляет к ней только request bindings. Generator сам
+выдаёт URL и HTTP method в `load`; response action уже содержит существующие
+`list_page`, `record_page` или `form_page`. Widget не повторяет pagination,
+sort, field schema или presentation.
 
 `selection` объявляется один раз на workspace и определяет **целевое** поле
 master resource. Binding не содержит произвольные `name`/`value` строки. Его
@@ -902,14 +907,14 @@ widget через `after_success.widget` или `after_error.widget`. Selection
 }
 ```
 
-`selection.source.resource` описывает standard action, чей успешный HTTP
-response является источником значения. `renderer.Action` обязан быть `api`
-action и его `method`/`endpoint` должны точно совпадать с generated request
-этого resource. Generator проверяет `selection.source.field` по типизированной
-схеме ответа resource и сопоставляет его тип с `workspace.selection.field`.
-Сейчас scalar source поддерживает стандартный `add`: `value` (number) и
-`primary_key` (string). Target никогда не повторяется в action result.
-Возможные refresh targets: `master`, `detail`.
+`selection.source.resource` использует тот же `ActionResource`, что master и
+detail. `renderer.Action` обязан быть `api` action, а его `method`/`endpoint`
+должны точно совпадать с request, определённым standard action contract.
+Этот же contract является источником route config и typed result fields.
+`selection.source.field` использует закрытый `renderer.ActionResultField`; его
+доступность и тип определяет result contract исходного action. Generator
+сопоставляет этот тип с `workspace.selection.field`. Target никогда не
+повторяется в action result. Возможные refresh targets: `master`, `detail`.
 
 Producer объявляет correlation у write action, который её публикует:
 
