@@ -41,6 +41,17 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 			Auth:       true,
 		}},
 	}
+	summary := &module.BaseModule{
+		Name:   "summary_records",
+		Path:   "/workspace",
+		Fields: []fields.ModuleField{{Column: id, Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView}},
+		Render: renderer.Universal{List: &renderer.ListPage{}},
+		Actions: []actions.ModuleAction{actions.ListModuleAction{
+			Label:      "Summary records",
+			Permission: []actions.Role{"member"},
+			Auth:       true,
+		}},
+	}
 	detail := &module.BaseModule{
 		Name: "detail_records",
 		Path: "/workspace",
@@ -90,6 +101,7 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 						},
 						Workspace: &renderer.WorkspaceWidget{
 							Selection: renderer.WorkspaceSelection{Field: "id"},
+							Summary:   &renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "summary_records", Action: "list"}},
 							Master:    renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "master_records", Action: "list"}},
 							Detail: renderer.WorkspaceResource{
 								ActionResource: renderer.ActionResource{Module: "detail_records", Action: "list"},
@@ -137,7 +149,7 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 		}},
 	}
 
-	generator := module.NewGenerator(nil, *group, []*module.BaseModule{master, detail, workspace, resource}, func(_ actions.ModuleAction, _ []actions.Role) gin.HandlerFunc {
+	generator := module.NewGenerator(nil, *group, []*module.BaseModule{master, summary, detail, workspace, resource}, func(_ actions.ModuleAction, _ []actions.Role) gin.HandlerFunc {
 		return func(c *gin.Context) { c.Next() }
 	}, func(_ actions.ModuleAction) gin.HandlerFunc {
 		return func(c *gin.Context) {
@@ -178,6 +190,8 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 	require.Equal(t, renderer.UniversalIdentity(), workArea.Renderer)
 	require.NotNil(t, workArea.Widget.Workspace)
 	require.Nil(t, workArea.Load.Resource)
+	require.NotNil(t, workArea.Load.Summary)
+	require.Equal(t, "/api/workspace/summary_records", workArea.Load.Summary.Request.Endpoint)
 	require.Equal(t, "/api/workspace/master_records", workArea.Load.Master.Request.Endpoint)
 	require.Equal(t, "/api/workspace/detail_records", workArea.Load.Detail.Request.Endpoint)
 	require.Equal(t, renderer.WidgetRequestBindingFilter, workArea.Load.Detail.Bindings[0].Target)

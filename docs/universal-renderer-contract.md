@@ -772,6 +772,7 @@ Media: &renderer.FieldMediaConfig{
     },
     "workspace": {
       "selection": {"field": "id"},
+      "summary": {"module": "summary_records", "action": "list"},
       "master": {"module": "master_records", "action": "list"},
       "detail": {
         "module": "detail_records",
@@ -795,6 +796,7 @@ Media: &renderer.FieldMediaConfig{
     }
   },
   "load": {
+    "summary": {"request": {"method": "GET", "endpoint": "/api/workspace/summary_records"}},
     "master": {"request": {"method": "GET", "endpoint": "/api/workspace/master_records"}},
     "detail": {
       "request": {"method": "GET", "endpoint": "/api/workspace/detail_records"},
@@ -827,6 +829,12 @@ Widget: &actions.WidgetConfig{
         },
         Workspace: &renderer.WorkspaceWidget{
             Selection: renderer.WorkspaceSelection{Field: "id"},
+            Summary: &renderer.WorkspaceResource{
+                ActionResource: renderer.ActionResource{
+                    Module: "summary_records",
+                    Action: "list",
+                },
+            },
             Master: renderer.WorkspaceResource{
                 ActionResource: renderer.ActionResource{
                     Module: "master_records",
@@ -857,6 +865,11 @@ Widget: &actions.WidgetConfig{
 выдаёт URL и HTTP method в `load`; response action уже содержит существующие
 `list_page`, `record_page` или `form_page`. Widget не повторяет pagination,
 sort, field schema или presentation.
+
+`summary` необязателен и ссылается на обычный `list` или `view` action. Он
+используется для server-side агрегатов и состояний (например, счётчиков), не
+имеет проектной схемы и не заменяет response action. Если summary отсутствует,
+`load.summary` также отсутствует.
 
 `selection` объявляется один раз на workspace и определяет **целевое** поле
 master resource. Binding не содержит произвольные `name`/`value` строки. Его
@@ -914,7 +927,7 @@ detail. `renderer.Action` обязан быть `api` action, а его `method`
 `selection.source.field` использует закрытый `renderer.ActionResultField`; его
 доступность и тип определяет result contract исходного action. Generator
 сопоставляет этот тип с `workspace.selection.field`. Target никогда не
-повторяется в action result. Возможные refresh targets: `master`, `detail`.
+повторяется в action result. Возможные refresh targets: `summary`, `master`, `detail`.
 
 Producer объявляет correlation у write action, который её публикует:
 

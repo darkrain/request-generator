@@ -436,6 +436,14 @@ func (generator *Generator) buildWidgetLoad(c *gin.Context, owner *BaseModule, a
 	if err != nil {
 		return renderer.WidgetLoad{}, false, err
 	}
+	var summary *renderer.WidgetResourceLoad
+	if workspace.Summary != nil {
+		resource, available, err := generator.buildReferencedWidgetResourceLoad(c, *workspace.Summary, role, &selection)
+		if err != nil || !available {
+			return renderer.WidgetLoad{}, available, err
+		}
+		summary = &resource
+	}
 	master, available, err := generator.buildReferencedWidgetResourceLoad(c, workspace.Master, role, nil)
 	if err != nil || !available {
 		return renderer.WidgetLoad{}, available, err
@@ -444,7 +452,7 @@ func (generator *Generator) buildWidgetLoad(c *gin.Context, owner *BaseModule, a
 	if err != nil || !available {
 		return renderer.WidgetLoad{}, available, err
 	}
-	return renderer.WidgetLoad{Master: &master, Detail: &detail}, true, nil
+	return renderer.WidgetLoad{Summary: summary, Master: &master, Detail: &detail}, true, nil
 }
 
 func (generator *Generator) buildReferencedWidgetResourceLoad(c *gin.Context, resource renderer.WorkspaceResource, role string, selection *widgetSelectionScope) (renderer.WidgetResourceLoad, bool, error) {

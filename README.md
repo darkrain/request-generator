@@ -608,6 +608,13 @@ Actions: []actions.ModuleAction{
 
 `DefrecModuleAction` тоже может быть widget source, если нужно автоматически получить форму добавления в `/api/config.widgets`.
 
+Для master-detail workspace у `renderer.WorkspaceWidget` есть обязательные
+`master` и `detail`, а также optional `summary`. `summary` ссылается на обычный
+`list` или `view` action и предназначен для серверных агрегатов и состояний.
+Он не имеет специальной схемы: поля, локализация и presentation приходят из
+связанного action. При realtime refresh допустимы `summary`, `master` и
+`detail`.
+
 ### Этап 5. Описание полей (ModuleField)
 
 Каждое поле описывает одну колонку/виртуальное поле модуля:
