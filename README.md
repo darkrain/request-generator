@@ -1366,6 +1366,13 @@ Generator сам выполняет нормализацию и validation input
 запись через `SelectOne` в той же transaction. Это исключает race condition
 между проверкой и созданием.
 
+`ConflictColumns` должны ссылаться на обычное уникальное ограничение или
+уникальный индекс PostgreSQL, который может быть однозначно выведен по списку
+колонок. Частичные и expression unique indexes не поддерживаются этим
+контрактом: для них `ON CONFLICT (columns)` не может определить conflict target.
+Для nullable ключа используйте обычное `UNIQUE`: PostgreSQL допускает несколько
+значений `NULL`.
+
 ```go
 actions.AddModuleAction{
     Mode: actions.AddModeAtomic,
