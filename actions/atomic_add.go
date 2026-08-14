@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	pg "github.com/go-jet/jet/v2/postgres"
 )
@@ -19,19 +20,21 @@ const (
 // AtomicValue is the explicit value union passed to an atomic operation.
 // It avoids exposing the request's untyped JSON map to domain code.
 type AtomicValue struct {
-	String  *string  `json:"string,omitempty"`
-	Int     *int64   `json:"int,omitempty"`
-	Float   *float64 `json:"float,omitempty"`
-	Bool    *bool    `json:"bool,omitempty"`
-	Strings []string `json:"strings,omitempty"`
-	Ints    []int64  `json:"ints,omitempty"`
-	JSON    []byte   `json:"json,omitempty"`
+	String  *string    `json:"string,omitempty"`
+	Int     *int64     `json:"int,omitempty"`
+	Float   *float64   `json:"float,omitempty"`
+	Bool    *bool      `json:"bool,omitempty"`
+	Time    *time.Time `json:"time,omitempty"`
+	Strings []string   `json:"strings,omitempty"`
+	Ints    []int64    `json:"ints,omitempty"`
+	JSON    []byte     `json:"json,omitempty"`
 }
 
-func AtomicString(value string) AtomicValue { return AtomicValue{String: &value} }
-func AtomicInt(value int64) AtomicValue     { return AtomicValue{Int: &value} }
-func AtomicFloat(value float64) AtomicValue { return AtomicValue{Float: &value} }
-func AtomicBool(value bool) AtomicValue     { return AtomicValue{Bool: &value} }
+func AtomicString(value string) AtomicValue  { return AtomicValue{String: &value} }
+func AtomicInt(value int64) AtomicValue      { return AtomicValue{Int: &value} }
+func AtomicFloat(value float64) AtomicValue  { return AtomicValue{Float: &value} }
+func AtomicBool(value bool) AtomicValue      { return AtomicValue{Bool: &value} }
+func AtomicTime(value time.Time) AtomicValue { return AtomicValue{Time: &value} }
 
 func (value AtomicValue) Validate() error {
 	variants := 0
@@ -45,6 +48,9 @@ func (value AtomicValue) Validate() error {
 		variants++
 	}
 	if value.Bool != nil {
+		variants++
+	}
+	if value.Time != nil {
 		variants++
 	}
 	if value.Strings != nil {
@@ -75,6 +81,8 @@ func (value AtomicValue) Interface() interface{} {
 		return *value.Float
 	case value.Bool != nil:
 		return *value.Bool
+	case value.Time != nil:
+		return *value.Time
 	case value.Strings != nil:
 		return value.Strings
 	case value.Ints != nil:
@@ -168,13 +176,14 @@ const (
 	AtomicValueKindInt     AtomicValueKind = "int"
 	AtomicValueKindFloat   AtomicValueKind = "float"
 	AtomicValueKindBool    AtomicValueKind = "bool"
+	AtomicValueKindTime    AtomicValueKind = "time"
 	AtomicValueKindStrings AtomicValueKind = "strings"
 	AtomicValueKindInts    AtomicValueKind = "ints"
 )
 
 func (kind AtomicValueKind) valid() bool {
 	switch kind {
-	case AtomicValueKindString, AtomicValueKindInt, AtomicValueKindFloat, AtomicValueKindBool, AtomicValueKindStrings, AtomicValueKindInts:
+	case AtomicValueKindString, AtomicValueKindInt, AtomicValueKindFloat, AtomicValueKindBool, AtomicValueKindTime, AtomicValueKindStrings, AtomicValueKindInts:
 		return true
 	default:
 		return false
@@ -201,6 +210,29 @@ type AtomicSelectMany struct {
 	AtomicSelect
 	OrderBy []pg.OrderByClause `json:"-"`
 	Limit   int                `json:"-"`
+}
+
+type AtomicUpdateOperation string
+
+const (
+	AtomicUpdateSet       AtomicUpdateOperation = "set"
+	AtomicUpdateIncrement AtomicUpdateOperation = "increment"
+)
+
+// AtomicUpdateField is a closed assignment used by AtomicUpdate. Increment is
+// deliberately restricted to numeric values so modules cannot inject SQL expressions.
+type AtomicUpdateField struct {
+	Column    pg.Column             `json:"-"`
+	Operation AtomicUpdateOperation `json:"operation"`
+	Value     AtomicValue           `json:"value"`
+}
+
+// AtomicUpdate describes typed changes to rows selected by a mandatory Jet
+// predicate. The executor returns the exact number of affected rows.
+type AtomicUpdate struct {
+	Table  pg.Table            `json:"-"`
+	Fields []AtomicUpdateField `json:"-"`
+	Where  pg.BoolExpression   `json:"-"`
 }
 
 // AtomicRecord is both the atomic add response and the source for route
@@ -348,6 +380,7 @@ type AtomicExecutor interface {
 	Upsert(context.Context, AtomicUpsert) (AtomicUpsertResult, error)
 	SelectOne(context.Context, AtomicSelect) (AtomicRecord, error)
 	SelectMany(context.Context, AtomicSelectMany) ([]AtomicRecord, error)
+	Update(context.Context, AtomicUpdate) (int64, error)
 }
 
 type AtomicAddOperation func(context.Context, AtomicExecutor, AtomicInput) (AtomicRecord, error)

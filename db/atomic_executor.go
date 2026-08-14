@@ -192,6 +192,90 @@ func (executor atomicExecutor) SelectMany(ctx context.Context, selectRequest act
 	return records, nil
 }
 
+func (executor atomicExecutor) Update(ctx context.Context, update actions.AtomicUpdate) (int64, error) {
+	if update.Table == nil || len(update.Fields) == 0 || update.Where == nil {
+		return 0, fmt.Errorf("atomic update requires table, fields, and where")
+	}
+	assignments := make([]pg.ColumnAssigment, 0, len(update.Fields))
+	for index, field := range update.Fields {
+		assignment, err := atomicUpdateAssignment(field)
+		if err != nil {
+			return 0, fmt.Errorf("atomic update field %d: %w", index, err)
+		}
+		assignments = append(assignments, assignment)
+	}
+	remaining := make([]interface{}, 0, len(assignments)-1)
+	for _, assignment := range assignments[1:] {
+		remaining = append(remaining, assignment)
+	}
+	statement, args := update.Table.UPDATE().SET(assignments[0], remaining...).WHERE(update.Where).Sql()
+	result, err := executor.tx.ExecContext(ctx, statement, args...)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+func atomicUpdateAssignment(field actions.AtomicUpdateField) (pg.ColumnAssigment, error) {
+	if field.Column == nil {
+		return nil, fmt.Errorf("column is required")
+	}
+	if err := field.Value.Validate(); err != nil {
+		return nil, err
+	}
+	switch column := field.Column.(type) {
+	case pg.ColumnInteger:
+		if field.Value.Int == nil {
+			return nil, fmt.Errorf("integer column %q requires int value", column.Name())
+		}
+		switch field.Operation {
+		case actions.AtomicUpdateSet:
+			return column.SET(pg.Int(*field.Value.Int)), nil
+		case actions.AtomicUpdateIncrement:
+			return column.SET(column.ADD(pg.Int(*field.Value.Int))), nil
+		}
+	case pg.ColumnFloat:
+		if field.Value.Float == nil {
+			return nil, fmt.Errorf("float column %q requires float value", column.Name())
+		}
+		switch field.Operation {
+		case actions.AtomicUpdateSet:
+			return column.SET(pg.Float(*field.Value.Float)), nil
+		case actions.AtomicUpdateIncrement:
+			return column.SET(column.ADD(pg.Float(*field.Value.Float))), nil
+		}
+	case pg.ColumnString:
+		if field.Value.String == nil {
+			return nil, fmt.Errorf("string column %q requires string value", column.Name())
+		}
+		if field.Operation == actions.AtomicUpdateSet {
+			return column.SET(pg.String(*field.Value.String)), nil
+		}
+	case pg.ColumnBool:
+		if field.Value.Bool == nil {
+			return nil, fmt.Errorf("bool column %q requires bool value", column.Name())
+		}
+		if field.Operation == actions.AtomicUpdateSet {
+			return column.SET(pg.Bool(*field.Value.Bool)), nil
+		}
+	case pg.ColumnTimestamp:
+		if field.Value.Time == nil {
+			return nil, fmt.Errorf("timestamp column %q requires time value", column.Name())
+		}
+		if field.Operation == actions.AtomicUpdateSet {
+			return column.SET(pg.TimestampT(*field.Value.Time)), nil
+		}
+	case pg.ColumnTimestampz:
+		if field.Value.Time == nil {
+			return nil, fmt.Errorf("timestampz column %q requires time value", column.Name())
+		}
+		if field.Operation == actions.AtomicUpdateSet {
+			return column.SET(pg.TimestampzT(*field.Value.Time)), nil
+		}
+	}
+	return nil, fmt.Errorf("operation %q is unsupported for column %q", field.Operation, field.Column.Name())
+}
+
 func validateAtomicSelect(selectRequest actions.AtomicSelect) error {
 	if selectRequest.Table == nil || len(selectRequest.Fields) == 0 || selectRequest.Where == nil {
 		return fmt.Errorf("atomic select requires table, fields, and where")
@@ -277,6 +361,14 @@ func atomicSelectScan(kind actions.AtomicValueKind) (interface{}, func() (action
 				return actions.AtomicValue{}, fmt.Errorf("value is null")
 			}
 			return actions.AtomicBool(value.Bool), nil
+		}, nil
+	case actions.AtomicValueKindTime:
+		value := &sql.NullTime{}
+		return value, func() (actions.AtomicValue, error) {
+			if !value.Valid {
+				return actions.AtomicValue{}, fmt.Errorf("value is null")
+			}
+			return actions.AtomicTime(value.Time), nil
 		}, nil
 	case actions.AtomicValueKindInts:
 		value := &pq.Int64Array{}
