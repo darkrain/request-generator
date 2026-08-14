@@ -1192,6 +1192,20 @@ type TypedValue struct {
 	Bool   *bool          `json:"bool,omitempty"`
 }
 
+func (v TypedValue) Validate() error {
+	switch v.Type {
+	case TypedValueString, TypedValueNumber, TypedValueNull:
+		return nil
+	case TypedValueBool:
+		if v.Bool == nil {
+			return fmt.Errorf("boolean typed value requires bool")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported typed value type %q", v.Type)
+	}
+}
+
 // MarshalJSON keeps a typed zero value on the wire. A plain omitempty tag on
 // Number makes number: 0 indistinguishable from an omitted value to clients.
 func (v TypedValue) MarshalJSON() ([]byte, error) {
@@ -1447,10 +1461,20 @@ const (
 func (action Action) Validate() error {
 	switch action.Behavior {
 	case "", ActionBehaviorReset, ActionBehaviorSubmit:
-		return nil
 	default:
 		return fmt.Errorf("unsupported behavior %q", action.Behavior)
 	}
+	if action.AfterSuccess != nil {
+		if err := action.AfterSuccess.Validate(); err != nil {
+			return fmt.Errorf("after success: %w", err)
+		}
+	}
+	if action.AfterError != nil {
+		if err := action.AfterError.Validate(); err != nil {
+			return fmt.Errorf("after error: %w", err)
+		}
+	}
+	return nil
 }
 
 type RouteAction struct {
@@ -1481,10 +1505,21 @@ type Confirm struct {
 }
 
 type ActionResult struct {
-	Reload string `json:"reload,omitempty"`
-	Toast  string `json:"toast,omitempty"`
-	Route  string `json:"route,omitempty"`
-	Emit   string `json:"emit,omitempty"`
+	Reload string        `json:"reload,omitempty"`
+	Toast  string        `json:"toast,omitempty"`
+	Route  string        `json:"route,omitempty"`
+	Emit   string        `json:"emit,omitempty"`
+	Widget *WidgetTarget `json:"widget,omitempty"`
+}
+
+func (result ActionResult) Validate() error {
+	if result.Widget == nil {
+		return nil
+	}
+	if err := result.Widget.Validate(); err != nil {
+		return fmt.Errorf("widget: %w", err)
+	}
+	return nil
 }
 
 type Condition struct {

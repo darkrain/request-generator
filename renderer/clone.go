@@ -640,6 +640,7 @@ func cloneActionResult(v *ActionResult) *ActionResult {
 		return nil
 	}
 	cp := *v
+	cp.Widget = cloneWidgetTarget(v.Widget)
 	return &cp
 }
 

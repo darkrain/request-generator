@@ -1,0 +1,173 @@
+package integration
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	module "github.com/darkrain/request-generator"
+	"github.com/darkrain/request-generator/actions"
+	"github.com/darkrain/request-generator/fields"
+	"github.com/darkrain/request-generator/icontext"
+	"github.com/darkrain/request-generator/renderer"
+	"github.com/gin-gonic/gin"
+	pg "github.com/go-jet/jet/v2/postgres"
+	"github.com/stretchr/testify/require"
+)
+
+func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	group := engine.Group("")
+	id := pg.IntegerColumn("id")
+
+	master := &module.BaseModule{
+		Name:   "master_records",
+		Path:   "/workspace",
+		Fields: []fields.ModuleField{{Column: id, Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView}},
+		Render: renderer.Universal{List: &renderer.ListPage{}},
+		Actions: []actions.ModuleAction{actions.ListModuleAction{
+			Label:      "Master records",
+			Permission: []actions.Role{"member"},
+			Auth:       true,
+		}},
+	}
+	detail := &module.BaseModule{
+		Name:   "detail_records",
+		Path:   "/workspace",
+		Fields: []fields.ModuleField{{Column: id, Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView}},
+		Render: renderer.Universal{List: &renderer.ListPage{}},
+		Actions: []actions.ModuleAction{actions.ListModuleAction{
+			Label:      "Detail records",
+			Permission: []actions.Role{"member"},
+			Auth:       true,
+		}},
+	}
+	workspace := &module.BaseModule{
+		Name:   "workspace_entry",
+		Path:   "/workspace",
+		Fields: []fields.ModuleField{{Column: id, Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView}},
+		Render: renderer.Universal{List: &renderer.ListPage{Actions: []renderer.Action{{
+			ID:   "open_workspace",
+			Type: renderer.ActionAPI,
+			AfterSuccess: &renderer.ActionResult{Widget: &renderer.WidgetTarget{
+				ID:             "work-area",
+				State:          renderer.WidgetTargetOpen,
+				SelectionField: "id",
+				Refresh:        []renderer.WorkspaceRefreshTarget{renderer.WorkspaceRefreshDetail},
+			}},
+		}}}},
+		Actions: []actions.ModuleAction{actions.ListModuleAction{
+			Label:      "Workspace entry",
+			Permission: []actions.Role{"member"},
+			Auth:       true,
+			Widget: &actions.WidgetConfig{
+				ID: "work-area",
+				Renderer: renderer.GlobalWidget{
+					Surface: renderer.WidgetSurface{
+						Kind:       renderer.WidgetSurfaceDrawer,
+						Placement:  renderer.WidgetPlacementShellEnd,
+						LoadPolicy: renderer.WidgetLoadOnOpen,
+					},
+					Workspace: &renderer.WorkspaceWidget{
+						Selection: renderer.WorkspaceSelection{Field: "id"},
+						Master:    renderer.WorkspaceResource{Module: "master_records", Action: "list"},
+						Detail: renderer.WorkspaceResource{
+							Module: "detail_records",
+							Action: "list",
+							Bindings: []renderer.WidgetRequestBinding{{
+								Target: renderer.WidgetRequestBindingQuery,
+								Name:   "filter[parent_id]",
+								Value:  "selection.id",
+							}},
+						},
+						Subscriptions: []renderer.WorkspaceSubscription{{
+							Module:         "detail_records",
+							Actions:        []string{"list"},
+							CorrelationKey: "parent_id",
+							Refresh:        []renderer.WorkspaceRefreshTarget{renderer.WorkspaceRefreshMaster, renderer.WorkspaceRefreshDetail},
+						}},
+					},
+				},
+			},
+		}},
+	}
+	resource := &module.BaseModule{
+		Name:   "resource_entry",
+		Path:   "/shell",
+		Fields: []fields.ModuleField{{Column: id, Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView}},
+		Render: renderer.Universal{Record: &renderer.RecordPage{}},
+		Actions: []actions.ModuleAction{actions.ViewModuleAction{
+			Label:      "Resource entry",
+			Permission: []actions.Role{"member"},
+			Auth:       true,
+			By:         []pg.Column{id},
+			Widget: &actions.WidgetConfig{
+				ID: "resource-menu",
+				Renderer: renderer.GlobalWidget{Surface: renderer.WidgetSurface{
+					Kind:       renderer.WidgetSurfacePopup,
+					Placement:  renderer.WidgetPlacementShellEnd,
+					LoadPolicy: renderer.WidgetLoadOnOpen,
+				}},
+				Bindings: []renderer.WidgetRequestBinding{
+					{Target: renderer.WidgetRequestBindingPath, Name: "bykey", Value: "id"},
+					{Target: renderer.WidgetRequestBindingPath, Name: "value", Value: "current"},
+				},
+			},
+		}},
+	}
+
+	generator := module.NewGenerator(nil, *group, []*module.BaseModule{master, detail, workspace, resource}, func(_ actions.ModuleAction, _ []actions.Role) gin.HandlerFunc {
+		return func(c *gin.Context) { c.Next() }
+	}, func(_ actions.ModuleAction) gin.HandlerFunc {
+		return func(c *gin.Context) {
+			c.Request = c.Request.WithContext(icontext.SetUser(c.Request.Context(), &icontext.UserInfo{ID: 1, Role: "member"}))
+			c.Next()
+		}
+	})
+	generator.Run()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	response := httptest.NewRecorder()
+	engine.ServeHTTP(response, req)
+	require.Equal(t, http.StatusOK, response.Code)
+
+	type configWidget struct {
+		ID       string                `json:"id"`
+		Renderer renderer.Identity     `json:"renderer"`
+		Widget   renderer.GlobalWidget `json:"widget"`
+		Load     renderer.WidgetLoad   `json:"load"`
+	}
+	var config struct {
+		Widgets []configWidget `json:"widgets"`
+	}
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &config))
+	require.Len(t, config.Widgets, 2)
+
+	var workArea, resourceMenu *configWidget
+	for index := range config.Widgets {
+		widget := &config.Widgets[index]
+		switch widget.ID {
+		case "work-area":
+			workArea = widget
+		case "resource-menu":
+			resourceMenu = widget
+		}
+	}
+	require.NotNil(t, workArea)
+	require.Equal(t, renderer.UniversalIdentity(), workArea.Renderer)
+	require.NotNil(t, workArea.Widget.Workspace)
+	require.Nil(t, workArea.Load.Resource)
+	require.Equal(t, "/api/workspace/master_records", workArea.Load.Master.Request.Endpoint)
+	require.Equal(t, "/api/workspace/detail_records", workArea.Load.Detail.Request.Endpoint)
+	require.Equal(t, "selection.id", workArea.Load.Detail.Bindings[0].Value)
+
+	require.NotNil(t, resourceMenu)
+	require.Nil(t, resourceMenu.Widget.Workspace)
+	require.NotNil(t, resourceMenu.Load.Resource)
+	require.Equal(t, "/api/shell/resource_entry/view/:bykey/:value", resourceMenu.Load.Resource.Request.Endpoint)
+	require.Equal(t, "current", resourceMenu.Load.Resource.Bindings[1].Value)
+	require.NotContains(t, response.Body.String(), `"config"`)
+	require.NotContains(t, response.Body.String(), `"params"`)
+}

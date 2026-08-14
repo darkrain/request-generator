@@ -113,6 +113,9 @@ func (generator *Generator) Run() {
 	featuresGroup := generator.group.Group("/api")
 	featuresGroup.GET("/features", generator.FeaturesMiddleware())
 	generator.initRealtime()
+	if err := generator.validateGlobalWidgets(); err != nil {
+		panic(fmt.Sprintf("invalid global widget config: %v", err))
+	}
 
 	for _, module := range generator.Modules {
 		if err := validateAtomicAddActions(module); err != nil {

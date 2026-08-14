@@ -50,14 +50,11 @@ type NavigationPageTarget struct {
 }
 
 type ConfigWidget struct {
-	ID        string                 `json:"id"`
-	Type      string                 `json:"type"`
-	Placement string                 `json:"placement"`
-	Order     int                    `json:"order,omitempty"`
-	Renderer  string                 `json:"renderer,omitempty"`
-	Query     *RouteQuery            `json:"query,omitempty"`
-	Config    map[string]interface{} `json:"config,omitempty"`
-	Params    map[string]interface{} `json:"params,omitempty"`
+	ID       string                `json:"id"`
+	Order    int                   `json:"order,omitempty"`
+	Renderer renderer.Identity     `json:"renderer"`
+	Widget   renderer.GlobalWidget `json:"widget"`
+	Load     renderer.WidgetLoad   `json:"load"`
 }
 
 // RouteConfig конфигурирует маршрут
@@ -380,50 +377,116 @@ func (generator *Generator) buildWidgets(c *gin.Context, role string) ([]ConfigW
 			if widget == nil || !hasPermission(action, role) {
 				continue
 			}
-			render, err := module.RenderFor(c)
+			config, available, err := generator.buildWidget(c, module, action, *widget, role)
 			if err != nil {
 				return nil, err
 			}
-			route := generator.buildRouteForAction(module, render, action, role)
-			result = append(result, ConfigWidget{
-				ID:        widget.ID,
-				Type:      widget.Type,
-				Placement: widget.Placement,
-				Order:     widget.Order,
-				Renderer:  widget.Renderer,
-				Query:     route.Query,
-				Config:    widget.Config,
-				Params:    widget.Params,
-			})
+			if available {
+				result = append(result, config)
+			}
 		}
 
 		if module.Defrec.Widget != nil && hasPermission(module.Defrec, role) {
-			render, err := module.RenderFor(c)
+			config, available, err := generator.buildWidget(c, module, module.Defrec, *module.Defrec.Widget, role)
 			if err != nil {
 				return nil, err
 			}
-			route := generator.buildDefrecRoute(module, render, module.Defrec)
-			result = append(result, ConfigWidget{
-				ID:        module.Defrec.Widget.ID,
-				Type:      module.Defrec.Widget.Type,
-				Placement: module.Defrec.Widget.Placement,
-				Order:     module.Defrec.Widget.Order,
-				Renderer:  module.Defrec.Widget.Renderer,
-				Query:     route.Query,
-				Config:    module.Defrec.Widget.Config,
-				Params:    module.Defrec.Widget.Params,
-			})
+			if available {
+				result = append(result, config)
+			}
 		}
 	}
 
 	sort.SliceStable(result, func(i, j int) bool {
-		if result[i].Placement == result[j].Placement {
+		if result[i].Widget.Surface.Placement == result[j].Widget.Surface.Placement {
 			return result[i].Order < result[j].Order
 		}
-		return result[i].Placement < result[j].Placement
+		return result[i].Widget.Surface.Placement < result[j].Widget.Surface.Placement
 	})
 
 	return result, nil
+}
+
+func (generator *Generator) buildWidget(c *gin.Context, owner *BaseModule, action actions.ModuleAction, widget actions.WidgetConfig, role string) (ConfigWidget, bool, error) {
+	load, available, err := generator.buildWidgetLoad(c, owner, action, widget, role)
+	if err != nil || !available {
+		return ConfigWidget{}, available, err
+	}
+	localized := renderer.LocalizeGlobalWidget(widget.Renderer, generator.rendererTextResolver(generator.getLang(c)))
+	return ConfigWidget{
+		ID:       widget.ID,
+		Order:    widget.Order,
+		Renderer: localized.Identity(),
+		Widget:   localized,
+		Load:     load,
+	}, true, nil
+}
+
+func (generator *Generator) buildWidgetLoad(c *gin.Context, owner *BaseModule, action actions.ModuleAction, widget actions.WidgetConfig, role string) (renderer.WidgetLoad, bool, error) {
+	if widget.Renderer.Workspace == nil {
+		resource, err := generator.buildWidgetResourceLoad(c, owner, action, widget.Bindings, role)
+		if err != nil {
+			return renderer.WidgetLoad{}, false, err
+		}
+		return renderer.WidgetLoad{Resource: &resource}, true, nil
+	}
+
+	workspace := widget.Renderer.Workspace
+	master, available, err := generator.buildReferencedWidgetResourceLoad(c, workspace.Master, role)
+	if err != nil || !available {
+		return renderer.WidgetLoad{}, available, err
+	}
+	detail, available, err := generator.buildReferencedWidgetResourceLoad(c, workspace.Detail, role)
+	if err != nil || !available {
+		return renderer.WidgetLoad{}, available, err
+	}
+	return renderer.WidgetLoad{Master: &master, Detail: &detail}, true, nil
+}
+
+func (generator *Generator) buildReferencedWidgetResourceLoad(c *gin.Context, resource renderer.WorkspaceResource, role string) (renderer.WidgetResourceLoad, bool, error) {
+	module, ok := generator.moduleByName(resource.Module)
+	if !ok {
+		return renderer.WidgetResourceLoad{}, false, fmt.Errorf("widget resource references unknown module %q", resource.Module)
+	}
+	action, ok := findModuleAction(module, resource.Action)
+	if !ok {
+		return renderer.WidgetResourceLoad{}, false, fmt.Errorf("widget resource %q references unknown action %q", resource.Module, resource.Action)
+	}
+	if !hasPermission(action, role) {
+		return renderer.WidgetResourceLoad{}, false, nil
+	}
+	load, err := generator.buildWidgetResourceLoad(c, module, action, resource.Bindings, role)
+	if err != nil {
+		return renderer.WidgetResourceLoad{}, false, err
+	}
+	return load, true, nil
+}
+
+func (generator *Generator) buildWidgetResourceLoad(c *gin.Context, module *BaseModule, action actions.ModuleAction, bindings []renderer.WidgetRequestBinding, role string) (renderer.WidgetResourceLoad, error) {
+	render, err := module.RenderFor(c)
+	if err != nil {
+		return renderer.WidgetResourceLoad{}, err
+	}
+	route := generator.buildRouteForAction(module, render, action, role)
+	if route.Query == nil {
+		return renderer.WidgetResourceLoad{}, fmt.Errorf("widget resource %q action %q has no request", module.Name, action.Action())
+	}
+	return renderer.WidgetResourceLoad{
+		Request: renderer.APIAction{
+			Method:   route.Query.Method,
+			Endpoint: route.Query.Url,
+		},
+		Bindings: append([]renderer.WidgetRequestBinding(nil), bindings...),
+	}, nil
+}
+
+func (generator *Generator) moduleByName(name string) (*BaseModule, bool) {
+	for _, candidate := range generator.Modules {
+		if candidate.Name == name {
+			return candidate, true
+		}
+	}
+	return nil, false
 }
 
 func actionWidget(action actions.ModuleAction) *actions.WidgetConfig {

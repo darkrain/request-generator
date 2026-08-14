@@ -2,7 +2,7 @@
 
 Имя: `UniversalRenderer`
 
-Версия: `1.0.0`
+Версия: `2.0.0`
 
 Статус: `draft`
 
@@ -25,6 +25,7 @@ flowchart TD
     B --> D["heads / filters / sort"]
     B --> E["renderer identity"]
     B --> T["typed page metadata"]
+    B --> W["typed global widgets"]
 
     C --> Y["field.presentation / field.media"]
 
@@ -39,6 +40,7 @@ flowchart TD
     H --> P["Resource grid renderer"]
     I --> Q["Form renderer"]
     J --> R["Record renderer"]
+    W --> X["Shell widget runtime"]
 ```
 
 ## Где Лежит Metadata
@@ -51,7 +53,7 @@ UniversalRenderer читает metadata только из typed response fields.
 {
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "1.0.0"
+    "version": "2.0.0"
   }
 }
 ```
@@ -106,7 +108,7 @@ Closed enums должны использовать typed constants из package 
   "page": 0,
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "1.0.0"
+    "version": "2.0.0"
   },
   "list_page": {},
   "rows": [],
@@ -148,7 +150,7 @@ Closed enums должны использовать typed constants из package 
 {
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "1.0.0"
+    "version": "2.0.0"
   },
   "form_page": {},
   "fields": {
@@ -274,7 +276,7 @@ Generator проверяет closed `type`, применимость `list`/`tab
 {
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "1.0.0"
+    "version": "2.0.0"
   },
   "record_page": {},
   "item": {
@@ -320,7 +322,7 @@ Generator проверяет closed `type`, применимость `list`/`tab
         "type": "page",
         "renderer": {
           "name": "UniversalRenderer",
-          "version": "1.0.0"
+          "version": "2.0.0"
         },
         "page_type": "list",
         "query": {
@@ -348,15 +350,30 @@ Generator проверяет closed `type`, применимость `list`/`tab
   "widgets": [
     {
       "id": "profile-menu",
-      "type": "module",
-      "placement": "topbar",
       "order": 10,
-      "query": {
-        "url": "/api/profile-menu",
-        "method": "GET"
+      "renderer": {
+        "name": "UniversalRenderer",
+        "version": "2.0.0"
       },
-      "config": {},
-      "params": {}
+      "widget": {
+        "surface": {
+          "kind": "popup",
+          "placement": "shell_end",
+          "load_policy": "on_open"
+        }
+      },
+      "load": {
+        "resource": {
+          "request": {
+            "method": "GET",
+            "endpoint": "/api/profile-menu/view/:bykey/:value"
+          },
+          "bindings": [
+            {"target": "path", "name": "bykey", "value": "id"},
+            {"target": "path", "name": "value", "value": "current"}
+          ]
+        }
+      }
     }
   ],
   "role": "admin"
@@ -377,8 +394,9 @@ Generator проверяет closed `type`, применимость `list`/`tab
 | `navigation[].target.query` | Endpoint и method для загрузки данных page route. |
 | `navigation[].target.children` | Вложенные route configs. |
 | `widgets` | Глобальные виджеты, построенные из действий модулей с `WidgetConfig`. |
-| `widgets[].placement` | Место отображения виджета в shell, например `topbar`. |
-| `widgets[].query` | Endpoint и method действия, данные которого нужны виджету. |
+| `widgets[].renderer` | Renderer identity/version глобального typed widget contract. |
+| `widgets[].widget` | Typed surface и optional workspace composition. |
+| `widgets[].load` | Generated typed requests для resource либо master/detail. |
 | `role` | Роль текущего пользователя. |
 
 Renderer discovery происходит через `/api/config`: frontend может проверить compatibility с `UniversalRenderer` до загрузки данных страницы. Data responses (`list`, `defrec`, `view`) повторяют `renderer.name/version`, чтобы каждый response был самодостаточным.
@@ -734,6 +752,150 @@ Media: &renderer.FieldMediaConfig{
 ```
 
 Если producer-у не хватает поля для renderer metadata, поле нужно добавить в typed contract генератора и в документацию.
+
+## Контракт Глобального Виджета
+
+`/api/config.widgets` описывает глобальные элементы оболочки. Виджет не
+создаёт route и не передаёт UI shape через `map[string]interface{}`. Его
+серверное описание состоит из renderer identity, `widget` и `load`.
+
+```json
+{
+  "id": "work-area",
+  "order": 10,
+  "renderer": {"name": "UniversalRenderer", "version": "2.0.0"},
+  "widget": {
+    "surface": {
+      "kind": "drawer",
+      "placement": "shell_end",
+      "load_policy": "on_open"
+    },
+    "workspace": {
+      "selection": {"field": "id"},
+      "master": {"module": "master_records", "action": "list"},
+      "detail": {
+        "module": "detail_records",
+        "action": "list",
+        "bindings": [
+          {"target": "query", "name": "filter[parent_id]", "value": "selection.id"}
+        ]
+      },
+      "subscriptions": [
+        {
+          "module": "detail_records",
+          "actions": ["add", "update"],
+          "correlation_key": "parent_id",
+          "refresh": ["master", "detail"]
+        }
+      ]
+    }
+  },
+  "load": {
+    "master": {"request": {"method": "GET", "endpoint": "/api/workspace/master_records"}},
+    "detail": {
+      "request": {"method": "GET", "endpoint": "/api/workspace/detail_records"},
+      "bindings": [
+        {"target": "query", "name": "filter[parent_id]", "value": "selection.id"}
+      ]
+    }
+  }
+}
+```
+
+### Объявление В Producer
+
+`actions.WidgetConfig` содержит только типизированное renderer-описание и
+bindings для action, зарегистрировавшего простой widget. `Type`, строковый
+`Renderer`, `Placement`, `Config` и `Params` в этом контракте отсутствуют.
+
+```go
+Widget: &actions.WidgetConfig{
+    ID: "work-area",
+    Renderer: renderer.GlobalWidget{
+        Surface: renderer.WidgetSurface{
+            Kind:       renderer.WidgetSurfaceDrawer,
+            Placement:  renderer.WidgetPlacementShellEnd,
+            LoadPolicy: renderer.WidgetLoadOnOpen,
+        },
+        Workspace: &renderer.WorkspaceWidget{
+            Selection: renderer.WorkspaceSelection{Field: "id"},
+            Master: renderer.WorkspaceResource{
+                Module: "master_records",
+                Action: "list",
+            },
+            Detail: renderer.WorkspaceResource{
+                Module: "detail_records",
+                Action: "list",
+                Bindings: []renderer.WidgetRequestBinding{{
+                    Target: renderer.WidgetRequestBindingQuery,
+                    Name:   "filter[parent_id]",
+                    Value:  "selection.id",
+                }},
+            },
+        },
+    },
+}
+```
+
+`WorkspaceResource` ссылается на существующий module action. Generator сам
+выдаёт его URL и HTTP method в `load`; response этого action уже содержит
+существующие `list_page`, `record_page` или `form_page`. Widget не повторяет
+pagination, sort, field schema или presentation.
+
+`selection` объявляется один раз. Только binding вида
+`selection.<field>` может передать выбранное значение в detail resource. Для
+path binding имя обязано существовать в path action; query binding передаётся
+стандартным query-параметром.
+
+`surface.kind`: `drawer` или `popup`. `surface.placement`: `shell_start`,
+`shell_end` или `center`; drawer нельзя разместить в `center`.
+`surface.load_policy`: `on_open` или `eager`. Все перечисления закрыты и
+валидируются генератором.
+
+Обычный widget без `workspace` загружает action, на котором он объявлен. Его
+`load.resource` содержит generated request и optional typed bindings. Это
+позволяет использовать тот же контракт для shell-level record/form/list без
+отдельного frontend renderer.
+
+### Цель Действия И Realtime
+
+Стандартный `renderer.Action` открывает или закрывает зарегистрированный
+widget через `after_success.widget` или `after_error.widget`:
+
+```json
+{
+  "after_success": {
+    "widget": {
+      "id": "work-area",
+      "state": "open",
+      "selection_field": "id",
+      "refresh": ["detail"]
+    }
+  }
+}
+```
+
+`selection_field` должен совпадать с `workspace.selection.field`; generator
+проверяет ID виджета и наличие поля в declaring module. Возможные refresh
+targets: `master`, `detail`.
+
+Realtime event может нести typed correlation отдельно от `record_id`:
+
+```json
+{
+  "module": "detail_records",
+  "action": "add",
+  "correlation": {
+    "key": "parent_id",
+    "value": {"type": "number", "number": 42}
+  }
+}
+```
+
+`WorkspaceSubscription.correlation_key` сравнивается runtime с этой typed
+correlation, а не с `payload`. Данные event payload остаются транспортными
+данными и не являются UI contract-ом. Socket, auth, reconnect, replay и UI
+lifecycle не входят в request-generator: их реализует integration/runtime.
 
 ### Design Tokens
 
@@ -1346,7 +1508,7 @@ Media metadata should reference fields, not hardcoded rendering branches.
   "page": 0,
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "1.0.0"
+    "version": "2.0.0"
   },
   "rows": [
     {"id": 1, "name": "Example", "status": "active"}
