@@ -383,6 +383,86 @@ func TestAtomicAdd_SelectManyReadsInsideTransactionAndRollsBack(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func atomicInsertThenUpdateOperation(items, counters pg.Table, primaryKey, title pg.Column, counterID, unreadCount pg.ColumnInteger) actions.AtomicAddOperation {
+	return func(ctx context.Context, executor actions.AtomicExecutor, input actions.AtomicInput) (actions.AtomicRecord, error) {
+		titleValue, err := input.RequireString("title")
+		if err != nil {
+			return actions.AtomicRecord{}, err
+		}
+		item, err := executor.Insert(ctx, actions.AtomicInsert{
+			Table:      items,
+			PrimaryKey: primaryKey,
+			Fields:     []actions.AtomicInsertField{{Column: title, Value: actions.AtomicString(titleValue)}},
+		})
+		if err != nil {
+			return actions.AtomicRecord{}, err
+		}
+		updated, err := executor.Update(ctx, actions.AtomicUpdate{
+			Table: counters,
+			Fields: []actions.AtomicUpdateField{{
+				Column:    unreadCount,
+				Operation: actions.AtomicUpdateIncrement,
+				Value:     actions.AtomicInt(1),
+			}},
+			Where: counterID.EQ(pg.Int(9)),
+		})
+		if err != nil {
+			return actions.AtomicRecord{}, err
+		}
+		if updated != 1 {
+			return actions.AtomicRecord{}, errors.New("counter was not updated")
+		}
+		return actions.AtomicRecord{Value: item.Value, PrimaryKey: primaryKey.Name()}, nil
+	}
+}
+
+func TestAtomicAdd_InsertThenUpdateCommitsInOneTransaction(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	id := pg.IntegerColumn("id")
+	title := pg.StringColumn("title")
+	counterID := pg.IntegerColumn("id")
+	unreadCount := pg.IntegerColumn("unread_count")
+	items := pg.NewTable("public", "atomic_items", "", id, title)
+	counters := pg.NewTable("public", "atomic_counters", "", counterID, unreadCount)
+	engine := setupAtomicAddRouter(t, sqlDB, atomicInsertThenUpdateOperation(items, counters, id, title, counterID, unreadCount))
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO public."atomic_items" ("title") VALUES ($1) RETURNING "id"`)).WithArgs("hello").WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(41))
+	mock.ExpectExec(`UPDATE public\.atomic_counters`).WithArgs(int64(1), int64(9)).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	w := executeJSONRequest(engine, http.MethodPut, "/admin/atomic-items", map[string]interface{}{"title": "hello"})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.JSONEq(t, `{"value":41,"primary_key":"id"}`, w.Body.String())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAtomicAdd_InsertThenUpdateRollsBackOnUpdateError(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	id := pg.IntegerColumn("id")
+	title := pg.StringColumn("title")
+	counterID := pg.IntegerColumn("id")
+	unreadCount := pg.IntegerColumn("unread_count")
+	items := pg.NewTable("public", "atomic_items", "", id, title)
+	counters := pg.NewTable("public", "atomic_counters", "", counterID, unreadCount)
+	engine := setupAtomicAddRouter(t, sqlDB, atomicInsertThenUpdateOperation(items, counters, id, title, counterID, unreadCount))
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO public."atomic_items" ("title") VALUES ($1) RETURNING "id"`)).WithArgs("hello").WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(41))
+	mock.ExpectExec(`UPDATE public\.atomic_counters`).WithArgs(int64(1), int64(9)).WillReturnError(errors.New("counter update failed"))
+	mock.ExpectRollback()
+
+	w := executeJSONRequest(engine, http.MethodPut, "/admin/atomic-items", map[string]interface{}{"title": "hello"})
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestAtomicAdd_RejectsHooksAtConfigurationTime(t *testing.T) {
 	for _, testCase := range []struct {
 		name       string
