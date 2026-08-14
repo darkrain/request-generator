@@ -4,6 +4,11 @@
 
 ### Added
 
+- **`AtomicExecutor.Upsert` и atomic realtime publish** — конфликтобезопасное
+  идемпотентное создание без доступа модуля к transaction/raw SQL, а также
+  typed публикация actor-scoped realtime-события только после commit.
+  Recipient topics строятся generator-ом из server-produced result fields.
+
 - **`NavigationEntry` на `BaseModule`** — декларативное описание навигации и frontend routes для config endpoint.
   Поля: `ActionName`, `ID`, `Path`, `Title`, `Icon`, `Show`, `Order`, `Group`, `Target`, `Roles`, `Query`, `Data`.
 

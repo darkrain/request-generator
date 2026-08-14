@@ -57,6 +57,86 @@ func (executor atomicExecutor) Insert(ctx context.Context, insert actions.Atomic
 	return actions.AtomicRecord{Value: value, PrimaryKey: insert.PrimaryKey.Name()}, nil
 }
 
+func (executor atomicExecutor) Upsert(ctx context.Context, upsert actions.AtomicUpsert) (actions.AtomicUpsertResult, error) {
+	insert := upsert.Insert
+	if insert.Table == nil || insert.PrimaryKey == nil {
+		return actions.AtomicUpsertResult{}, fmt.Errorf("atomic upsert requires table and primary key")
+	}
+	if len(insert.Fields) == 0 {
+		return actions.AtomicUpsertResult{}, fmt.Errorf("atomic upsert requires insert fields")
+	}
+	if len(upsert.ConflictColumns) == 0 {
+		return actions.AtomicUpsertResult{}, fmt.Errorf("atomic upsert requires conflict columns")
+	}
+
+	keys := make([]string, 0, len(insert.Fields))
+	placeholders := make([]string, 0, len(insert.Fields))
+	values := make([]interface{}, 0, len(insert.Fields)+len(upsert.UpdateFields))
+	for index, field := range insert.Fields {
+		if field.Column == nil {
+			return actions.AtomicUpsertResult{}, fmt.Errorf("atomic upsert insert field %d has no column", index)
+		}
+		if err := field.Value.Validate(); err != nil {
+			return actions.AtomicUpsertResult{}, fmt.Errorf("atomic upsert insert field %q: %w", field.Column.Name(), err)
+		}
+		keys = append(keys, fmt.Sprintf(`"%s"`, field.Column.Name()))
+		placeholders = append(placeholders, fmt.Sprintf("$%d", index+1))
+		values = append(values, atomicDBValue(field.Value))
+	}
+
+	conflicts := make([]string, 0, len(upsert.ConflictColumns))
+	for index, column := range upsert.ConflictColumns {
+		if column == nil {
+			return actions.AtomicUpsertResult{}, fmt.Errorf("atomic upsert conflict column %d is nil", index)
+		}
+		conflicts = append(conflicts, fmt.Sprintf(`"%s"`, column.Name()))
+	}
+
+	resolution := "DO NOTHING"
+	if len(upsert.UpdateFields) > 0 {
+		assignments := make([]string, 0, len(upsert.UpdateFields))
+		for index, field := range upsert.UpdateFields {
+			if field.Column == nil {
+				return actions.AtomicUpsertResult{}, fmt.Errorf("atomic upsert update field %d has no column", index)
+			}
+			if err := field.Value.Validate(); err != nil {
+				return actions.AtomicUpsertResult{}, fmt.Errorf("atomic upsert update field %q: %w", field.Column.Name(), err)
+			}
+			values = append(values, atomicDBValue(field.Value))
+			assignments = append(assignments, fmt.Sprintf(`"%s" = $%d`, field.Column.Name(), len(values)))
+		}
+		resolution = "DO UPDATE SET " + strings.Join(assignments, ",")
+	}
+
+	tableName := fmt.Sprintf(`"%s"`, insert.Table.TableName())
+	if schema := insert.Table.SchemaName(); schema != "" {
+		tableName = fmt.Sprintf(`%s."%s"`, schema, insert.Table.TableName())
+	}
+	query := fmt.Sprintf(
+		`INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) %s RETURNING "%s", (xmax = 0) AS inserted`,
+		tableName,
+		strings.Join(keys, ","),
+		strings.Join(placeholders, ","),
+		strings.Join(conflicts, ","),
+		resolution,
+		insert.PrimaryKey.Name(),
+	)
+
+	var value int64
+	var inserted bool
+	err := executor.tx.QueryRowContext(ctx, query, values...).Scan(&value, &inserted)
+	if err == sql.ErrNoRows {
+		return actions.AtomicUpsertResult{Inserted: false}, nil
+	}
+	if err != nil {
+		return actions.AtomicUpsertResult{}, err
+	}
+	return actions.AtomicUpsertResult{
+		Record:   actions.AtomicRecord{Value: value, PrimaryKey: insert.PrimaryKey.Name()},
+		Inserted: inserted,
+	}, nil
+}
+
 func (executor atomicExecutor) SelectOne(ctx context.Context, selectRequest actions.AtomicSelect) (actions.AtomicRecord, error) {
 	if selectRequest.Table == nil || len(selectRequest.Fields) == 0 || selectRequest.Where == nil {
 		return actions.AtomicRecord{}, fmt.Errorf("atomic select requires table, fields, and where")

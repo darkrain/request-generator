@@ -331,8 +331,16 @@ func (generator *Generator) Run() {
 
 func validateAtomicAddActions(module *BaseModule) error {
 	for _, moduleAction := range module.Actions {
-		action, ok := moduleAction.(actions.AddModuleAction)
-		if !ok {
+		var action actions.AddModuleAction
+		switch value := moduleAction.(type) {
+		case actions.AddModuleAction:
+			action = value
+		case *actions.AddModuleAction:
+			if value == nil {
+				continue
+			}
+			action = *value
+		default:
 			continue
 		}
 		switch action.Mode {
@@ -341,6 +349,9 @@ func validateAtomicAddActions(module *BaseModule) error {
 		case actions.AddModeAtomic:
 			if action.Atomic == nil || action.Atomic.Operation == nil {
 				return fmt.Errorf("atomic add action requires an operation")
+			}
+			if err := validateAtomicAddConfig(module, action); err != nil {
+				return err
 			}
 			if action.BeforeAction != nil || action.AfterAction != nil {
 				return fmt.Errorf("atomic add action cannot define before or after hooks")
@@ -871,7 +882,12 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 			if output.PrimaryKey == "" {
 				output.PrimaryKey = module.PrimaryKey.Name()
 			}
-			if err := output.Validate(); err != nil {
+			if err := validateAtomicResult(action.Atomic, output); err != nil {
+				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{err.Error()})
+				return
+			}
+			atomicPublishes, err := atomicRealtimePublishes(action.Atomic, atomicInput, output)
+			if err != nil {
 				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{err.Error()})
 				return
 			}
@@ -887,7 +903,7 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 			}
 			committed = true
 			response.Response(l, c, output)
-			generator.publishRealtime(c, module, actions.ModuleActionNameAdd, output)
+			generator.publishAtomicRealtime(c, module, output, atomicPublishes)
 			return
 		}
 

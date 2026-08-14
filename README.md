@@ -1359,6 +1359,13 @@ Generator сам выполняет нормализацию и validation input
 
 Если перед вставками нужен контекст из БД, operation вызывает `executor.SelectOne`. Запрос описывается таблицей, типизированными select-полями и Jet `Where`; он выполняется в той же transaction. Нельзя читать этот контекст через отдельный `*sql.DB` до atomic operation.
 
+Для идемпотентного создания с уникальным ключом используется `executor.Upsert`.
+Он получает typed insert, conflict columns и при необходимости typed update fields.
+Без `UpdateFields` executor выполняет `ON CONFLICT DO NOTHING`; в конфликтном
+пути `Inserted == false`, после чего operation может получить существующую
+запись через `SelectOne` в той же transaction. Это исключает race condition
+между проверкой и созданием.
+
 ```go
 actions.AddModuleAction{
     Mode: actions.AddModeAtomic,
@@ -1394,6 +1401,49 @@ actions.AddModuleAction{
 ```
 
 `AtomicRecord` является ответом add action. Его `Fields` сериализуются на верхнем уровне ответа: поле `{Name: "nick", ...}` станет JSON-полем `nick`. Поэтому `AfterSuccess.Route` интерполируется shell только из response record, например `/profiles/{nick}`. Отдельный источник route bindings не предусмотрен.
+
+### Realtime после atomic add
+
+Atomic add может декларативно опубликовать событие только после успешного
+commit. Для этого `ResultFields` фиксирует typed поля, которые возвращает
+`AtomicRecord`, а `Publish` описывает получателей и correlation. Operation не
+получает `gin.Context`, не строит topic strings и не вызывает lifecycle hook.
+
+```go
+actions.AddModuleAction{
+    Mode: actions.AddModeAtomic,
+    Realtime: &actions.RealtimeEventConfig{CorrelationField: "parent_id"},
+    Atomic: &actions.AtomicAddConfig{
+        Operation: createRelatedRecords,
+        ResultFields: []actions.AtomicResultField{
+            {Name: "parent_id", Kind: actions.AtomicValueKindInt},
+            {Name: "recipient_user_ids", Kind: actions.AtomicValueKindInts},
+        },
+        Publish: []actions.AtomicRealtimePublishConfig{{
+            Recipients: []actions.AtomicRealtimeRecipient{{
+                UserID: actions.AtomicValueSource{
+                    Scope: actions.AtomicValueSourceResult,
+                    Field: "recipient_user_ids",
+                },
+            }},
+            Correlation: &actions.AtomicRealtimeCorrelation{
+                Field: "parent_id",
+                Source: actions.AtomicValueSource{
+                    Scope: actions.AtomicValueSourceResult,
+                    Field: "parent_id",
+                },
+            },
+        }},
+    },
+}
+```
+
+Каждый recipient обязан ссылаться на `result` с типом `int` или `ints`.
+Generator сам преобразует его в защищённые topics `user:{id}`; значение из
+request body не может адресовать событие другому пользователю. Correlation
+может использовать нормализованный `input` либо typed `result`, но всегда
+сверяется с `RealtimeEventConfig`. Если transaction откатывается, событие не
+создаётся.
 
 ## API эндпоинты
 
