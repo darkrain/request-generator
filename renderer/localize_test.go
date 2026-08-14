@@ -10,8 +10,17 @@ import (
 func TestLocalizeUsesResolverWithoutMutatingSource(t *testing.T) {
 	iconOnly := true
 	source := Universal{Form: &FormPage{
-		Title:   "form.title",
-		Actions: []Action{{ID: "save", Label: "Save", LabelKey: "actions.save", AriaLabel: "Save", AriaLabelKey: "actions.save", Title: "Save", TitleKey: "actions.save", IconOnly: &iconOnly}},
+		Title: "form.title",
+		Actions: []Action{{
+			ID:                 "save",
+			Label:              "Save",
+			LabelKey:           "actions.save",
+			AriaLabel:          "Save",
+			AriaLabelKey:       "actions.save",
+			Title:              "Save",
+			TitleKey:           "actions.save",
+			ActionPresentation: ActionPresentation{IconOnly: &iconOnly},
+		}},
 		Sections: []FormSection{{
 			ID: "rates",
 			Matrix: &FieldMatrix{Type: FieldMatrixTypeTable, Table: &FieldMatrixTable{

@@ -53,7 +53,7 @@
 
 Примеры:
 
-- `Name: UniversalRenderer`, `Version: 2.0.0`
+- `Name: UniversalRenderer`, `Version: 2.1.0`
 - `Name: MobileRenderer`, `Version: 1.0.0`
 - `Name: DashboardRenderer`, `Version: 1.0.0`
 

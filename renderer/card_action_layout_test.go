@@ -29,7 +29,10 @@ func TestCardActionLayoutIsNotChangedByLocalization(t *testing.T) {
 	value := true
 	source := Universal{List: &ListPage{CardSchema: &CardSchema{
 		ActionLayout: CardActionLayoutEdgeFill,
-		Actions:      []Action{{LabelKey: "action.open", IconOnly: &value}},
+		Actions: []Action{{
+			LabelKey:           "action.open",
+			ActionPresentation: ActionPresentation{IconOnly: &value},
+		}},
 	}}}
 
 	localized := Localize(source, func(value, key string) string { return "Open" })

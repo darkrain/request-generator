@@ -617,13 +617,20 @@ Actions: []actions.ModuleAction{
 
 `WorkspaceWidget.Commands` задаёт типизированные write-команды для текущей
 строки master. Команда ссылается на стандартный `add`, `update` или `delete`
-action, содержит только typed bindings и refresh targets; generator сам
-выводит method и endpoint в `widgets[].load.commands`. Для `update` обязательны
-`path_by_key`, `path_value` и хотя бы один `body` binding. Runtime source
-`selection` может использовать любой скалярный field, возвращаемый
-master-action для выбранной строки, а generator проверяет существование и тип
-каждого значения. Недоступные роли или write-fields исключают только
-соответствующую команду, не весь widget.
+action, содержит optional общий `renderer.ActionPresentation`, typed bindings
+и refresh targets; generator сам выводит method и endpoint в
+`widgets[].load.commands`. `ActionPresentation` описывает только внешний вид
+и condition state, но не URL, payload или route. Runtime source `selection`
+может использовать любой скалярный field, возвращаемый master-action для
+выбранной строки, а generator проверяет существование и тип каждого значения.
+
+Для значения, которое вводит пользователь, применяется
+`WorkspaceCommandInput{Fields: ...}` только со стандартным `add` action и
+`runtime.scope: input` в `body` binding. Generator выдаёт generated target
+`defrec` request в `load.commands[].input.definition`; `Fields` остаётся
+allowlist, а не второй схемой поля. Обычные update-формы остаются `form_page`.
+Недоступные роли или write-fields исключают только соответствующую команду, не
+весь widget.
 
 ### Этап 5. Описание полей (ModuleField)
 
@@ -1674,7 +1681,7 @@ scope). Только после этого вызывается `Operation`. Е�
         "type": "page",
         "renderer": {
           "name": "UniversalRenderer",
-          "version": "2.0.0"
+          "version": "2.1.0"
         },
         "page_type": "list",
         "query": {
@@ -1695,7 +1702,7 @@ scope). Только после этого вызывается `Operation`. Е�
       "order": 10,
       "renderer": {
         "name": "UniversalRenderer",
-        "version": "2.0.0"
+        "version": "2.1.0"
       },
       "widget": {
         "surface": {

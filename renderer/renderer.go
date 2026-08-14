@@ -1415,40 +1415,63 @@ type ResourceGridActionsConfig struct {
 	EditRoute interface{} `json:"editRoute,omitempty"`
 }
 
-type Action struct {
-	ID               string           `json:"id,omitempty"`
-	Type             ActionType       `json:"type,omitempty"`
-	Behavior         ActionBehavior   `json:"behavior,omitempty"`
-	Label            string           `json:"label,omitempty"`
-	LabelKey         string           `json:"label_key,omitempty"`
-	AriaLabel        string           `json:"aria_label,omitempty"`
-	Title            string           `json:"title,omitempty"`
-	SavingLabel      string           `json:"saving_label,omitempty"`
-	SavedLabel       string           `json:"saved_label,omitempty"`
+// ActionPresentation describes visual and interaction state shared by every
+// action surface. It never carries a request, route or action result.
+//
+// Action embeds this structure to keep its JSON shape flat. WorkspaceCommand
+// uses it as a nested value because its request is resolved separately from a
+// standard generator action.
+type ActionPresentation struct {
 	Icon             string           `json:"icon,omitempty"`
 	IconOnly         *bool            `json:"icon_only,omitempty"`
 	Variant          ActionVariant    `json:"variant,omitempty"`
 	Appearance       ActionAppearance `json:"appearance,omitempty"`
 	ActiveAppearance ActionAppearance `json:"active_appearance,omitempty"`
 	Active           string           `json:"active,omitempty"`
-	External         *bool            `json:"external,omitempty"`
 	Block            *bool            `json:"block,omitempty"`
 	VisibleIf        *Condition       `json:"visible_if,omitempty"`
 	HiddenIf         *Condition       `json:"hidden_if,omitempty"`
 	DisabledIf       *Condition       `json:"disabled_if,omitempty"`
-	Endpoint         string           `json:"endpoint,omitempty"`
-	Method           string           `json:"method,omitempty"`
-	UniqueEndpoint   string           `json:"uniqueEndpoint,omitempty"`
-	AfterRoute       interface{}      `json:"afterRoute,omitempty"`
-	Route            interface{}      `json:"route,omitempty"`
-	API              *APIAction       `json:"api,omitempty"`
-	Modal            *ModalAction     `json:"modal,omitempty"`
-	Confirm          *Confirm         `json:"confirm,omitempty"`
-	AfterSuccess     *ActionResult    `json:"after_success,omitempty"`
-	AfterError       *ActionResult    `json:"after_error,omitempty"`
-	AriaLabelKey     string           `json:"aria_label_key,omitempty"`
-	TitleKey         string           `json:"title_key,omitempty"`
-	Test             string           `json:"test,omitempty"`
+}
+
+func (presentation ActionPresentation) Validate() error {
+	if presentation.VisibleIf != nil && !hasCondition(presentation.VisibleIf) {
+		return fmt.Errorf("visible_if is invalid")
+	}
+	if presentation.HiddenIf != nil && !hasCondition(presentation.HiddenIf) {
+		return fmt.Errorf("hidden_if is invalid")
+	}
+	if presentation.DisabledIf != nil && !hasCondition(presentation.DisabledIf) {
+		return fmt.Errorf("disabled_if is invalid")
+	}
+	return nil
+}
+
+type Action struct {
+	ActionPresentation
+	ID             string         `json:"id,omitempty"`
+	Type           ActionType     `json:"type,omitempty"`
+	Behavior       ActionBehavior `json:"behavior,omitempty"`
+	Label          string         `json:"label,omitempty"`
+	LabelKey       string         `json:"label_key,omitempty"`
+	AriaLabel      string         `json:"aria_label,omitempty"`
+	Title          string         `json:"title,omitempty"`
+	SavingLabel    string         `json:"saving_label,omitempty"`
+	SavedLabel     string         `json:"saved_label,omitempty"`
+	External       *bool          `json:"external,omitempty"`
+	Endpoint       string         `json:"endpoint,omitempty"`
+	Method         string         `json:"method,omitempty"`
+	UniqueEndpoint string         `json:"uniqueEndpoint,omitempty"`
+	AfterRoute     interface{}    `json:"afterRoute,omitempty"`
+	Route          interface{}    `json:"route,omitempty"`
+	API            *APIAction     `json:"api,omitempty"`
+	Modal          *ModalAction   `json:"modal,omitempty"`
+	Confirm        *Confirm       `json:"confirm,omitempty"`
+	AfterSuccess   *ActionResult  `json:"after_success,omitempty"`
+	AfterError     *ActionResult  `json:"after_error,omitempty"`
+	AriaLabelKey   string         `json:"aria_label_key,omitempty"`
+	TitleKey       string         `json:"title_key,omitempty"`
+	Test           string         `json:"test,omitempty"`
 }
 
 type ActionBehavior string
@@ -1459,6 +1482,9 @@ const (
 )
 
 func (action Action) Validate() error {
+	if err := action.ActionPresentation.Validate(); err != nil {
+		return err
+	}
 	switch action.Behavior {
 	case "", ActionBehaviorReset, ActionBehaviorSubmit:
 	default:

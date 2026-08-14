@@ -110,8 +110,8 @@ func setupUniversalRendererRouter(t *testing.T) *gin.Engine {
 						Remove: "Remove avatar",
 					},
 					Actions: &renderer.MediaGalleryActions{
-						Upload: &renderer.Action{ID: "upload", Label: "Upload", Type: renderer.ActionEmit, Icon: "upload"},
-						Crop:   &renderer.Action{ID: "crop", Label: "Crop", Type: renderer.ActionEmit, Icon: "crop"},
+						Upload: &renderer.Action{ID: "upload", Label: "Upload", Type: renderer.ActionEmit, ActionPresentation: renderer.ActionPresentation{Icon: "upload"}},
+						Crop:   &renderer.Action{ID: "crop", Label: "Crop", Type: renderer.ActionEmit, ActionPresentation: renderer.ActionPresentation{Icon: "crop"}},
 						Remove: &renderer.Action{ID: "remove", Label: "Remove", Type: renderer.ActionAPI, API: &renderer.APIAction{Method: "POST", Endpoint: "/profiles/avatar/remove"}},
 					},
 					Cropper: &renderer.MediaCropperConfig{
