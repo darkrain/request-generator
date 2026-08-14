@@ -16,6 +16,7 @@ type DeleteModuleAction struct {
 	By           []pg.Column                            `json:"-"`
 	Where        func(c *gin.Context) pg.BoolExpression `json:"-"`
 	Widget       *WidgetConfig                          `json:"widget,omitempty"`
+	Realtime     *RealtimeEventConfig                   `json:"-"`
 }
 
 func (action DeleteModuleAction) Action() ModuleActionName {

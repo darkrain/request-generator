@@ -572,10 +572,11 @@ UI-структуру через maps `Config`/`Params`.
 
 ```go
 Actions: []actions.ModuleAction{
-    actions.ListModuleAction{
+    actions.ViewModuleAction{
         Label:      "profile_menu",
         Permission: []actions.Role{actions.RoleAll},
         Auth:       true,
+		By:         []pg.Column{table.Profiles.ID},
         Widget: &actions.WidgetConfig{
             ID: "profile-menu",
             Order: 10,
@@ -587,8 +588,18 @@ Actions: []actions.ModuleAction{
                 },
             },
             Bindings: []renderer.WidgetRequestBinding{
-                {Target: renderer.WidgetRequestBindingPath, Name: "bykey", Value: "id"},
-                {Target: renderer.WidgetRequestBindingPath, Name: "value", Value: "current"},
+                {
+                    Target: renderer.WidgetRequestBindingPathByKey,
+                    Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{
+                        Type: renderer.TypedValueString, String: "id",
+                    }},
+                },
+                {
+                    Target: renderer.WidgetRequestBindingPathValue,
+                    Source: renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{
+                        Scope: renderer.WidgetRuntimeValueSourceCurrentUser, Field: "id",
+                    }},
+                },
             },
         },
     },
@@ -1475,8 +1486,8 @@ actions.AddModuleAction{
             "endpoint": "/api/profile-menu/view/:bykey/:value"
           },
           "bindings": [
-            {"target": "path", "name": "bykey", "value": "id"},
-            {"target": "path", "name": "value", "value": "current"}
+            {"target": "path_by_key", "source": {"literal": {"type": "string", "string": "id"}}},
+            {"target": "path_value", "source": {"runtime": {"scope": "current_user", "field": "id"}}}
           ]
         }
       }

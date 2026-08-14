@@ -369,8 +369,8 @@ Generator проверяет closed `type`, применимость `list`/`tab
             "endpoint": "/api/profile-menu/view/:bykey/:value"
           },
           "bindings": [
-            {"target": "path", "name": "bykey", "value": "id"},
-            {"target": "path", "name": "value", "value": "current"}
+            {"target": "path_by_key", "source": {"literal": {"type": "string", "string": "id"}}},
+            {"target": "path_value", "source": {"runtime": {"scope": "current_user", "field": "id"}}}
           ]
         }
       }
@@ -777,14 +777,18 @@ Media: &renderer.FieldMediaConfig{
         "module": "detail_records",
         "action": "list",
         "bindings": [
-          {"target": "query", "name": "filter[parent_id]", "value": "selection.id"}
+          {
+            "target": "filter",
+            "field": "parent_id",
+            "source": {"runtime": {"scope": "selection", "field": "id"}}
+          }
         ]
       },
       "subscriptions": [
         {
           "module": "detail_records",
           "actions": ["add", "update"],
-          "correlation_key": "parent_id",
+          "correlation": {"event_field": "parent_id"},
           "refresh": ["master", "detail"]
         }
       ]
@@ -795,7 +799,11 @@ Media: &renderer.FieldMediaConfig{
     "detail": {
       "request": {"method": "GET", "endpoint": "/api/workspace/detail_records"},
       "bindings": [
-        {"target": "query", "name": "filter[parent_id]", "value": "selection.id"}
+        {
+          "target": "filter",
+          "field": "parent_id",
+          "source": {"runtime": {"scope": "selection", "field": "id"}}
+        }
       ]
     }
   }
@@ -827,9 +835,12 @@ Widget: &actions.WidgetConfig{
                 Module: "detail_records",
                 Action: "list",
                 Bindings: []renderer.WidgetRequestBinding{{
-                    Target: renderer.WidgetRequestBindingQuery,
-                    Name:   "filter[parent_id]",
-                    Value:  "selection.id",
+                    Target: renderer.WidgetRequestBindingFilter,
+                    Field:  "parent_id",
+                    Source: renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{
+                        Scope: renderer.WidgetRuntimeValueSourceSelection,
+                        Field: "id",
+                    }},
                 }},
             },
         },
@@ -842,10 +853,17 @@ Widget: &actions.WidgetConfig{
 существующие `list_page`, `record_page` или `form_page`. Widget не повторяет
 pagination, sort, field schema или presentation.
 
-`selection` объявляется один раз. Только binding вида
-`selection.<field>` может передать выбранное значение в detail resource. Для
-path binding имя обязано существовать в path action; query binding передаётся
-стандартным query-параметром.
+`selection` объявляется один раз на workspace и определяет **целевое** поле
+master resource. Binding не содержит произвольные `name`/`value` строки. Его
+`source` - закрытый union: `literal` с `TypedValue` либо `runtime`. Сейчас
+runtime scope содержит только `current_user.id` и поле `selection`, объявленное
+workspace. Generator проверяет scope, поле и тип значения.
+
+`target` также закрыт. `path_by_key` и `path_value` заполняют два обязательных
+placeholder view action; `path_by_key` принимает только строковый literal из
+`ViewModuleAction.By`. `filter` требует `field` из статически объявленного
+filter list action и выводит query name как `filter[field]`. Поэтому config не
+может содержать `selecion.id`, `filter[unknown]` или неполный view URL.
 
 `surface.kind`: `drawer` или `popup`. `surface.placement`: `shell_start`,
 `shell_end` или `center`; drawer нельзя разместить в `center`.
@@ -868,16 +886,29 @@ widget через `after_success.widget` или `after_error.widget`:
     "widget": {
       "id": "work-area",
       "state": "open",
-      "selection_field": "id",
+      "selection": {"source_field": "related_id"},
       "refresh": ["detail"]
     }
   }
 }
 ```
 
-`selection_field` должен совпадать с `workspace.selection.field`; generator
-проверяет ID виджета и наличие поля в declaring module. Возможные refresh
-targets: `master`, `detail`.
+`selection.source_field` является **источником** из успешного ответа standard
+action. Generator проверяет, что это поле есть у action resource и его тип
+совместим с `workspace.selection.field`; target никогда не повторяется в
+action result. Возможные refresh targets: `master`, `detail`.
+
+Producer объявляет correlation у write action, который её публикует:
+
+```go
+actions.AddModuleAction{
+    Realtime: &actions.RealtimeEventConfig{CorrelationField: "parent_id"},
+}
+```
+
+Такая декларация доступна только для `add`, `update` и `delete`. Generator
+проверяет поле и его typed value type при запуске, а перед публикацией сверяет
+runtime event с той же декларацией.
 
 Realtime event может нести typed correlation отдельно от `record_id`:
 
@@ -886,16 +917,18 @@ Realtime event может нести typed correlation отдельно от `re
   "module": "detail_records",
   "action": "add",
   "correlation": {
-    "key": "parent_id",
+    "field": "parent_id",
     "value": {"type": "number", "number": 42}
   }
 }
 ```
 
-`WorkspaceSubscription.correlation_key` сравнивается runtime с этой typed
-correlation, а не с `payload`. Данные event payload остаются транспортными
-данными и не являются UI contract-ом. Socket, auth, reconnect, replay и UI
-lifecycle не входят в request-generator: их реализует integration/runtime.
+`WorkspaceSubscription.correlation.event_field` должен совпадать с declared
+producer field, а его type - с selection workspace. Runtime сравнивает этот
+field с typed correlation, а не с `payload`. Данные event payload остаются
+транспортными данными и не являются UI contract-ом. Socket, auth, reconnect,
+replay и UI lifecycle не входят в request-generator: их реализует
+integration/runtime.
 
 ### Design Tokens
 

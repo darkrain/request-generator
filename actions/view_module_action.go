@@ -20,6 +20,7 @@ type ViewModuleAction struct {
 	By           []pg.Column                      `json:"-"`
 	Fields       []RoleContext                    `json:"-"`
 	Widget       *WidgetConfig                    `json:"widget,omitempty"`
+	Realtime     *RealtimeEventConfig             `json:"-"`
 	PageType     renderer.PageType                `json:"page_type,omitempty"`
 	PageTypeFunc func(c *gin.Context) renderer.PageType
 }

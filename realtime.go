@@ -47,13 +47,13 @@ type RealtimeEvent struct {
 // RealtimeCorrelation carries the record relation used by generic consumers
 // to match an event to their local selection. It is independent from RecordID.
 type RealtimeCorrelation struct {
-	Key   string              `json:"key"`
+	Field string              `json:"field"`
 	Value renderer.TypedValue `json:"value"`
 }
 
 func (correlation RealtimeCorrelation) Validate() error {
-	if correlation.Key == "" {
-		return fmt.Errorf("realtime correlation key is required")
+	if correlation.Field == "" {
+		return fmt.Errorf("realtime correlation field is required")
 	}
 	if err := correlation.Value.Validate(); err != nil {
 		return fmt.Errorf("realtime correlation value: %w", err)
@@ -62,8 +62,6 @@ func (correlation RealtimeCorrelation) Validate() error {
 }
 
 type RealtimePublish struct {
-	Module      string
-	Action      string
 	Topics      []string
 	RecordID    interface{}
 	Correlation *RealtimeCorrelation
@@ -548,10 +546,8 @@ func (generator *Generator) publishRealtimeEvent(c *gin.Context, module *BaseMod
 	if len(pub.Topics) == 0 {
 		return
 	}
-	if pub.Correlation != nil {
-		if err := pub.Correlation.Validate(); err != nil {
-			return
-		}
+	if err := generator.validateRealtimePublish(module, action, pub); err != nil {
+		return
 	}
 	event := RealtimeEvent{
 		Type:        "event",
@@ -564,12 +560,6 @@ func (generator *Generator) publishRealtimeEvent(c *gin.Context, module *BaseMod
 		Payload:     pub.Payload,
 	}
 	event.Correlation = cloneRealtimeCorrelation(event.Correlation)
-	if pub.Module != "" {
-		event.Module = pub.Module
-	}
-	if pub.Action != "" {
-		event.Action = pub.Action
-	}
 	if event.Payload == nil {
 		event.Payload = map[string]interface{}{}
 	}
@@ -583,6 +573,41 @@ func (generator *Generator) publishRealtimeEvent(c *gin.Context, module *BaseMod
 		return
 	}
 	generator.realtimeHub.publish(published)
+}
+
+func (generator *Generator) validateRealtimePublish(module *BaseModule, actionName actions.ModuleActionName, pub RealtimePublish) error {
+	action, ok := findModuleAction(module, string(actionName))
+	if !ok {
+		return fmt.Errorf("realtime action %q is not declared", actionName)
+	}
+	event := actions.RealtimeEvent(action)
+	if event == nil {
+		if pub.Correlation != nil {
+			return fmt.Errorf("realtime action %q does not declare correlation", actionName)
+		}
+		return nil
+	}
+	if pub.Correlation == nil {
+		return fmt.Errorf("realtime action %q requires correlation", actionName)
+	}
+	if err := pub.Correlation.Validate(); err != nil {
+		return err
+	}
+	if pub.Correlation.Field != event.CorrelationField {
+		return fmt.Errorf("realtime correlation field %q does not match declared field %q", pub.Correlation.Field, event.CorrelationField)
+	}
+	field := module.GetField(event.CorrelationField)
+	if field == nil {
+		return fmt.Errorf("realtime correlation field %q is not declared", event.CorrelationField)
+	}
+	expected, err := runtimeTypedValueType(*field)
+	if err != nil {
+		return fmt.Errorf("realtime correlation field %q: %w", event.CorrelationField, err)
+	}
+	if pub.Correlation.Value.Type != expected {
+		return fmt.Errorf("realtime correlation field %q has type %q, expected %q", event.CorrelationField, pub.Correlation.Value.Type, expected)
+	}
+	return nil
 }
 
 func outputRecordID(output interface{}) interface{} {

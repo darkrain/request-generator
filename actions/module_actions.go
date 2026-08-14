@@ -41,6 +41,9 @@ func (config WidgetConfig) Validate() error {
 	if err := config.Renderer.Validate(); err != nil {
 		return err
 	}
+	if config.Renderer.Workspace != nil && len(config.Bindings) != 0 {
+		return fmt.Errorf("workspace widget bindings must be declared by a workspace resource")
+	}
 	return renderer.ValidateWidgetRequestBindings(config.Bindings)
 }
 

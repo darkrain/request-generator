@@ -16,11 +16,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func widgetSelectionSource(field string) renderer.WidgetValueSource {
+	return renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{
+		Scope: renderer.WidgetRuntimeValueSourceSelection,
+		Field: field,
+	}}
+}
+
 func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	group := engine.Group("")
 	id := pg.IntegerColumn("id")
+	parentID := pg.IntegerColumn("parent_id")
+	relatedID := pg.IntegerColumn("related_id")
 
 	master := &module.BaseModule{
 		Name:   "master_records",
@@ -34,28 +43,36 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 		}},
 	}
 	detail := &module.BaseModule{
-		Name:   "detail_records",
-		Path:   "/workspace",
-		Fields: []fields.ModuleField{{Column: id, Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView}},
+		Name: "detail_records",
+		Path: "/workspace",
+		Fields: []fields.ModuleField{
+			{Column: id, Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView},
+			{Column: parentID, Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView},
+		},
 		Render: renderer.Universal{List: &renderer.ListPage{}},
-		Actions: []actions.ModuleAction{actions.ListModuleAction{
-			Label:      "Detail records",
-			Permission: []actions.Role{"member"},
-			Auth:       true,
-		}},
+		Actions: []actions.ModuleAction{
+			actions.ListModuleAction{Label: "Detail records", Permission: []actions.Role{"member"}, Auth: true, Filter: []pg.Column{parentID}},
+			actions.AddModuleAction{Realtime: &actions.RealtimeEventConfig{CorrelationField: "parent_id"}},
+			actions.UpdateModuleAction{Realtime: &actions.RealtimeEventConfig{CorrelationField: "parent_id"}},
+		},
 	}
 	workspace := &module.BaseModule{
-		Name:   "workspace_entry",
-		Path:   "/workspace",
-		Fields: []fields.ModuleField{{Column: id, Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView}},
+		Name: "workspace_entry",
+		Path: "/workspace",
+		Fields: []fields.ModuleField{
+			{Column: id, Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView},
+			{Column: relatedID, Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView},
+		},
 		Render: renderer.Universal{List: &renderer.ListPage{Actions: []renderer.Action{{
 			ID:   "open_workspace",
 			Type: renderer.ActionAPI,
 			AfterSuccess: &renderer.ActionResult{Widget: &renderer.WidgetTarget{
-				ID:             "work-area",
-				State:          renderer.WidgetTargetOpen,
-				SelectionField: "id",
-				Refresh:        []renderer.WorkspaceRefreshTarget{renderer.WorkspaceRefreshDetail},
+				ID:    "work-area",
+				State: renderer.WidgetTargetOpen,
+				Selection: &renderer.WidgetSelectionResultBinding{
+					SourceField: "related_id",
+				},
+				Refresh: []renderer.WorkspaceRefreshTarget{renderer.WorkspaceRefreshDetail},
 			}},
 		}}}},
 		Actions: []actions.ModuleAction{actions.ListModuleAction{
@@ -77,16 +94,16 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 							Module: "detail_records",
 							Action: "list",
 							Bindings: []renderer.WidgetRequestBinding{{
-								Target: renderer.WidgetRequestBindingQuery,
-								Name:   "filter[parent_id]",
-								Value:  "selection.id",
+								Target: renderer.WidgetRequestBindingFilter,
+								Field:  "parent_id",
+								Source: widgetSelectionSource("id"),
 							}},
 						},
 						Subscriptions: []renderer.WorkspaceSubscription{{
-							Module:         "detail_records",
-							Actions:        []string{"list"},
-							CorrelationKey: "parent_id",
-							Refresh:        []renderer.WorkspaceRefreshTarget{renderer.WorkspaceRefreshMaster, renderer.WorkspaceRefreshDetail},
+							Module:      "detail_records",
+							Actions:     []string{"add", "update"},
+							Correlation: renderer.WorkspaceCorrelationBinding{EventField: "parent_id"},
+							Refresh:     []renderer.WorkspaceRefreshTarget{renderer.WorkspaceRefreshMaster, renderer.WorkspaceRefreshDetail},
 						}},
 					},
 				},
@@ -111,8 +128,8 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 					LoadPolicy: renderer.WidgetLoadOnOpen,
 				}},
 				Bindings: []renderer.WidgetRequestBinding{
-					{Target: renderer.WidgetRequestBindingPath, Name: "bykey", Value: "id"},
-					{Target: renderer.WidgetRequestBindingPath, Name: "value", Value: "current"},
+					{Target: renderer.WidgetRequestBindingPathByKey, Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "id"}}},
+					{Target: renderer.WidgetRequestBindingPathValue, Source: renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{Scope: renderer.WidgetRuntimeValueSourceCurrentUser, Field: "id"}}},
 				},
 			},
 		}},
@@ -161,13 +178,16 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 	require.Nil(t, workArea.Load.Resource)
 	require.Equal(t, "/api/workspace/master_records", workArea.Load.Master.Request.Endpoint)
 	require.Equal(t, "/api/workspace/detail_records", workArea.Load.Detail.Request.Endpoint)
-	require.Equal(t, "selection.id", workArea.Load.Detail.Bindings[0].Value)
+	require.Equal(t, renderer.WidgetRequestBindingFilter, workArea.Load.Detail.Bindings[0].Target)
+	require.Equal(t, "parent_id", workArea.Load.Detail.Bindings[0].Field)
+	require.Equal(t, "id", workArea.Load.Detail.Bindings[0].Source.Runtime.Field)
 
 	require.NotNil(t, resourceMenu)
 	require.Nil(t, resourceMenu.Widget.Workspace)
 	require.NotNil(t, resourceMenu.Load.Resource)
 	require.Equal(t, "/api/shell/resource_entry/view/:bykey/:value", resourceMenu.Load.Resource.Request.Endpoint)
-	require.Equal(t, "current", resourceMenu.Load.Resource.Bindings[1].Value)
+	require.Equal(t, renderer.WidgetRequestBindingPathValue, resourceMenu.Load.Resource.Bindings[1].Target)
+	require.Equal(t, renderer.WidgetRuntimeValueSourceCurrentUser, resourceMenu.Load.Resource.Bindings[1].Source.Runtime.Scope)
 	require.NotContains(t, response.Body.String(), `"config"`)
 	require.NotContains(t, response.Body.String(), `"params"`)
 }

@@ -7,6 +7,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func widgetSelectionSource(field string) WidgetValueSource {
+	return WidgetValueSource{Runtime: &WidgetRuntimeValue{
+		Scope: WidgetRuntimeValueSourceSelection,
+		Field: field,
+	}}
+}
+
 func validGlobalWorkspace() GlobalWidget {
 	return GlobalWidget{
 		Surface: WidgetSurface{
@@ -21,16 +28,16 @@ func validGlobalWorkspace() GlobalWidget {
 				Module: "detail_records",
 				Action: "list",
 				Bindings: []WidgetRequestBinding{{
-					Target: WidgetRequestBindingQuery,
-					Name:   "filter[parent_id]",
-					Value:  "selection.id",
+					Target: WidgetRequestBindingFilter,
+					Field:  "parent_id",
+					Source: widgetSelectionSource("id"),
 				}},
 			},
 			Subscriptions: []WorkspaceSubscription{{
-				Module:         "detail_records",
-				Actions:        []string{"add", "update"},
-				CorrelationKey: "parent_id",
-				Refresh:        []WorkspaceRefreshTarget{WorkspaceRefreshMaster, WorkspaceRefreshDetail},
+				Module:      "detail_records",
+				Actions:     []string{"add", "update"},
+				Correlation: WorkspaceCorrelationBinding{EventField: "parent_id"},
+				Refresh:     []WorkspaceRefreshTarget{WorkspaceRefreshMaster, WorkspaceRefreshDetail},
 			}},
 		},
 	}
@@ -48,8 +55,8 @@ func TestGlobalWidgetValidateAndSerialize(t *testing.T) {
   "workspace": {
     "selection":{"field":"id"},
     "master":{"module":"master_records","action":"list"},
-    "detail":{"module":"detail_records","action":"list","bindings":[{"target":"query","name":"filter[parent_id]","value":"selection.id"}]},
-    "subscriptions":[{"module":"detail_records","actions":["add","update"],"correlation_key":"parent_id","refresh":["master","detail"]}]
+    "detail":{"module":"detail_records","action":"list","bindings":[{"target":"filter","field":"parent_id","source":{"runtime":{"scope":"selection","field":"id"}}}]},
+    "subscriptions":[{"module":"detail_records","actions":["add","update"],"correlation":{"event_field":"parent_id"},"refresh":["master","detail"]}]
   }
 }`, string(encoded))
 }
@@ -63,23 +70,30 @@ func TestGlobalWidgetValidateRejectsInvalidContract(t *testing.T) {
 		{
 			name: "selection is not bound by detail",
 			edit: func(widget *GlobalWidget) {
-				widget.Workspace.Detail.Bindings[0].Value = "selection.other_id"
+				widget.Workspace.Detail.Bindings[0].Source = WidgetValueSource{Literal: &TypedValue{Type: TypedValueNumber, Number: 1}}
 			},
-			err: "renderer.GlobalWidget: workspace: detail must bind selection.id",
+			err: "renderer.GlobalWidget: workspace: detail must bind a selection runtime value",
+		},
+		{
+			name: "binding source must be a union",
+			edit: func(widget *GlobalWidget) {
+				widget.Workspace.Detail.Bindings[0].Source = WidgetValueSource{}
+			},
+			err: "renderer.GlobalWidget: workspace: binding 0 source: must contain exactly one of literal or runtime",
 		},
 		{
 			name: "duplicate refresh target",
 			edit: func(widget *GlobalWidget) {
 				widget.Workspace.Subscriptions[0].Refresh = []WorkspaceRefreshTarget{WorkspaceRefreshDetail, WorkspaceRefreshDetail}
 			},
-			err: "renderer.GlobalWidget: workspace: subscription 0: refresh target \"detail\" is duplicated",
+			err: `renderer.GlobalWidget: workspace: subscription 0: refresh target "detail" is duplicated`,
 		},
 		{
 			name: "drawer cannot be centered",
 			edit: func(widget *GlobalWidget) {
 				widget.Surface.Placement = WidgetPlacementCenter
 			},
-			err: "renderer.GlobalWidget: surface: drawer does not support placement \"center\"",
+			err: `renderer.GlobalWidget: surface: drawer does not support placement "center"`,
 		},
 	}
 	for _, test := range tests {
@@ -94,30 +108,34 @@ func TestGlobalWidgetValidateRejectsInvalidContract(t *testing.T) {
 func TestGlobalWidgetCloneDoesNotShareWorkspaceState(t *testing.T) {
 	source := validGlobalWorkspace()
 	cloned := LocalizeGlobalWidget(source, func(value string, key string) string { return value + key })
-	cloned.Workspace.Detail.Bindings[0].Value = "selection.changed"
+	cloned.Workspace.Detail.Bindings[0].Source.Runtime.Field = "changed"
 	cloned.Workspace.Subscriptions[0].Actions[0] = "delete"
 	cloned.Workspace.Subscriptions[0].Refresh[0] = WorkspaceRefreshDetail
 
-	require.Equal(t, "selection.id", source.Workspace.Detail.Bindings[0].Value)
+	require.Equal(t, "id", source.Workspace.Detail.Bindings[0].Source.Runtime.Field)
 	require.Equal(t, "add", source.Workspace.Subscriptions[0].Actions[0])
 	require.Equal(t, WorkspaceRefreshMaster, source.Workspace.Subscriptions[0].Refresh[0])
 }
 
-func TestActionResultWidgetTargetIsTypedAndCloned(t *testing.T) {
+func TestActionResultWidgetTargetUsesResultField(t *testing.T) {
 	render := Universal{Record: &RecordPage{Actions: []Action{{
 		ID:   "open",
 		Type: ActionAPI,
 		AfterSuccess: &ActionResult{Widget: &WidgetTarget{
-			ID:             "work-area",
-			State:          WidgetTargetOpen,
-			SelectionField: "id",
-			Refresh:        []WorkspaceRefreshTarget{WorkspaceRefreshDetail},
+			ID:    "work-area",
+			State: WidgetTargetOpen,
+			Selection: &WidgetSelectionResultBinding{
+				SourceField: "related_id",
+			},
+			Refresh: []WorkspaceRefreshTarget{WorkspaceRefreshDetail},
 		}},
 	}}}}
 	require.NoError(t, render.Validate())
 
 	cloned := render.Clone()
+	cloned.Record.Actions[0].AfterSuccess.Widget.Selection.SourceField = "changed"
 	cloned.Record.Actions[0].AfterSuccess.Widget.Refresh[0] = WorkspaceRefreshMaster
+	require.Equal(t, "related_id", render.Record.Actions[0].AfterSuccess.Widget.Selection.SourceField)
 	require.Equal(t, WorkspaceRefreshDetail, render.Record.Actions[0].AfterSuccess.Widget.Refresh[0])
 
 	targets := render.WidgetTargets()

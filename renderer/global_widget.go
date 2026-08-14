@@ -111,15 +111,15 @@ func (workspace WorkspaceWidget) Validate() error {
 	if err := workspace.Detail.Validate("detail"); err != nil {
 		return err
 	}
-	if !workspace.Detail.hasSelectionBinding(workspace.Selection.Field) {
-		return fmt.Errorf("detail must bind selection.%s", workspace.Selection.Field)
+	if !workspace.Detail.hasSelectionBinding() {
+		return fmt.Errorf("detail must bind a selection runtime value")
 	}
 	seenSubscriptions := make(map[string]struct{}, len(workspace.Subscriptions))
 	for index, subscription := range workspace.Subscriptions {
 		if err := subscription.Validate(); err != nil {
 			return fmt.Errorf("subscription %d: %w", index, err)
 		}
-		key := subscription.Module + "\x00" + strings.Join(subscription.Actions, "\x00") + "\x00" + subscription.CorrelationKey
+		key := subscription.Module + "\x00" + strings.Join(subscription.Actions, "\x00") + "\x00" + subscription.Correlation.EventField
 		if _, exists := seenSubscriptions[key]; exists {
 			return fmt.Errorf("subscription %d is duplicated", index)
 		}
@@ -151,9 +151,10 @@ func (resource WorkspaceResource) Validate(name string) error {
 	return ValidateWidgetRequestBindings(resource.Bindings)
 }
 
-func (resource WorkspaceResource) hasSelectionBinding(field string) bool {
+func (resource WorkspaceResource) hasSelectionBinding() bool {
 	for _, binding := range resource.Bindings {
-		if binding.Value == "selection."+field {
+		if binding.Source.Runtime != nil &&
+			binding.Source.Runtime.Scope == WidgetRuntimeValueSourceSelection {
 			return true
 		}
 	}
@@ -163,35 +164,86 @@ func (resource WorkspaceResource) hasSelectionBinding(field string) bool {
 type WidgetRequestBindingTarget string
 
 const (
-	WidgetRequestBindingPath  WidgetRequestBindingTarget = "path"
-	WidgetRequestBindingQuery WidgetRequestBindingTarget = "query"
+	WidgetRequestBindingPathByKey WidgetRequestBindingTarget = "path_by_key"
+	WidgetRequestBindingPathValue WidgetRequestBindingTarget = "path_value"
+	WidgetRequestBindingFilter    WidgetRequestBindingTarget = "filter"
 )
 
-// WidgetRequestBinding applies a static value or a declared runtime scope such
-// as selection.id to a generated request.
+// WidgetRequestBinding applies a typed literal or a known runtime value to a
+// generated request. The target determines the request parameter name:
+// path_by_key and path_value map to view placeholders, while filter derives
+// filter[field] from Field.
 type WidgetRequestBinding struct {
 	Target WidgetRequestBindingTarget `json:"target"`
-	Name   string                     `json:"name"`
-	Value  string                     `json:"value"`
+	Field  string                     `json:"field,omitempty"`
+	Source WidgetValueSource          `json:"source"`
+}
+
+type WidgetRuntimeValueSource string
+
+const (
+	WidgetRuntimeValueSourceCurrentUser WidgetRuntimeValueSource = "current_user"
+	WidgetRuntimeValueSourceSelection   WidgetRuntimeValueSource = "selection"
+)
+
+type WidgetRuntimeValue struct {
+	Scope WidgetRuntimeValueSource `json:"scope"`
+	Field string                   `json:"field"`
+}
+
+// WidgetValueSource is a closed union. Literal values are serialized with
+// their type; runtime values can only come from a generator-defined scope.
+type WidgetValueSource struct {
+	Literal *TypedValue         `json:"literal,omitempty"`
+	Runtime *WidgetRuntimeValue `json:"runtime,omitempty"`
+}
+
+func (source WidgetValueSource) Validate() error {
+	variants := 0
+	if source.Literal != nil {
+		variants++
+		if err := source.Literal.Validate(); err != nil {
+			return fmt.Errorf("literal: %w", err)
+		}
+	}
+	if source.Runtime != nil {
+		variants++
+		if source.Runtime.Field == "" {
+			return fmt.Errorf("runtime field is required")
+		}
+		switch source.Runtime.Scope {
+		case WidgetRuntimeValueSourceCurrentUser, WidgetRuntimeValueSourceSelection:
+		default:
+			return fmt.Errorf("runtime scope %q is unsupported", source.Runtime.Scope)
+		}
+	}
+	if variants != 1 {
+		return fmt.Errorf("must contain exactly one of literal or runtime")
+	}
+	return nil
 }
 
 func ValidateWidgetRequestBindings(bindings []WidgetRequestBinding) error {
 	seen := make(map[string]struct{}, len(bindings))
 	for index, binding := range bindings {
 		switch binding.Target {
-		case WidgetRequestBindingPath, WidgetRequestBindingQuery:
+		case WidgetRequestBindingPathByKey, WidgetRequestBindingPathValue:
+			if binding.Field != "" {
+				return fmt.Errorf("binding %d %s must not define field", index, binding.Target)
+			}
+		case WidgetRequestBindingFilter:
+			if binding.Field == "" {
+				return fmt.Errorf("binding %d filter field is required", index)
+			}
 		default:
 			return fmt.Errorf("binding %d has unsupported target %q", index, binding.Target)
 		}
-		if binding.Name == "" {
-			return fmt.Errorf("binding %d name is required", index)
+		if err := binding.Source.Validate(); err != nil {
+			return fmt.Errorf("binding %d source: %w", index, err)
 		}
-		if binding.Value == "" {
-			return fmt.Errorf("binding %d value is required", index)
-		}
-		key := string(binding.Target) + "\x00" + binding.Name
+		key := string(binding.Target) + "\x00" + binding.Field
 		if _, exists := seen[key]; exists {
-			return fmt.Errorf("binding %d duplicates %s %q", index, binding.Target, binding.Name)
+			return fmt.Errorf("binding %d duplicates %s %q", index, binding.Target, binding.Field)
 		}
 		seen[key] = struct{}{}
 	}
@@ -222,10 +274,16 @@ func ValidateWorkspaceRefreshTargets(targets []WorkspaceRefreshTarget) error {
 }
 
 type WorkspaceSubscription struct {
-	Module         string                   `json:"module"`
-	Actions        []string                 `json:"actions"`
-	CorrelationKey string                   `json:"correlation_key"`
-	Refresh        []WorkspaceRefreshTarget `json:"refresh"`
+	Module      string                      `json:"module"`
+	Actions     []string                    `json:"actions"`
+	Correlation WorkspaceCorrelationBinding `json:"correlation"`
+	Refresh     []WorkspaceRefreshTarget    `json:"refresh"`
+}
+
+// WorkspaceCorrelationBinding identifies a declared realtime event field. The
+// workspace selection is the implicit target and is checked by the generator.
+type WorkspaceCorrelationBinding struct {
+	EventField string `json:"event_field"`
 }
 
 func (subscription WorkspaceSubscription) Validate() error {
@@ -245,8 +303,8 @@ func (subscription WorkspaceSubscription) Validate() error {
 		}
 		seenActions[action] = struct{}{}
 	}
-	if subscription.CorrelationKey == "" {
-		return fmt.Errorf("correlation key is required")
+	if subscription.Correlation.EventField == "" {
+		return fmt.Errorf("correlation event field is required")
 	}
 	if len(subscription.Refresh) == 0 {
 		return fmt.Errorf("refresh targets are required")
@@ -264,10 +322,17 @@ const (
 // WidgetTarget is the typed result of a standard action that controls a
 // registered global widget.
 type WidgetTarget struct {
-	ID             string                   `json:"id"`
-	State          WidgetTargetState        `json:"state"`
-	SelectionField string                   `json:"selection_field,omitempty"`
-	Refresh        []WorkspaceRefreshTarget `json:"refresh,omitempty"`
+	ID        string                        `json:"id"`
+	State     WidgetTargetState             `json:"state"`
+	Selection *WidgetSelectionResultBinding `json:"selection,omitempty"`
+	Refresh   []WorkspaceRefreshTarget      `json:"refresh,omitempty"`
+}
+
+// WidgetSelectionResultBinding reads a field from the successful standard
+// action response. The widget selection field is declared only by the target
+// workspace, so source and target cannot be confused.
+type WidgetSelectionResultBinding struct {
+	SourceField string `json:"source_field"`
 }
 
 func (target WidgetTarget) Validate() error {
@@ -279,7 +344,10 @@ func (target WidgetTarget) Validate() error {
 	default:
 		return fmt.Errorf("unsupported widget state %q", target.State)
 	}
-	if target.State == WidgetTargetClose && target.SelectionField != "" {
+	if target.Selection != nil && target.Selection.SourceField == "" {
+		return fmt.Errorf("selection source field is required")
+	}
+	if target.State == WidgetTargetClose && target.Selection != nil {
 		return fmt.Errorf("closed widget cannot set selection")
 	}
 	return ValidateWorkspaceRefreshTargets(target.Refresh)
@@ -385,7 +453,27 @@ func cloneWidgetRequestBindings(values []WidgetRequestBinding) []WidgetRequestBi
 		return nil
 	}
 	cloned := make([]WidgetRequestBinding, len(values))
-	copy(cloned, values)
+	for index, value := range values {
+		cloned[index] = value
+		cloned[index].Source = cloneWidgetValueSource(value.Source)
+	}
+	return cloned
+}
+
+func cloneWidgetValueSource(value WidgetValueSource) WidgetValueSource {
+	cloned := value
+	if value.Literal != nil {
+		literal := *value.Literal
+		if value.Literal.Bool != nil {
+			boolValue := *value.Literal.Bool
+			literal.Bool = &boolValue
+		}
+		cloned.Literal = &literal
+	}
+	if value.Runtime != nil {
+		runtime := *value.Runtime
+		cloned.Runtime = &runtime
+	}
 	return cloned
 }
 
@@ -407,6 +495,10 @@ func cloneWidgetTarget(value *WidgetTarget) *WidgetTarget {
 		return nil
 	}
 	cloned := *value
+	if value.Selection != nil {
+		selection := *value.Selection
+		cloned.Selection = &selection
+	}
 	cloned.Refresh = cloneSlice(value.Refresh)
 	return &cloned
 }

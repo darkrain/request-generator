@@ -20,6 +20,7 @@ type UpdateModuleAction struct {
 	Fields          []RoleContext                          `json:"-"`
 	ViewAfterUpdate *bool                                  `json:"-"` // default true; if true and ViewAction exists, return view response after update
 	Widget          *WidgetConfig                          `json:"widget,omitempty"`
+	Realtime        *RealtimeEventConfig                   `json:"-"`
 }
 
 func (action UpdateModuleAction) Action() ModuleActionName {
