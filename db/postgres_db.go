@@ -194,8 +194,9 @@ func InsertTranslations(tx *sql.Tx, tc *TranslationContext, entityID int64, modu
 	return nil
 }
 
-// upsertTranslations upserts translation rows within a transaction.
-func upsertTranslations(tx *sql.Tx, tc *TranslationContext, entityID interface{}, moduleFields []fields.ModuleField, input map[string]interface{}) error {
+// UpsertTranslations updates translation rows within an existing transaction.
+// It is used by both standard and atomic update paths; modules never receive tx.
+func UpsertTranslations(tx *sql.Tx, tc *TranslationContext, entityID interface{}, moduleFields []fields.ModuleField, input map[string]interface{}) error {
 	for _, field := range moduleFields {
 		if !field.Translatable {
 			continue
@@ -1015,7 +1016,7 @@ func (db *DB) Update(log *log.Entry, table pg.Table, primaryKey pg.Column, modul
 
 	// Upsert translations
 	if tc != nil && tc.EntityID != nil {
-		if err = upsertTranslations(tx, tc, tc.EntityID, moduleFields, input); err != nil {
+		if err = UpsertTranslations(tx, tc, tc.EntityID, moduleFields, input); err != nil {
 			log.Errorln("UPDATE TRANSLATIONS ERR: ", err)
 			return nil, err
 		}

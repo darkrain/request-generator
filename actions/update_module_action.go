@@ -7,6 +7,8 @@ import (
 
 type UpdateModuleAction struct {
 	ModuleAction
+	Mode            UpdateMode          `json:"mode,omitempty"`
+	Atomic          *AtomicUpdateConfig `json:"-"`
 	BeforeAction    func(c *gin.Context) error
 	AfterAction     func(c *gin.Context)
 	Label           string                                 `json:"label"`

@@ -836,6 +836,10 @@ Where: func(c *gin.Context) pg.BoolExpression {
 },
 ```
 
+Для доменного обновления нескольких связанных записей на том же стандартном
+маршруте используйте `Mode: actions.UpdateModeAtomic`. Режим описан в разделе
+[Атомарное обновление стандартной записи](#атомарное-обновление-стандартной-записи).
+
 #### DeleteModuleAction
 
 ```go
@@ -1528,6 +1532,83 @@ request body не может адресовать событие другому 
 может использовать нормализованный `input` либо typed `result`, но всегда
 сверяется с `RealtimeEventConfig`. Если transaction откатывается, событие не
 создаётся.
+
+## Атомарное обновление стандартной записи
+
+Обычный `UpdateModuleAction` остаётся CRUD-операцией одной записи. Если
+обновление должно изменить несколько связанных записей как одну бизнес-операцию,
+используйте `Mode: actions.UpdateModeAtomic`. HTTP-контракт не меняется:
+generator использует тот же `POST /{module}/:bykey/:value` и те же `Columns`,
+`By`, permission, `RoleWhere`, `Where`, rules и relation scope, что и у
+стандартного update.
+
+```go
+actions.UpdateModuleAction{
+    Mode:    actions.UpdateModeAtomic,
+    Columns: []pg.Column{chats.Status},
+    By:      []pg.Column{chats.ID},
+    Atomic: &actions.AtomicUpdateConfig{
+        Operation: func(ctx context.Context, executor actions.AtomicExecutor, input actions.AtomicUpdateInput) (actions.AtomicRecord, error) {
+            chatID, ok := input.Selector.Value.Int
+            if !ok || chatID == nil {
+                return actions.AtomicRecord{}, errors.New("chat id is unavailable")
+            }
+
+            status, err := input.Input.RequireString("status")
+            if err != nil {
+                return actions.AtomicRecord{}, err
+            }
+            changed, err := executor.Update(ctx, actions.AtomicUpdate{
+                Table: chats,
+                Fields: []actions.AtomicUpdateField{{
+                    Column:    chats.Status,
+                    Operation: actions.AtomicUpdateSet,
+                    Value:     actions.AtomicString(status),
+                }},
+                Where: chats.ID.EQ(pg.Int(*chatID)),
+            })
+            if err != nil || changed != 1 {
+                return actions.AtomicRecord{}, errors.New("chat was not updated")
+            }
+
+            return actions.AtomicRecord{
+                Value:      *chatID,
+                PrimaryKey: "id",
+            }, nil
+        },
+    },
+}
+```
+
+`AtomicUpdateInput` разделяет нормализованное тело и selector маршрута:
+
+- `Input` содержит только поля, прошедшие нормализацию и validation;
+- `Selector.ByKey` — разрешённый ключ из `By`;
+- `Selector.Value` — типизированное значение маршрута. Его тип берётся из
+  `ModuleField`, поэтому `id/41` приходит как `AtomicValueKindInt`, а
+  некорректный `id/not-a-number` отклоняется до открытия transaction.
+
+Для atomic update primary key модуля и поля из `By` должны быть явно объявлены
+в `Fields`; первичный ключ должен иметь тип `int`. Это делает selector и
+`AtomicRecord.Value` однозначно типизированными.
+
+Generator сначала проверяет request, permission, relation scope и собирает
+все ограничения доступа. Затем в своей transaction он читает целевую запись
+по итоговому `WHERE` (selector + `RoleWhere` + action `Where` + relation
+scope). Только после этого вызывается `Operation`. Если запись недоступна,
+операция не выполняется. Ошибка operation, отсутствие затронутой связанной
+строки или ошибка commit приводят к rollback и не создают realtime-события.
+
+Как и atomic add, operation не получает `gin.Context`, `*sql.Tx`, raw SQL или
+непроверенный `map[string]interface{}`. Для чтения и изменения она использует
+только `actions.AtomicExecutor`. Lifecycle hooks (`BeforeAction`,
+`AfterAction`, `RoleBeforeHook`, `RoleAfterHook`) для atomic update запрещены
+при запуске generator: их side effect нельзя корректно включить в этот
+контракт transaction.
+
+`ResultFields` и `Publish` работают так же, как в atomic add. Они валидируют
+`AtomicRecord` и публикуются лишь после commit; для события используется
+стандартное действие `update`.
 
 ## API эндпоинты
 
