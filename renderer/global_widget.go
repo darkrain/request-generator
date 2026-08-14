@@ -96,6 +96,7 @@ func (surface WidgetSurface) Validate() error {
 // shell surface. Resources remain normal module actions.
 type WorkspaceWidget struct {
 	Selection     WorkspaceSelection      `json:"selection"`
+	Summary       *WorkspaceResource      `json:"summary,omitempty"`
 	Master        WorkspaceResource       `json:"master"`
 	Detail        WorkspaceResource       `json:"detail"`
 	Subscriptions []WorkspaceSubscription `json:"subscriptions,omitempty"`
@@ -107,6 +108,11 @@ func (workspace WorkspaceWidget) Validate() error {
 	}
 	if err := workspace.Master.Validate("master"); err != nil {
 		return err
+	}
+	if workspace.Summary != nil {
+		if err := workspace.Summary.Validate("summary"); err != nil {
+			return err
+		}
 	}
 	if err := workspace.Detail.Validate("detail"); err != nil {
 		return err
@@ -266,15 +272,16 @@ func ValidateWidgetRequestBindings(bindings []WidgetRequestBinding) error {
 type WorkspaceRefreshTarget string
 
 const (
-	WorkspaceRefreshMaster WorkspaceRefreshTarget = "master"
-	WorkspaceRefreshDetail WorkspaceRefreshTarget = "detail"
+	WorkspaceRefreshSummary WorkspaceRefreshTarget = "summary"
+	WorkspaceRefreshMaster  WorkspaceRefreshTarget = "master"
+	WorkspaceRefreshDetail  WorkspaceRefreshTarget = "detail"
 )
 
 func ValidateWorkspaceRefreshTargets(targets []WorkspaceRefreshTarget) error {
 	seen := make(map[WorkspaceRefreshTarget]struct{}, len(targets))
 	for index, target := range targets {
 		switch target {
-		case WorkspaceRefreshMaster, WorkspaceRefreshDetail:
+		case WorkspaceRefreshSummary, WorkspaceRefreshMaster, WorkspaceRefreshDetail:
 		default:
 			return fmt.Errorf("refresh target %d is unsupported: %q", index, target)
 		}
@@ -470,6 +477,7 @@ type WidgetResourceLoad struct {
 
 type WidgetLoad struct {
 	Resource *WidgetResourceLoad `json:"resource,omitempty"`
+	Summary  *WidgetResourceLoad `json:"summary,omitempty"`
 	Master   *WidgetResourceLoad `json:"master,omitempty"`
 	Detail   *WidgetResourceLoad `json:"detail,omitempty"`
 }
@@ -479,6 +487,11 @@ func cloneWorkspaceWidget(value *WorkspaceWidget) *WorkspaceWidget {
 		return nil
 	}
 	cloned := *value
+	if value.Summary != nil {
+		summary := *value.Summary
+		summary.Bindings = cloneWidgetRequestBindings(value.Summary.Bindings)
+		cloned.Summary = &summary
+	}
 	cloned.Master.Bindings = cloneWidgetRequestBindings(value.Master.Bindings)
 	cloned.Detail.Bindings = cloneWidgetRequestBindings(value.Detail.Bindings)
 	cloned.Subscriptions = cloneWorkspaceSubscriptions(value.Subscriptions)
@@ -553,6 +566,7 @@ func cloneWidgetResourceLoad(value *WidgetResourceLoad) *WidgetResourceLoad {
 func (value WidgetLoad) Clone() WidgetLoad {
 	return WidgetLoad{
 		Resource: cloneWidgetResourceLoad(value.Resource),
+		Summary:  cloneWidgetResourceLoad(value.Summary),
 		Master:   cloneWidgetResourceLoad(value.Master),
 		Detail:   cloneWidgetResourceLoad(value.Detail),
 	}

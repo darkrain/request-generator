@@ -23,6 +23,7 @@ func validGlobalWorkspace() GlobalWidget {
 		},
 		Workspace: &WorkspaceWidget{
 			Selection: WorkspaceSelection{Field: "id"},
+			Summary:   &WorkspaceResource{ActionResource: ActionResource{Module: "summary_records", Action: "list"}},
 			Master:    WorkspaceResource{ActionResource: ActionResource{Module: "master_records", Action: "list"}},
 			Detail: WorkspaceResource{
 				ActionResource: ActionResource{Module: "detail_records", Action: "list"},
@@ -53,6 +54,7 @@ func TestGlobalWidgetValidateAndSerialize(t *testing.T) {
   "surface": {"kind":"drawer","placement":"shell_end","load_policy":"on_open"},
   "workspace": {
     "selection":{"field":"id"},
+    "summary":{"module":"summary_records","action":"list"},
     "master":{"module":"master_records","action":"list"},
     "detail":{"module":"detail_records","action":"list","bindings":[{"target":"filter","field":"parent_id","source":{"runtime":{"scope":"selection","field":"id"}}}]},
     "subscriptions":[{"module":"detail_records","actions":["add","update"],"correlation":{"event_field":"parent_id"},"refresh":["master","detail"]}]
@@ -108,12 +110,24 @@ func TestGlobalWidgetCloneDoesNotShareWorkspaceState(t *testing.T) {
 	source := validGlobalWorkspace()
 	cloned := LocalizeGlobalWidget(source, func(value string, key string) string { return value + key })
 	cloned.Workspace.Detail.Bindings[0].Source.Runtime.Field = "changed"
+	cloned.Workspace.Summary.Action = "view"
 	cloned.Workspace.Subscriptions[0].Actions[0] = "delete"
 	cloned.Workspace.Subscriptions[0].Refresh[0] = WorkspaceRefreshDetail
 
 	require.Equal(t, "id", source.Workspace.Detail.Bindings[0].Source.Runtime.Field)
+	require.Equal(t, "list", source.Workspace.Summary.Action)
 	require.Equal(t, "add", source.Workspace.Subscriptions[0].Actions[0])
 	require.Equal(t, WorkspaceRefreshMaster, source.Workspace.Subscriptions[0].Refresh[0])
+}
+
+func TestGlobalWorkspaceAllowsOmittedSummary(t *testing.T) {
+	widget := validGlobalWorkspace()
+	widget.Workspace.Summary = nil
+
+	require.NoError(t, widget.Validate())
+	encoded, err := json.Marshal(widget)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), `"summary"`)
 }
 
 func TestActionResultWidgetTargetUsesResultField(t *testing.T) {

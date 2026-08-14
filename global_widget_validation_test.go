@@ -47,6 +47,12 @@ func TestValidateGlobalWidgets(t *testing.T) {
 	modules = validGlobalWidgetModules()
 	modules[2].Render.List.Actions[0].AfterSuccess.Widget.ID = "unknown"
 	require.EqualError(t, (&Generator{Modules: modules}).validateGlobalWidgets(), `module "workspace_entry" references unknown widget "unknown"`)
+
+	modules = validGlobalWidgetModules()
+	modules[3].Render.Form = &renderer.FormPage{}
+	modules[3].Actions = []actions.ModuleAction{actions.DefrecModuleAction{}}
+	modules[2].Actions[0].(actions.ListModuleAction).Widget.Renderer.Workspace.Summary.Action = "defrec"
+	require.EqualError(t, (&Generator{Modules: modules}).validateGlobalWidgets(), `widget "work-area" summary action must be list or view`)
 }
 
 func TestValidateGlobalWidgetsRejectsUnresolvedSourcesAndBindings(t *testing.T) {
@@ -231,6 +237,7 @@ func validGlobalWidgetModules() []*BaseModule {
 		}
 	}
 	master := newModule("master_records", []fields.ModuleField{{Column: id, Type: fields.ModuleFieldTypeInt}}, []actions.ModuleAction{actions.ListModuleAction{}})
+	summary := newModule("summary_records", []fields.ModuleField{{Column: id, Type: fields.ModuleFieldTypeInt}}, []actions.ModuleAction{actions.ListModuleAction{}})
 	detail := newModule("detail_records", []fields.ModuleField{
 		{Column: id, Type: fields.ModuleFieldTypeInt},
 		{Column: parentID, Type: fields.ModuleFieldTypeInt},
@@ -262,6 +269,7 @@ func validGlobalWidgetModules() []*BaseModule {
 				Surface: renderer.WidgetSurface{Kind: renderer.WidgetSurfaceDrawer, Placement: renderer.WidgetPlacementShellEnd, LoadPolicy: renderer.WidgetLoadOnOpen},
 				Workspace: &renderer.WorkspaceWidget{
 					Selection: renderer.WorkspaceSelection{Field: "id"},
+					Summary:   &renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "summary_records", Action: "list"}},
 					Master:    renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "master_records", Action: "list"}},
 					Detail: renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "detail_records", Action: "list"}, Bindings: []renderer.WidgetRequestBinding{{
 						Target: renderer.WidgetRequestBindingFilter,
@@ -278,5 +286,5 @@ func validGlobalWidgetModules() []*BaseModule {
 			},
 		},
 	}
-	return []*BaseModule{master, detail, workspace}
+	return []*BaseModule{master, detail, workspace, summary}
 }

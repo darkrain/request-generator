@@ -74,6 +74,17 @@ func (generator *Generator) validateWorkspaceWidget(id string, workspace rendere
 	if _, _, err := generator.validateWorkspaceResource(id, "detail", workspace.Detail); err != nil {
 		return err
 	}
+	if workspace.Summary != nil {
+		_, summaryAction, err := generator.validateWorkspaceResource(id, "summary", *workspace.Summary)
+		if err != nil {
+			return err
+		}
+		switch summaryAction.Action() {
+		case actions.ModuleActionNameList, actions.ModuleActionNameView:
+		default:
+			return fmt.Errorf("widget %q summary action must be list or view", id)
+		}
+	}
 	for _, subscription := range workspace.Subscriptions {
 		module, ok := generator.moduleByName(subscription.Module)
 		if !ok {
