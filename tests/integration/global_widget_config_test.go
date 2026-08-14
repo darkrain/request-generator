@@ -23,6 +23,13 @@ func widgetSelectionSource(field string) renderer.WidgetValueSource {
 	}}
 }
 
+func widgetInputSource(field string) renderer.WidgetValueSource {
+	return renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{
+		Scope: renderer.WidgetRuntimeValueSourceInput,
+		Field: field,
+	}}
+}
+
 func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -31,6 +38,8 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 	parentID := pg.IntegerColumn("parent_id")
 	participantID := pg.IntegerColumn("participant_id")
 	status := pg.StringColumn("status")
+	enabled := pg.StringColumn("enabled")
+	text := pg.StringColumn("text")
 
 	master := &module.BaseModule{
 		Name: "master_records",
@@ -38,13 +47,14 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 		Fields: []fields.ModuleField{
 			{Column: id, Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView},
 			{Column: participantID, Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView},
+			{Column: enabled, Type: fields.ModuleFieldTypeString, FormType: fields.ModuleFieldFormTypeOnlyView},
 		},
 		Render: renderer.Universal{List: &renderer.ListPage{}},
 		Actions: []actions.ModuleAction{actions.ListModuleAction{
 			Label:      "Master records",
 			Permission: []actions.Role{"member"},
 			Auth:       true,
-			Columns:    []pg.Column{id, participantID},
+			Columns:    []pg.Column{id, participantID, enabled},
 		}},
 	}
 	summary := &module.BaseModule{
@@ -64,11 +74,12 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 		Fields: []fields.ModuleField{
 			{Column: id, Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView},
 			{Column: parentID, Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView},
+			{Column: text, Type: fields.ModuleFieldTypeString, FormType: fields.ModuleFieldFormTypeTextArea},
 		},
 		Render: renderer.Universal{List: &renderer.ListPage{}},
 		Actions: []actions.ModuleAction{
 			actions.ListModuleAction{Label: "Detail records", Permission: []actions.Role{"member"}, Auth: true, Filter: []pg.Column{parentID}},
-			actions.AddModuleAction{Realtime: &actions.RealtimeEventConfig{CorrelationField: "parent_id"}},
+			actions.AddModuleAction{Columns: []pg.Column{parentID, text}, Realtime: &actions.RealtimeEventConfig{CorrelationField: "parent_id"}},
 			actions.UpdateModuleAction{Realtime: &actions.RealtimeEventConfig{CorrelationField: "parent_id"}},
 		},
 	}
@@ -140,10 +151,23 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 							Commands: []renderer.WorkspaceCommand{{
 								ID:    "set_status",
 								Label: "workspace.command.set_status",
+								Presentation: &renderer.ActionPresentation{
+									Icon:      "ref-status",
+									VisibleIf: &renderer.Condition{Path: "enabled", Equals: "yes"},
+								},
 								WorkspaceResource: renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "state_records", Action: "update"}, Bindings: []renderer.WidgetRequestBinding{
 									{Target: renderer.WidgetRequestBindingPathByKey, Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "id"}}},
 									{Target: renderer.WidgetRequestBindingPathValue, Source: widgetSelectionSource("participant_id")},
 									{Target: renderer.WidgetRequestBindingBody, Field: "status", Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "active"}}},
+								}},
+								Refresh: []renderer.WorkspaceRefreshTarget{renderer.WorkspaceRefreshMaster, renderer.WorkspaceRefreshDetail},
+							}, {
+								ID:    "create_detail",
+								Label: "workspace.command.create_detail",
+								Input: &renderer.WorkspaceCommandInput{Fields: []string{"text"}},
+								WorkspaceResource: renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "detail_records", Action: "add"}, Bindings: []renderer.WidgetRequestBinding{
+									{Target: renderer.WidgetRequestBindingBody, Field: "parent_id", Source: widgetSelectionSource("id")},
+									{Target: renderer.WidgetRequestBindingBody, Field: "text", Source: widgetInputSource("text")},
 								}},
 								Refresh: []renderer.WorkspaceRefreshTarget{renderer.WorkspaceRefreshMaster, renderer.WorkspaceRefreshDetail},
 							}, {
@@ -241,9 +265,11 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 	require.Equal(t, renderer.WidgetRequestBindingFilter, workArea.Load.Detail.Bindings[0].Target)
 	require.Equal(t, "parent_id", workArea.Load.Detail.Bindings[0].Field)
 	require.Equal(t, "id", workArea.Load.Detail.Bindings[0].Source.Runtime.Field)
-	require.Len(t, workArea.Widget.Workspace.Commands, 1)
+	require.Len(t, workArea.Widget.Workspace.Commands, 2)
 	require.Equal(t, "workspace.command.set_status", workArea.Widget.Workspace.Commands[0].Label)
-	require.Len(t, workArea.Load.Commands, 1)
+	require.Equal(t, "ref-status", workArea.Widget.Workspace.Commands[0].Presentation.Icon)
+	require.Equal(t, "enabled", workArea.Widget.Workspace.Commands[0].Presentation.VisibleIf.Path)
+	require.Len(t, workArea.Load.Commands, 2)
 	require.Equal(t, "set_status", workArea.Load.Commands[0].ID)
 	require.Equal(t, http.MethodPost, workArea.Load.Commands[0].Request.Method)
 	require.Equal(t, "/api/workspace/state_records/:bykey/:value", workArea.Load.Commands[0].Request.Endpoint)
@@ -251,6 +277,12 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 	require.Equal(t, "participant_id", workArea.Load.Commands[0].Bindings[1].Source.Runtime.Field)
 	require.Equal(t, renderer.WidgetRequestBindingBody, workArea.Load.Commands[0].Bindings[2].Target)
 	require.Equal(t, "status", workArea.Load.Commands[0].Bindings[2].Field)
+	require.Equal(t, "create_detail", workArea.Load.Commands[1].ID)
+	require.Equal(t, http.MethodPut, workArea.Load.Commands[1].Request.Method)
+	require.Equal(t, "/api/workspace/detail_records", workArea.Load.Commands[1].Request.Endpoint)
+	require.NotNil(t, workArea.Load.Commands[1].Input)
+	require.Equal(t, http.MethodGet, workArea.Load.Commands[1].Input.Definition.Request.Method)
+	require.Equal(t, "/api/workspace/detail_records/defrec/", workArea.Load.Commands[1].Input.Definition.Request.Endpoint)
 
 	require.NotNil(t, resourceMenu)
 	require.Nil(t, resourceMenu.Widget.Workspace)

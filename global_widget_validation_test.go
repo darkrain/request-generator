@@ -19,6 +19,13 @@ func selectionSource(field string) renderer.WidgetValueSource {
 	}}
 }
 
+func inputSource(field string) renderer.WidgetValueSource {
+	return renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{
+		Scope: renderer.WidgetRuntimeValueSourceInput,
+		Field: field,
+	}}
+}
+
 func TestValidateGlobalWidgets(t *testing.T) {
 	modules := validGlobalWidgetModules()
 	generator := &Generator{Modules: modules}
@@ -104,6 +111,74 @@ func TestValidateGlobalWidgetsRejectsUnresolvedSourcesAndBindings(t *testing.T) 
 	}
 }
 
+func TestValidateWorkspaceCommandPresentation(t *testing.T) {
+	enabled := pg.StringColumn("enabled")
+	modules := validGlobalWidgetModules()
+	modules[0].Fields = append(modules[0].Fields, fields.ModuleField{Column: enabled, Type: fields.ModuleFieldTypeString})
+	command := &modules[2].Actions[0].(actions.ListModuleAction).Widget.Renderer.Workspace.Commands[0]
+	command.Presentation = &renderer.ActionPresentation{
+		Active:    "enabled",
+		VisibleIf: &renderer.Condition{Path: "enabled", Equals: "yes"},
+	}
+	require.NoError(t, (&Generator{Modules: modules}).validateGlobalWidgets())
+
+	command.Presentation.Active = "missing"
+	require.EqualError(t, (&Generator{Modules: modules}).validateGlobalWidgets(), `widget "work-area" command "set_status" presentation: active field "missing" is not declared by master resource`)
+
+	command.Presentation.Active = ""
+	command.Presentation.VisibleIf.Path = "missing"
+	require.EqualError(t, (&Generator{Modules: modules}).validateGlobalWidgets(), `widget "work-area" command "set_status" presentation: condition field "missing" is not declared by master resource`)
+}
+
+func TestValidateWorkspaceCommandInput(t *testing.T) {
+	id := pg.IntegerColumn("id")
+	text := pg.StringColumn("text")
+	note := pg.StringColumn("note")
+	hidden := pg.StringColumn("hidden")
+	module := &BaseModule{
+		Name: "entries",
+		Fields: []fields.ModuleField{
+			{Column: id, Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView},
+			{Column: text, Type: fields.ModuleFieldTypeString, FormType: fields.ModuleFieldFormTypeTextArea},
+			{Column: note, Type: fields.ModuleFieldTypeString, FormType: fields.ModuleFieldFormTypeText},
+			{Column: hidden, Type: fields.ModuleFieldTypeString, FormType: fields.ModuleFieldFormTypeHidden},
+		},
+		Actions: []actions.ModuleAction{
+			actions.AddModuleAction{Columns: []pg.Column{text, hidden}},
+			actions.UpdateModuleAction{By: []pg.Column{id}, Columns: []pg.Column{hidden}},
+		},
+	}
+	command := renderer.WorkspaceCommand{
+		ID:    "create",
+		Label: "workspace.command.create",
+		Input: &renderer.WorkspaceCommandInput{Fields: []string{"text"}},
+		WorkspaceResource: renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "entries", Action: "add"}, Bindings: []renderer.WidgetRequestBinding{{
+			Target: renderer.WidgetRequestBindingBody,
+			Field:  "text",
+			Source: inputSource("text"),
+		}}},
+		Refresh: []renderer.WorkspaceRefreshTarget{renderer.WorkspaceRefreshDetail},
+	}
+	selection := widgetSelectionScope{Fields: map[string]renderer.TypedValueType{"id": renderer.TypedValueNumber}}
+	generator := &Generator{Modules: []*BaseModule{module}}
+	require.NoError(t, command.Validate())
+	require.NoError(t, generator.validateWorkspaceCommand("workspace", command, selection))
+
+	command.Input = &renderer.WorkspaceCommandInput{Fields: []string{"note"}}
+	command.Bindings[0].Field = "note"
+	command.Bindings[0].Source = inputSource("note")
+	require.EqualError(t, generator.validateWorkspaceCommand("workspace", command, selection), `widget "workspace" command "create" input: field "note" is not declared by add action`)
+
+	command.Input = &renderer.WorkspaceCommandInput{Fields: []string{"hidden"}}
+	command.Bindings[0].Field = "hidden"
+	command.Bindings[0].Source = inputSource("hidden")
+	require.EqualError(t, generator.validateWorkspaceCommand("workspace", command, selection), `widget "workspace" command "create" input: field "hidden" is not editable`)
+
+	command.Module = "entries"
+	command.Action = "update"
+	require.EqualError(t, generator.validateWorkspaceCommand("workspace", command, selection), `widget "workspace" command "create" input: is only supported by add action`)
+}
+
 func TestValidateWidgetRequestBindingShapeRequiresCompleteViewPath(t *testing.T) {
 	id := pg.IntegerColumn("id")
 	module := &BaseModule{
@@ -158,7 +233,7 @@ func TestValidateWidgetRequestBindingShapeForUpdateCommand(t *testing.T) {
 		{Target: renderer.WidgetRequestBindingBody, Field: "status", Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "active"}}},
 		{Target: renderer.WidgetRequestBindingPathValue, Source: selectionSource("participant_id")},
 		{Target: renderer.WidgetRequestBindingPathByKey, Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "id"}}},
-	}, &widgetSelectionScope{Fields: map[string]renderer.TypedValueType{"participant_id": renderer.TypedValueNumber}})
+	}, &widgetSelectionScope{Fields: map[string]renderer.TypedValueType{"participant_id": renderer.TypedValueNumber}}, nil)
 	require.NoError(t, err)
 	require.True(t, available)
 }
@@ -187,7 +262,7 @@ func TestValidateWidgetRequestBindingAvailabilityRejectsUnknownRuntimeSourceFiel
 				Field: "subject",
 			}},
 		},
-	}, nil)
+	}, nil, nil)
 	require.False(t, available)
 	require.EqualError(t, err, `current_user field "subject" is not declared`)
 }
@@ -208,12 +283,12 @@ func TestWidgetRequestBindingAvailabilityUsesEffectiveListFilters(t *testing.T) 
 		Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueNumber, Number: 1}},
 	}
 	context, _ := ginTestContext()
-	available, err := (&Generator{}).validateWidgetRequestBindingAvailability(context, module, actions.ListModuleAction{Filter: []pg.Column{parentID}}, []renderer.WidgetRequestBinding{binding}, nil)
+	available, err := (&Generator{}).validateWidgetRequestBindingAvailability(context, module, actions.ListModuleAction{Filter: []pg.Column{parentID}}, []renderer.WidgetRequestBinding{binding}, nil, nil)
 	require.NoError(t, err)
 	require.False(t, available)
 
 	module.Fields[1].FilterCondition = nil
-	available, err = (&Generator{}).validateWidgetRequestBindingAvailability(context, module, actions.ListModuleAction{FilterFunc: func(*gin.Context) []pg.Column { return []pg.Column{parentID} }}, []renderer.WidgetRequestBinding{binding}, nil)
+	available, err = (&Generator{}).validateWidgetRequestBindingAvailability(context, module, actions.ListModuleAction{FilterFunc: func(*gin.Context) []pg.Column { return []pg.Column{parentID} }}, []renderer.WidgetRequestBinding{binding}, nil, nil)
 	require.NoError(t, err)
 	require.True(t, available)
 

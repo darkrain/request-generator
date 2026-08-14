@@ -480,18 +480,14 @@ func (generator *Generator) buildWidgetLoad(c *gin.Context, owner *BaseModule, a
 func (generator *Generator) buildWorkspaceCommandLoads(c *gin.Context, commands []renderer.WorkspaceCommand, role string, selection *widgetSelectionScope) ([]renderer.WorkspaceCommandLoad, error) {
 	loads := make([]renderer.WorkspaceCommandLoad, 0, len(commands))
 	for _, command := range commands {
-		resource, available, err := generator.buildReferencedWorkspaceCommandLoad(c, command.WorkspaceResource, role, selection)
+		load, available, err := generator.buildWorkspaceCommandLoad(c, command, role, selection)
 		if err != nil {
 			return nil, fmt.Errorf("workspace command %q: %w", command.ID, err)
 		}
 		if !available {
 			continue
 		}
-		loads = append(loads, renderer.WorkspaceCommandLoad{
-			ID:       command.ID,
-			Request:  resource.Request,
-			Bindings: resource.Bindings,
-		})
+		loads = append(loads, load)
 	}
 	return loads, nil
 }
@@ -515,23 +511,39 @@ func (generator *Generator) buildReferencedWidgetResourceLoad(c *gin.Context, re
 	return load, true, nil
 }
 
-func (generator *Generator) buildReferencedWorkspaceCommandLoad(c *gin.Context, resource renderer.WorkspaceResource, role string, selection *widgetSelectionScope) (renderer.WidgetResourceLoad, bool, error) {
-	module, ok := generator.moduleByName(resource.Module)
+func (generator *Generator) buildWorkspaceCommandLoad(c *gin.Context, command renderer.WorkspaceCommand, role string, selection *widgetSelectionScope) (renderer.WorkspaceCommandLoad, bool, error) {
+	module, ok := generator.moduleByName(command.Module)
 	if !ok {
-		return renderer.WidgetResourceLoad{}, false, fmt.Errorf("workspace command references unknown module %q", resource.Module)
+		return renderer.WorkspaceCommandLoad{}, false, fmt.Errorf("references unknown module %q", command.Module)
 	}
-	action, ok := findModuleAction(module, resource.Action)
+	action, ok := findModuleAction(module, command.Action)
 	if !ok {
-		return renderer.WidgetResourceLoad{}, false, fmt.Errorf("workspace command resource %q references unknown action %q", resource.Module, resource.Action)
+		return renderer.WorkspaceCommandLoad{}, false, fmt.Errorf("resource %q references unknown action %q", command.Module, command.Action)
 	}
 	if !hasPermission(action, role) {
-		return renderer.WidgetResourceLoad{}, false, nil
+		return renderer.WorkspaceCommandLoad{}, false, nil
 	}
-	return generator.buildWorkspaceCommandLoad(c, module, action, resource.Bindings, selection)
+	if !workspaceCommandPresentationAvailable(command, *selection) {
+		return renderer.WorkspaceCommandLoad{}, false, nil
+	}
+	inputScope, inputLoad, available, err := workspaceCommandInputScopeForContext(c, module, action, command.Input)
+	if err != nil || !available {
+		return renderer.WorkspaceCommandLoad{}, available, err
+	}
+	resource, available, err := generator.buildWorkspaceCommandResourceLoad(c, module, action, command.Bindings, selection, inputScope)
+	if err != nil || !available {
+		return renderer.WorkspaceCommandLoad{}, available, err
+	}
+	return renderer.WorkspaceCommandLoad{
+		ID:       command.ID,
+		Request:  resource.Request,
+		Bindings: resource.Bindings,
+		Input:    inputLoad,
+	}, true, nil
 }
 
 func (generator *Generator) buildWidgetResourceLoad(c *gin.Context, module *BaseModule, action actions.ModuleAction, bindings []renderer.WidgetRequestBinding, selection *widgetSelectionScope) (renderer.WidgetResourceLoad, bool, error) {
-	available, err := generator.validateWidgetRequestBindingAvailability(c, module, action, bindings, selection)
+	available, err := generator.validateWidgetRequestBindingAvailability(c, module, action, bindings, selection, nil)
 	if err != nil || !available {
 		return renderer.WidgetResourceLoad{}, available, err
 	}
@@ -548,8 +560,8 @@ func (generator *Generator) buildWidgetResourceLoad(c *gin.Context, module *Base
 	}, true, nil
 }
 
-func (generator *Generator) buildWorkspaceCommandLoad(c *gin.Context, module *BaseModule, action actions.ModuleAction, bindings []renderer.WidgetRequestBinding, selection *widgetSelectionScope) (renderer.WidgetResourceLoad, bool, error) {
-	available, err := generator.validateWidgetRequestBindingAvailability(c, module, action, bindings, selection)
+func (generator *Generator) buildWorkspaceCommandResourceLoad(c *gin.Context, module *BaseModule, action actions.ModuleAction, bindings []renderer.WidgetRequestBinding, selection *widgetSelectionScope, input *workspaceCommandInputScope) (renderer.WidgetResourceLoad, bool, error) {
+	available, err := generator.validateWidgetRequestBindingAvailability(c, module, action, bindings, selection, input)
 	if err != nil || !available {
 		return renderer.WidgetResourceLoad{}, available, err
 	}

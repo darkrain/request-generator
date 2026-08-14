@@ -563,9 +563,7 @@ func cloneAction(v *Action) *Action {
 }
 
 func cloneActionValue(v Action) Action {
-	v.VisibleIf = cloneCondition(v.VisibleIf)
-	v.HiddenIf = cloneCondition(v.HiddenIf)
-	v.DisabledIf = cloneCondition(v.DisabledIf)
+	v.ActionPresentation = cloneActionPresentation(v.ActionPresentation)
 	v.AfterRoute = cloneRouteValue(v.AfterRoute)
 	v.Route = cloneRouteValue(v.Route)
 	v.API = cloneAPIAction(v.API)
@@ -574,6 +572,16 @@ func cloneActionValue(v Action) Action {
 	v.AfterSuccess = cloneActionResult(v.AfterSuccess)
 	v.AfterError = cloneActionResult(v.AfterError)
 	return v
+}
+
+func cloneActionPresentation(value ActionPresentation) ActionPresentation {
+	cloned := value
+	cloned.IconOnly = clonePtr(value.IconOnly)
+	cloned.Block = clonePtr(value.Block)
+	cloned.VisibleIf = cloneCondition(value.VisibleIf)
+	cloned.HiddenIf = cloneCondition(value.HiddenIf)
+	cloned.DisabledIf = cloneCondition(value.DisabledIf)
+	return cloned
 }
 
 func cloneRouteAction(v *RouteAction) *RouteAction {

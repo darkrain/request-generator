@@ -188,6 +188,13 @@ type WorkspaceCommand struct {
 	ID string `json:"id"`
 	// Label is a producer translation key and is localized in /api/config.
 	Label string `json:"label"`
+	// Presentation shares the visual contract of normal renderer actions. It
+	// deliberately excludes request and routing fields: those are generated
+	// from WorkspaceResource.
+	Presentation *ActionPresentation `json:"presentation,omitempty"`
+	// Input permits an add command to bind values entered in the workspace.
+	// Field definitions remain owned by the target module defrec response.
+	Input *WorkspaceCommandInput `json:"input,omitempty"`
 	WorkspaceResource
 	Refresh []WorkspaceRefreshTarget `json:"refresh"`
 }
@@ -199,6 +206,9 @@ func (command WorkspaceCommand) Validate() error {
 	if command.Label == "" {
 		return fmt.Errorf("label is required")
 	}
+	if err := command.Input.Validate(command.Bindings); err != nil {
+		return fmt.Errorf("input: %w", err)
+	}
 	if err := command.WorkspaceResource.Validate("resource"); err != nil {
 		return err
 	}
@@ -206,6 +216,61 @@ func (command WorkspaceCommand) Validate() error {
 		return fmt.Errorf("refresh targets are required")
 	}
 	return ValidateWorkspaceRefreshTargets(command.Refresh)
+}
+
+// WorkspaceCommandInput declares values that the workspace may collect for a
+// standard add command. The module defrec endpoint remains the single source
+// of field metadata; Fields is only its allowlist.
+type WorkspaceCommandInput struct {
+	Fields []string `json:"fields"`
+}
+
+func (input *WorkspaceCommandInput) Validate(bindings []WidgetRequestBinding) error {
+	inputBindings := make([]WidgetRequestBinding, 0)
+	for _, binding := range bindings {
+		if binding.Source.Runtime != nil && binding.Source.Runtime.Scope == WidgetRuntimeValueSourceInput {
+			inputBindings = append(inputBindings, binding)
+		}
+	}
+	if input == nil {
+		if len(inputBindings) > 0 {
+			return fmt.Errorf("runtime input source requires input declaration")
+		}
+		return nil
+	}
+	if len(input.Fields) == 0 {
+		return fmt.Errorf("fields are required")
+	}
+	allowed := make(map[string]struct{}, len(input.Fields))
+	for index, field := range input.Fields {
+		if field == "" {
+			return fmt.Errorf("field %d is required", index)
+		}
+		if _, exists := allowed[field]; exists {
+			return fmt.Errorf("field %q is duplicated", field)
+		}
+		allowed[field] = struct{}{}
+	}
+	bound := make(map[string]struct{}, len(inputBindings))
+	for _, binding := range inputBindings {
+		if binding.Target != WidgetRequestBindingBody {
+			return fmt.Errorf("runtime input source only supports body bindings")
+		}
+		field := binding.Source.Runtime.Field
+		if _, exists := allowed[field]; !exists {
+			return fmt.Errorf("runtime input field %q is not declared", field)
+		}
+		if binding.Field != field {
+			return fmt.Errorf("runtime input field %q must bind body field %q", field, field)
+		}
+		bound[field] = struct{}{}
+	}
+	for _, field := range input.Fields {
+		if _, exists := bound[field]; !exists {
+			return fmt.Errorf("field %q has no input binding", field)
+		}
+	}
+	return nil
 }
 
 func (resource WorkspaceResource) Validate(name string) error {
@@ -250,6 +315,7 @@ type WidgetRuntimeValueSource string
 const (
 	WidgetRuntimeValueSourceCurrentUser WidgetRuntimeValueSource = "current_user"
 	WidgetRuntimeValueSourceSelection   WidgetRuntimeValueSource = "selection"
+	WidgetRuntimeValueSourceInput       WidgetRuntimeValueSource = "input"
 )
 
 type WidgetRuntimeValue struct {
@@ -278,7 +344,7 @@ func (source WidgetValueSource) Validate() error {
 			return fmt.Errorf("runtime field is required")
 		}
 		switch source.Runtime.Scope {
-		case WidgetRuntimeValueSourceCurrentUser, WidgetRuntimeValueSourceSelection:
+		case WidgetRuntimeValueSourceCurrentUser, WidgetRuntimeValueSourceSelection, WidgetRuntimeValueSourceInput:
 		default:
 			return fmt.Errorf("runtime scope %q is unsupported", source.Runtime.Scope)
 		}
@@ -529,9 +595,16 @@ type WidgetResourceLoad struct {
 // WorkspaceCommandLoad is the generated request contract for one workspace
 // command. The UI executes it by applying the typed bindings to Request.
 type WorkspaceCommandLoad struct {
-	ID       string                 `json:"id"`
-	Request  APIAction              `json:"request"`
-	Bindings []WidgetRequestBinding `json:"bindings,omitempty"`
+	ID       string                     `json:"id"`
+	Request  APIAction                  `json:"request"`
+	Bindings []WidgetRequestBinding     `json:"bindings,omitempty"`
+	Input    *WorkspaceCommandInputLoad `json:"input,omitempty"`
+}
+
+// WorkspaceCommandInputLoad contains the generated definition request for a
+// command input. The UI loads it and keeps only command.Input.Fields.
+type WorkspaceCommandInputLoad struct {
+	Definition WidgetResourceLoad `json:"definition"`
 }
 
 type WidgetLoad struct {
@@ -566,6 +639,15 @@ func cloneWorkspaceCommands(values []WorkspaceCommand) []WorkspaceCommand {
 	cloned := make([]WorkspaceCommand, len(values))
 	for index, value := range values {
 		cloned[index] = value
+		if value.Presentation != nil {
+			presentation := cloneActionPresentation(*value.Presentation)
+			cloned[index].Presentation = &presentation
+		}
+		if value.Input != nil {
+			input := *value.Input
+			input.Fields = cloneSlice(value.Input.Fields)
+			cloned[index].Input = &input
+		}
 		cloned[index].Bindings = cloneWidgetRequestBindings(value.Bindings)
 		cloned[index].Refresh = cloneSlice(value.Refresh)
 	}
@@ -646,6 +728,11 @@ func cloneWorkspaceCommandLoads(values []WorkspaceCommandLoad) []WorkspaceComman
 		cloned[index] = value
 		cloned[index].Request = *cloneAPIAction(&value.Request)
 		cloned[index].Bindings = cloneWidgetRequestBindings(value.Bindings)
+		if value.Input != nil {
+			input := *value.Input
+			input.Definition = *cloneWidgetResourceLoad(&value.Input.Definition)
+			cloned[index].Input = &input
+		}
 	}
 	return cloned
 }

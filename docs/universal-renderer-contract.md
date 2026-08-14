@@ -2,7 +2,7 @@
 
 Имя: `UniversalRenderer`
 
-Версия: `2.0.0`
+Версия: `2.1.0`
 
 Статус: `draft`
 
@@ -53,7 +53,7 @@ UniversalRenderer читает metadata только из typed response fields.
 {
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "2.0.0"
+    "version": "2.1.0"
   }
 }
 ```
@@ -108,7 +108,7 @@ Closed enums должны использовать typed constants из package 
   "page": 0,
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "2.0.0"
+    "version": "2.1.0"
   },
   "list_page": {},
   "rows": [],
@@ -150,7 +150,7 @@ Closed enums должны использовать typed constants из package 
 {
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "2.0.0"
+    "version": "2.1.0"
   },
   "form_page": {},
   "fields": {
@@ -276,7 +276,7 @@ Generator проверяет closed `type`, применимость `list`/`tab
 {
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "2.0.0"
+    "version": "2.1.0"
   },
   "record_page": {},
   "item": {
@@ -322,7 +322,7 @@ Generator проверяет closed `type`, применимость `list`/`tab
         "type": "page",
         "renderer": {
           "name": "UniversalRenderer",
-          "version": "2.0.0"
+          "version": "2.1.0"
         },
         "page_type": "list",
         "query": {
@@ -353,7 +353,7 @@ Generator проверяет closed `type`, применимость `list`/`tab
       "order": 10,
       "renderer": {
         "name": "UniversalRenderer",
-        "version": "2.0.0"
+        "version": "2.1.0"
       },
       "widget": {
         "surface": {
@@ -776,7 +776,7 @@ Media: &renderer.FieldMediaConfig{
 {
   "id": "work-area",
   "order": 10,
-  "renderer": {"name": "UniversalRenderer", "version": "2.0.0"},
+  "renderer": {"name": "UniversalRenderer", "version": "2.1.0"},
   "widget": {
     "surface": {
       "kind": "drawer",
@@ -802,6 +802,13 @@ Media: &renderer.FieldMediaConfig{
         {
           "id": "set_status",
           "label": "Set status",
+          "presentation": {
+            "icon": "ref-check",
+            "icon_only": true,
+            "variant": "success",
+            "appearance": "outline",
+            "visible_if": {"path": "enabled", "equals": false}
+          },
           "module": "state_records",
           "action": "update",
           "bindings": [
@@ -916,6 +923,12 @@ Widget: &actions.WidgetConfig{
             Commands: []renderer.WorkspaceCommand{{
                 ID:    "set_status",
                 Label: "workspace.command.set_status",
+                Presentation: &renderer.ActionPresentation{
+                    Icon:       "ref-check",
+                    Variant:    renderer.ActionVariantSuccess,
+                    Appearance: renderer.ActionAppearanceOutline,
+                    VisibleIf:  &renderer.Condition{Path: "enabled", Equals: false},
+                },
                 WorkspaceResource: renderer.WorkspaceResource{
                     ActionResource: renderer.ActionResource{
                         Module: "state_records",
@@ -994,14 +1007,106 @@ literal из `By`. `filter` выводит query name как `filter[field]`. `b
 отдельного frontend renderer.
 
 `workspace.commands` описывает операции над текущим выбором. Каждая команда
-имеет стабильный `id`, translation key `label`, ссылку на стандартный `add`,
-`update` или `delete` action, typed bindings и обязательный список `refresh`.
-URL и method не задаются producer-ом: generator выводит их в
-`load.commands[]`. У `add` разрешены только `body` bindings, у `update` -
-`path_by_key`, `path_value` и один или несколько `body`, у `delete` - только
-два path bindings. Команда, недоступная текущей роли или текущему набору
-write-fields, удаляется одновременно из `workspace.commands` и
+имеет стабильный `id`, локализуемый `label`, optional `presentation`, ссылку
+на стандартный `add`, `update` или `delete` action, typed bindings и
+обязательный список `refresh`. URL и method не задаются producer-ом:
+generator выводит их в `load.commands[]`. У `add` разрешены только `body`
+bindings, у `update` - `path_by_key`, `path_value` и один или несколько `body`,
+у `delete` - только два path bindings. Команда, недоступная текущей роли или
+текущему набору write-fields, удаляется одновременно из `workspace.commands` и
 `load.commands`; сам workspace продолжает работать.
+
+### Presentation Команды
+
+`renderer.ActionPresentation` является общим typed presentation-контрактом
+для обычного `renderer.Action` и `WorkspaceCommand`:
+
+```go
+type ActionPresentation struct {
+    Icon             string
+    IconOnly         *bool
+    Variant          ActionVariant
+    Appearance       ActionAppearance
+    ActiveAppearance ActionAppearance
+    Active           string
+    Block            *bool
+    VisibleIf        *Condition
+    HiddenIf         *Condition
+    DisabledIf       *Condition
+}
+```
+
+Он описывает только вид и интерактивное состояние. В нём нельзя передавать
+`endpoint`, `method`, payload, `APIAction`, route, modal или result: request
+команды всегда строится из стандартного action contract. Обычный `Action`
+встраивает `ActionPresentation`, поэтому его JSON остаётся плоским.
+`WorkspaceCommand` передаёт presentation вложенным полем, так как его request
+в `load.commands` разрешается отдельно.
+
+Для producer Go API это механическая source-level миграция: поля presentation
+обычного `Action` задаются через `ActionPresentation: renderer.ActionPresentation{...}`.
+Wire shape обычного action и все существующие frontend-consumers не меняются.
+
+`label` остаётся единственным текстом действия. При `icon_only` integration
+использует его для tooltip и aria-label. `active`, `visible_if`, `hidden_if` и
+`disabled_if` используют существующий condition grammar; в workspace они могут
+ссылаться только на скалярные поля выбранной master-строки. Generator
+проверяет пути и исключает команду из config, когда поле недоступно текущей
+роли. Presentation не заменяет permission или server-side проверку action.
+
+### Ввод Команды
+
+`WorkspaceCommand.Input` позволяет workspace собрать значения для
+**стандартного `add` action** без второго field schema:
+
+```go
+renderer.WorkspaceCommand{
+    ID:    "create-entry",
+    Label: "workspace.command.create_entry",
+    Input: &renderer.WorkspaceCommandInput{Fields: []string{"text"}},
+    WorkspaceResource: renderer.WorkspaceResource{
+        ActionResource: renderer.ActionResource{Module: "entries", Action: "add"},
+        Bindings: []renderer.WidgetRequestBinding{
+            {
+                Target: renderer.WidgetRequestBindingBody,
+                Field:  "parent_id",
+                Source: renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{
+                    Scope: renderer.WidgetRuntimeValueSourceSelection,
+                    Field: "id",
+                }},
+            },
+            {
+                Target: renderer.WidgetRequestBindingBody,
+                Field:  "text",
+                Source: renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{
+                    Scope: renderer.WidgetRuntimeValueSourceInput,
+                    Field: "text",
+                }},
+            },
+        },
+    },
+    Refresh: []renderer.WorkspaceRefreshTarget{renderer.WorkspaceRefreshDetail},
+}
+```
+
+`Input.Fields` - allowlist, а не повтор `ModuleField`. В config остаются два
+связанных фрагмента: `workspace.commands[].input.fields` и
+`load.commands[].input.definition.request`. Второй является generated request
+обычного target-module `defrec`. Integration получает definition через этот
+request, оставляет только allowlist и выводит поля уже существующим form-field
+renderer. Title, type, form_type, options, checks и field presentation всегда
+приходят из `defrec`.
+
+`runtime.scope: "input"` допустим только в `body` binding соответствующей
+команды. Его field обязан быть в allowlist, существовать среди доступных
+write-fields `add` action, не быть hidden/onlyview и совпадать с target body
+field. Каждый allowlisted field обязан иметь ровно один такой binding.
+
+Начальная граница намеренно ограничена `add`: стандартный `defrec` endpoint
+generator публикует вместе с `AddModuleAction`. Изменение существующей записи
+остается обычной `form_page`; добавлять специальный update endpoint или
+проектный workspace-form запрещено. Расширение возможно только отдельным
+нейтральным action-metadata contract.
 
 ### Цель Действия И Realtime
 
@@ -1215,6 +1320,13 @@ Pagination: `count`, `size`, `page`.
 ## Action Contract
 
 Actions используются в `card_schema.actions`, `record_page.actions`, `form_page.actions`, `resource_grid_page` и других page metadata.
+
+Все общие визуальные поля action принадлежат `ActionPresentation`: `icon`,
+`icon_only`, `variant`, `appearance`, `active_appearance`, `active`, `block`,
+`visible_if`, `hidden_if`, `disabled_if`. Обычный `Action` встраивает этот тип
+и сериализует его плоско. `WorkspaceCommand` использует тот же тип вложенным
+`presentation`, как описано в разделе глобального widget. Нельзя создавать
+параллельную модель visual-state для workspace-команд.
 
 Канонический shape:
 
@@ -1679,7 +1791,7 @@ Media metadata should reference fields, not hardcoded rendering branches.
   "page": 0,
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "2.0.0"
+    "version": "2.1.0"
   },
   "rows": [
     {"id": 1, "name": "Example", "status": "active"}

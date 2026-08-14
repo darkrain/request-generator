@@ -15,6 +15,7 @@ func widgetSelectionSource(field string) WidgetValueSource {
 }
 
 func validGlobalWorkspace() GlobalWidget {
+	iconOnly := true
 	return GlobalWidget{
 		Surface: WidgetSurface{
 			Kind:       WidgetSurfaceDrawer,
@@ -36,6 +37,14 @@ func validGlobalWorkspace() GlobalWidget {
 			Commands: []WorkspaceCommand{{
 				ID:    "set_status",
 				Label: "workspace.command.set_status",
+				Presentation: &ActionPresentation{
+					Icon:       "ref-status",
+					IconOnly:   &iconOnly,
+					Variant:    ActionVariantSuccess,
+					Appearance: ActionAppearanceOutline,
+					Active:     "is_active",
+					VisibleIf:  &Condition{Path: "enabled", Equals: true},
+				},
 				WorkspaceResource: WorkspaceResource{ActionResource: ActionResource{Module: "state_records", Action: "update"}, Bindings: []WidgetRequestBinding{
 					{Target: WidgetRequestBindingPathByKey, Source: WidgetValueSource{Literal: &TypedValue{Type: TypedValueString, String: "id"}}},
 					{Target: WidgetRequestBindingPathValue, Source: widgetSelectionSource("participant_id")},
@@ -67,7 +76,7 @@ func TestGlobalWidgetValidateAndSerialize(t *testing.T) {
     "summary":{"module":"summary_records","action":"list"},
     "master":{"module":"master_records","action":"list"},
     "detail":{"module":"detail_records","action":"list","bindings":[{"target":"filter","field":"parent_id","source":{"runtime":{"scope":"selection","field":"id"}}}]},
-    "commands":[{"id":"set_status","label":"workspace.command.set_status","module":"state_records","action":"update","bindings":[{"target":"path_by_key","source":{"literal":{"type":"string","string":"id"}}},{"target":"path_value","source":{"runtime":{"scope":"selection","field":"participant_id"}}},{"target":"body","field":"status","source":{"literal":{"type":"string","string":"active"}}}],"refresh":["master","detail"]}],
+    "commands":[{"id":"set_status","label":"workspace.command.set_status","presentation":{"icon":"ref-status","icon_only":true,"variant":"success","appearance":"outline","active":"is_active","visible_if":{"path":"enabled","equals":true}},"module":"state_records","action":"update","bindings":[{"target":"path_by_key","source":{"literal":{"type":"string","string":"id"}}},{"target":"path_value","source":{"runtime":{"scope":"selection","field":"participant_id"}}},{"target":"body","field":"status","source":{"literal":{"type":"string","string":"active"}}}],"refresh":["master","detail"]}],
     "subscriptions":[{"module":"detail_records","actions":["add","update"],"correlation":{"event_field":"parent_id"},"refresh":["master","detail"]}]
   }
 }`, string(encoded))
@@ -123,6 +132,7 @@ func TestGlobalWidgetCloneDoesNotShareWorkspaceState(t *testing.T) {
 	cloned.Workspace.Detail.Bindings[0].Source.Runtime.Field = "changed"
 	cloned.Workspace.Summary.Action = "view"
 	cloned.Workspace.Commands[0].Label = "changed"
+	cloned.Workspace.Commands[0].Presentation.VisibleIf.Path = "changed"
 	cloned.Workspace.Commands[0].Bindings[2].Source.Literal.String = "disabled"
 	cloned.Workspace.Commands[0].Refresh[0] = WorkspaceRefreshDetail
 	cloned.Workspace.Subscriptions[0].Actions[0] = "delete"
@@ -131,10 +141,70 @@ func TestGlobalWidgetCloneDoesNotShareWorkspaceState(t *testing.T) {
 	require.Equal(t, "id", source.Workspace.Detail.Bindings[0].Source.Runtime.Field)
 	require.Equal(t, "list", source.Workspace.Summary.Action)
 	require.Equal(t, "workspace.command.set_status", source.Workspace.Commands[0].Label)
+	require.Equal(t, "enabled", source.Workspace.Commands[0].Presentation.VisibleIf.Path)
 	require.Equal(t, "active", source.Workspace.Commands[0].Bindings[2].Source.Literal.String)
 	require.Equal(t, WorkspaceRefreshMaster, source.Workspace.Commands[0].Refresh[0])
 	require.Equal(t, "add", source.Workspace.Subscriptions[0].Actions[0])
 	require.Equal(t, WorkspaceRefreshMaster, source.Workspace.Subscriptions[0].Refresh[0])
+}
+
+func TestWorkspaceCommandInputValidation(t *testing.T) {
+	inputSource := func(field string) WidgetValueSource {
+		return WidgetValueSource{Runtime: &WidgetRuntimeValue{Scope: WidgetRuntimeValueSourceInput, Field: field}}
+	}
+	base := WorkspaceCommand{
+		ID:    "create-entry",
+		Label: "workspace.command.create_entry",
+		Input: &WorkspaceCommandInput{Fields: []string{"text"}},
+		WorkspaceResource: WorkspaceResource{ActionResource: ActionResource{Module: "entries", Action: "add"}, Bindings: []WidgetRequestBinding{{
+			Target: WidgetRequestBindingBody,
+			Field:  "text",
+			Source: inputSource("text"),
+		}}},
+		Refresh: []WorkspaceRefreshTarget{WorkspaceRefreshDetail},
+	}
+	require.NoError(t, base.Validate())
+
+	tests := []struct {
+		name string
+		edit func(*WorkspaceCommand)
+		err  string
+	}{
+		{
+			name: "input source without declaration",
+			edit: func(command *WorkspaceCommand) { command.Input = nil },
+			err:  "input: runtime input source requires input declaration",
+		},
+		{
+			name: "undeclared input field",
+			edit: func(command *WorkspaceCommand) { command.Bindings[0].Source = inputSource("title") },
+			err:  `input: runtime input field "title" is not declared`,
+		},
+		{
+			name: "input field maps to another body field",
+			edit: func(command *WorkspaceCommand) { command.Bindings[0].Field = "body" },
+			err:  `input: runtime input field "text" must bind body field "text"`,
+		},
+		{
+			name: "duplicate input field",
+			edit: func(command *WorkspaceCommand) { command.Input.Fields = []string{"text", "text"} },
+			err:  `input: field "text" is duplicated`,
+		},
+		{
+			name: "input field without binding",
+			edit: func(command *WorkspaceCommand) { command.Input.Fields = []string{"text", "attachments"} },
+			err:  `input: field "attachments" has no input binding`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			command := base
+			command.Input = &WorkspaceCommandInput{Fields: cloneSlice(base.Input.Fields)}
+			command.Bindings = cloneWidgetRequestBindings(base.Bindings)
+			test.edit(&command)
+			require.EqualError(t, command.Validate(), test.err)
+		})
+	}
 }
 
 func TestLocalizeGlobalWidgetLocalizesCommandLabels(t *testing.T) {
@@ -155,6 +225,20 @@ func TestGlobalWorkspaceCommandValidation(t *testing.T) {
 	widget = validGlobalWorkspace()
 	widget.Workspace.Commands[0].Refresh = nil
 	require.EqualError(t, widget.Validate(), `renderer.GlobalWidget: workspace: command 0: refresh targets are required`)
+}
+
+func TestWidgetLoadCloneDoesNotShareCommandInputState(t *testing.T) {
+	load := WidgetLoad{Commands: []WorkspaceCommandLoad{{
+		ID: "create-entry",
+		Input: &WorkspaceCommandInputLoad{Definition: WidgetResourceLoad{
+			Request: APIAction{Method: "GET", Endpoint: "/api/entries/defrec/"},
+		}},
+	}}}
+
+	cloned := load.Clone()
+	cloned.Commands[0].Input.Definition.Request.Endpoint = "/changed"
+
+	require.Equal(t, "/api/entries/defrec/", load.Commands[0].Input.Definition.Request.Endpoint)
 }
 
 func TestGlobalWorkspaceAllowsOmittedSummary(t *testing.T) {
