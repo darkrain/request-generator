@@ -231,6 +231,48 @@ func TestAtomicExecutorUpdateSetAndIncrement(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestAtomicExecutorUpdateRequiresFieldsAndWhereBeforeExecutingSQL(t *testing.T) {
+	for _, testCase := range []struct {
+		name   string
+		update actions.AtomicUpdate
+	}{
+		{
+			name: "fields",
+			update: actions.AtomicUpdate{
+				Table: pg.NewTable("public", "profiles", "", pg.IntegerColumn("id")),
+				Where: pg.IntegerColumn("id").EQ(pg.Int(17)),
+			},
+		},
+		{
+			name: "where",
+			update: actions.AtomicUpdate{
+				Table: pg.NewTable("public", "profiles", "", pg.IntegerColumn("id"), pg.StringColumn("name")),
+				Fields: []actions.AtomicUpdateField{{
+					Column:    pg.StringColumn("name"),
+					Operation: actions.AtomicUpdateSet,
+					Value:     actions.AtomicString("Renamed"),
+				}},
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			sqlDB, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = sqlDB.Close() })
+
+			mock.ExpectBegin()
+			tx, err := sqlDB.Begin()
+			require.NoError(t, err)
+			mock.ExpectRollback()
+
+			_, err = NewAtomicExecutor(tx).Update(context.Background(), testCase.update)
+			require.EqualError(t, err, "atomic update requires table, fields, and where")
+			require.NoError(t, tx.Rollback())
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
 func TestAtomicExecutorUpdateRejectsUnsupportedOperation(t *testing.T) {
 	sqlDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
