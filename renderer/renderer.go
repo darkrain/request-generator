@@ -1470,6 +1470,9 @@ func (action Action) Validate() error {
 		}
 	}
 	if action.AfterError != nil {
+		if action.AfterError.Widget != nil && action.AfterError.Widget.Selection != nil {
+			return fmt.Errorf("after error: widget selection is only allowed after success")
+		}
 		if err := action.AfterError.Validate(); err != nil {
 			return fmt.Errorf("after error: %w", err)
 		}

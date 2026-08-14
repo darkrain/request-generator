@@ -6,6 +6,7 @@ import (
 	"github.com/darkrain/request-generator/actions"
 	"github.com/darkrain/request-generator/fields"
 	"github.com/darkrain/request-generator/renderer"
+	"github.com/gin-gonic/gin"
 	pg "github.com/go-jet/jet/v2/postgres"
 )
 
@@ -24,7 +25,7 @@ func (generator *Generator) validateGlobalWidgets() error {
 				return fmt.Errorf("widget id %q is duplicated", widget.ID)
 			}
 			widgets[widget.ID] = *widget
-			if err := validateWidgetRequestBindings(module, action, widget.Bindings, nil); err != nil {
+			if err := validateWidgetRequestBindingShape(module, action, widget.Bindings); err != nil {
 				return fmt.Errorf("widget %q: %w", widget.ID, err)
 			}
 			if widget.Renderer.Workspace != nil {
@@ -37,7 +38,8 @@ func (generator *Generator) validateGlobalWidgets() error {
 		}
 	}
 	for _, module := range generator.Modules {
-		for _, target := range module.Render.WidgetTargets() {
+		for _, declaration := range module.Render.WidgetTargetActions() {
+			target := declaration.Target
 			widget, exists := widgets[target.ID]
 			if !exists {
 				return fmt.Errorf("module %q references unknown widget %q", module.Name, target.ID)
@@ -54,20 +56,8 @@ func (generator *Generator) validateGlobalWidgets() error {
 			if widget.Renderer.Workspace == nil {
 				return fmt.Errorf("module %q action target %q sets selection on a non-workspace widget", module.Name, target.ID)
 			}
-			sourceField := module.GetField(target.Selection.SourceField)
-			if sourceField == nil {
-				return fmt.Errorf("module %q action target %q selection source field %q is not returned by the action resource", module.Name, target.ID, target.Selection.SourceField)
-			}
-			masterModule, ok := generator.moduleByName(widget.Renderer.Workspace.Master.Module)
-			if !ok {
-				return fmt.Errorf("widget %q master resource references unknown module %q", target.ID, widget.Renderer.Workspace.Master.Module)
-			}
-			selectionField := masterModule.GetField(widget.Renderer.Workspace.Selection.Field)
-			if selectionField == nil {
-				return fmt.Errorf("widget %q selection field %q is not defined by master module %q", target.ID, widget.Renderer.Workspace.Selection.Field, masterModule.Name)
-			}
-			if err := validateRuntimeValueTypeCompatibility(*sourceField, *selectionField); err != nil {
-				return fmt.Errorf("module %q action target %q selection source field %q: %w", module.Name, target.ID, target.Selection.SourceField, err)
+			if err := generator.validateWidgetTargetSelection(module, declaration, widget); err != nil {
+				return err
 			}
 		}
 	}
@@ -84,23 +74,18 @@ func moduleActions(module *BaseModule) []actions.ModuleAction {
 }
 
 func (generator *Generator) validateWorkspaceWidget(id string, workspace renderer.WorkspaceWidget) error {
-	masterModule, masterAction, err := generator.validateWorkspaceResource(id, "master", workspace.Master, nil)
+	masterModule, masterAction, err := generator.validateWorkspaceResource(id, "master", workspace.Master)
 	if err != nil {
 		return err
 	}
 	if masterAction.Action() != actions.ModuleActionNameList {
 		return fmt.Errorf("widget %q master action must be list", id)
 	}
-	selectionField := masterModule.GetField(workspace.Selection.Field)
-	if selectionField == nil {
-		return fmt.Errorf("widget %q selection field %q is not defined by master module %q", id, workspace.Selection.Field, masterModule.Name)
-	}
-	selectionType, err := runtimeTypedValueType(*selectionField)
+	selection, err := generator.workspaceSelectionScope(id, workspace)
 	if err != nil {
-		return fmt.Errorf("widget %q selection field %q: %w", id, workspace.Selection.Field, err)
+		return err
 	}
-	selection := widgetSelectionScope{Field: workspace.Selection.Field, Type: selectionType}
-	if _, _, err := generator.validateWorkspaceResource(id, "detail", workspace.Detail, &selection); err != nil {
+	if _, _, err := generator.validateWorkspaceResource(id, "detail", workspace.Detail); err != nil {
 		return err
 	}
 	for _, subscription := range workspace.Subscriptions {
@@ -124,7 +109,7 @@ func (generator *Generator) validateWorkspaceWidget(id string, workspace rendere
 			if eventField == nil {
 				return fmt.Errorf("widget %q subscription %q action %q declares unknown correlation field %q", id, subscription.Module, name, event.CorrelationField)
 			}
-			if err := validateRuntimeValueTypeCompatibility(*eventField, *selectionField); err != nil {
+			if err := validateRuntimeValueTypeCompatibility(*eventField, *masterModule.GetField(selection.Field)); err != nil {
 				return fmt.Errorf("widget %q subscription %q action %q correlation field %q: %w", id, subscription.Module, name, event.CorrelationField, err)
 			}
 		}
@@ -132,7 +117,7 @@ func (generator *Generator) validateWorkspaceWidget(id string, workspace rendere
 	return nil
 }
 
-func (generator *Generator) validateWorkspaceResource(widgetID, name string, resource renderer.WorkspaceResource, selection *widgetSelectionScope) (*BaseModule, actions.ModuleAction, error) {
+func (generator *Generator) validateWorkspaceResource(widgetID, name string, resource renderer.WorkspaceResource) (*BaseModule, actions.ModuleAction, error) {
 	module, ok := generator.moduleByName(resource.Module)
 	if !ok {
 		return nil, nil, fmt.Errorf("widget %q %s resource references unknown module %q", widgetID, name, resource.Module)
@@ -141,7 +126,7 @@ func (generator *Generator) validateWorkspaceResource(widgetID, name string, res
 	if !ok {
 		return nil, nil, fmt.Errorf("widget %q %s resource %q references unknown action %q", widgetID, name, resource.Module, resource.Action)
 	}
-	if err := validateWidgetRequestBindings(module, action, resource.Bindings, selection); err != nil {
+	if err := validateWidgetRequestBindingShape(module, action, resource.Bindings); err != nil {
 		return nil, nil, fmt.Errorf("widget %q %s resource: %w", widgetID, name, err)
 	}
 	if err := validateWidgetResourcePresentation(module, action); err != nil {
@@ -191,7 +176,7 @@ type widgetSelectionScope struct {
 	Type  renderer.TypedValueType
 }
 
-func validateWidgetRequestBindings(module *BaseModule, action actions.ModuleAction, bindings []renderer.WidgetRequestBinding, selection *widgetSelectionScope) error {
+func validateWidgetRequestBindingShape(module *BaseModule, action actions.ModuleAction, bindings []renderer.WidgetRequestBinding) error {
 	if err := renderer.ValidateWidgetRequestBindings(bindings); err != nil {
 		return err
 	}
@@ -203,7 +188,7 @@ func validateWidgetRequestBindings(module *BaseModule, action actions.ModuleActi
 	switch action.Action() {
 	case actions.ModuleActionNameView:
 		byKey, hasByKey := byTarget[renderer.WidgetRequestBindingPathByKey]
-		value, hasValue := byTarget[renderer.WidgetRequestBindingPathValue]
+		_, hasValue := byTarget[renderer.WidgetRequestBindingPathValue]
 		if !hasByKey || !hasValue {
 			return fmt.Errorf("view action requires path_by_key and path_value bindings")
 		}
@@ -217,22 +202,11 @@ func validateWidgetRequestBindings(module *BaseModule, action actions.ModuleActi
 		if field == nil {
 			return fmt.Errorf("path_by_key %q is not declared by view action", byKey.Source.Literal.String)
 		}
-		fieldType, err := runtimeTypedValueType(*field)
-		if err != nil {
-			return fmt.Errorf("path_by_key %q: %w", byKey.Source.Literal.String, err)
-		}
-		return validateWidgetRequestValueSource(value.Source, fieldType, selection)
+		return nil
 	case actions.ModuleActionNameList:
 		for _, binding := range bindings {
 			if binding.Target != renderer.WidgetRequestBindingFilter {
 				return fmt.Errorf("list action only supports filter bindings")
-			}
-			fieldType, ok := widgetListFilterType(module, action, binding.Field)
-			if !ok {
-				return fmt.Errorf("filter field %q is not declared by list action", binding.Field)
-			}
-			if err := validateWidgetRequestValueSource(binding.Source, fieldType, selection); err != nil {
-				return fmt.Errorf("filter field %q: %w", binding.Field, err)
 			}
 		}
 		return nil
@@ -243,6 +217,68 @@ func validateWidgetRequestBindings(module *BaseModule, action actions.ModuleActi
 		return nil
 	default:
 		return fmt.Errorf("action %q does not support widget request bindings", action.Action())
+	}
+}
+
+// validateWidgetRequestBindingAvailability resolves the one source of truth
+// for filter availability in the current request context. Static validation
+// intentionally only checks binding shape because FilterFunc and
+// FilterCondition are context-dependent.
+func (generator *Generator) validateWidgetRequestBindingAvailability(c *gin.Context, module *BaseModule, action actions.ModuleAction, bindings []renderer.WidgetRequestBinding, selection *widgetSelectionScope) (bool, error) {
+	if err := validateWidgetRequestBindingShape(module, action, bindings); err != nil {
+		return false, err
+	}
+
+	switch action.Action() {
+	case actions.ModuleActionNameView:
+		for _, binding := range bindings {
+			if binding.Target != renderer.WidgetRequestBindingPathValue {
+				continue
+			}
+			byKey := bindings[0]
+			if byKey.Target != renderer.WidgetRequestBindingPathByKey {
+				byKey = bindings[1]
+			}
+			field := widgetViewByField(module, action, byKey.Source.Literal.String)
+			fieldType, err := runtimeTypedValueType(*field)
+			if err != nil {
+				return false, fmt.Errorf("path_by_key %q: %w", byKey.Source.Literal.String, err)
+			}
+			if err := validateWidgetRequestValueSource(binding.Source, fieldType, selection); err != nil {
+				return false, err
+			}
+		}
+	case actions.ModuleActionNameList:
+		list, ok := widgetListAction(action)
+		if !ok {
+			return false, fmt.Errorf("list action has unsupported type %T", action)
+		}
+		filters := generator.effectiveListFilters(c, module, list, generator.getLang(c))
+		for _, binding := range bindings {
+			field, exists := filters[binding.Field]
+			if !exists {
+				return false, nil
+			}
+			fieldType, ok := runtimeModuleFieldType(field.Type)
+			if !ok {
+				return false, fmt.Errorf("filter field %q type %q cannot be used as a runtime value", binding.Field, field.Type)
+			}
+			if err := validateWidgetRequestValueSource(binding.Source, fieldType, selection); err != nil {
+				return false, fmt.Errorf("filter field %q: %w", binding.Field, err)
+			}
+		}
+	}
+	return true, nil
+}
+
+func widgetListAction(action actions.ModuleAction) (actions.ListModuleAction, bool) {
+	switch value := action.(type) {
+	case actions.ListModuleAction:
+		return value, true
+	case *actions.ListModuleAction:
+		return *value, true
+	default:
+		return actions.ListModuleAction{}, false
 	}
 }
 
@@ -298,43 +334,101 @@ func widgetViewByField(module *BaseModule, action actions.ModuleAction, name str
 	return nil
 }
 
-func widgetListFilterType(module *BaseModule, action actions.ModuleAction, name string) (renderer.TypedValueType, bool) {
-	var list actions.ListModuleAction
-	switch value := action.(type) {
-	case actions.ListModuleAction:
-		list = value
-	case *actions.ListModuleAction:
-		list = *value
-	default:
-		return "", false
-	}
-	for _, column := range list.Filter {
-		if column.Name() == name {
-			field := module.GetField(name)
-			if field == nil {
-				return "", false
-			}
-			return runtimeModuleFieldType(field.Type)
-		}
-	}
-	for _, field := range list.VirtualFilters {
-		fieldName := field.FieldName
-		if fieldName == "" && field.Column != nil {
-			fieldName = field.Column.Name()
-		}
-		if fieldName == name {
-			return runtimeModuleFieldType(field.Type)
-		}
-	}
-	return "", false
-}
-
 func runtimeTypedValueType(field fields.ModuleField) (renderer.TypedValueType, error) {
 	valueType, ok := runtimeModuleFieldType(field.Type)
 	if !ok {
 		return "", fmt.Errorf("field type %q cannot be used as a runtime value", field.Type)
 	}
 	return valueType, nil
+}
+
+func (generator *Generator) workspaceSelectionScope(widgetID string, workspace renderer.WorkspaceWidget) (widgetSelectionScope, error) {
+	masterModule, ok := generator.moduleByName(workspace.Master.Module)
+	if !ok {
+		return widgetSelectionScope{}, fmt.Errorf("widget %q master resource references unknown module %q", widgetID, workspace.Master.Module)
+	}
+	selectionField := masterModule.GetField(workspace.Selection.Field)
+	if selectionField == nil {
+		return widgetSelectionScope{}, fmt.Errorf("widget %q selection field %q is not defined by master module %q", widgetID, workspace.Selection.Field, masterModule.Name)
+	}
+	selectionType, err := runtimeTypedValueType(*selectionField)
+	if err != nil {
+		return widgetSelectionScope{}, fmt.Errorf("widget %q selection field %q: %w", widgetID, workspace.Selection.Field, err)
+	}
+	return widgetSelectionScope{Field: workspace.Selection.Field, Type: selectionType}, nil
+}
+
+func (generator *Generator) validateWidgetTargetSelection(owner *BaseModule, declaration renderer.WidgetTargetAction, widget actions.WidgetConfig) error {
+	target := declaration.Target
+	if !declaration.AfterSuccess {
+		return fmt.Errorf("module %q action target %q selection is only allowed after success", owner.Name, target.ID)
+	}
+	if declaration.ActionType != renderer.ActionAPI || declaration.Request == nil {
+		return fmt.Errorf("module %q action target %q selection requires an api action request", owner.Name, target.ID)
+	}
+
+	source := target.Selection.Source
+	sourceModule, ok := generator.moduleByName(source.Resource.Module)
+	if !ok {
+		return fmt.Errorf("module %q action target %q selection source resource references unknown module %q", owner.Name, target.ID, source.Resource.Module)
+	}
+	sourceAction, ok := findModuleAction(sourceModule, source.Resource.Action)
+	if !ok {
+		return fmt.Errorf("module %q action target %q selection source resource %q references unknown action %q", owner.Name, target.ID, source.Resource.Module, source.Resource.Action)
+	}
+	expected, ok := standardActionRequest(sourceModule, sourceAction)
+	if !ok {
+		return fmt.Errorf("module %q action target %q selection source resource %q action %q has no standard request", owner.Name, target.ID, source.Resource.Module, source.Resource.Action)
+	}
+	if declaration.Request.Method != expected.Method || declaration.Request.Endpoint != expected.Endpoint {
+		return fmt.Errorf("module %q action target %q selection source resource %q action %q does not match action request %s %s", owner.Name, target.ID, source.Resource.Module, source.Resource.Action, expected.Method, expected.Endpoint)
+	}
+	sourceType, err := standardActionResponseFieldType(sourceAction, source.Field)
+	if err != nil {
+		return fmt.Errorf("module %q action target %q selection source resource %q action %q: %w", owner.Name, target.ID, source.Resource.Module, source.Resource.Action, err)
+	}
+	selection, err := generator.workspaceSelectionScope(target.ID, *widget.Renderer.Workspace)
+	if err != nil {
+		return err
+	}
+	if sourceType != selection.Type {
+		return fmt.Errorf("module %q action target %q selection source field %q has type %q, target field %q has type %q", owner.Name, target.ID, source.Field, sourceType, selection.Field, selection.Type)
+	}
+	return nil
+}
+
+func standardActionRequest(module *BaseModule, action actions.ModuleAction) (renderer.APIAction, bool) {
+	base := apiQueryURL(module.Path + "/" + module.Name)
+	switch action.Action() {
+	case actions.ModuleActionNameList:
+		return renderer.APIAction{Method: "GET", Endpoint: base}, true
+	case actions.ModuleActionNameAdd:
+		return renderer.APIAction{Method: "PUT", Endpoint: base}, true
+	case actions.ModuleActionNameDefrec:
+		return renderer.APIAction{Method: "GET", Endpoint: base + "/defrec/"}, true
+	case actions.ModuleActionNameView:
+		return renderer.APIAction{Method: "GET", Endpoint: base + "/view/:bykey/:value"}, true
+	case actions.ModuleActionNameUpdate:
+		return renderer.APIAction{Method: "POST", Endpoint: base + "/:bykey/:value"}, true
+	case actions.ModuleActionNameDelete:
+		return renderer.APIAction{Method: "DELETE", Endpoint: base + "/delete/:bykey/:value"}, true
+	default:
+		return renderer.APIAction{}, false
+	}
+}
+
+func standardActionResponseFieldType(action actions.ModuleAction, field string) (renderer.TypedValueType, error) {
+	if action.Action() != actions.ModuleActionNameAdd {
+		return "", fmt.Errorf("action does not expose a typed scalar response")
+	}
+	switch field {
+	case "value":
+		return renderer.TypedValueNumber, nil
+	case "primary_key":
+		return renderer.TypedValueString, nil
+	default:
+		return "", fmt.Errorf("response field %q is not declared", field)
+	}
 }
 
 func runtimeModuleFieldType(fieldType fields.ModuleFieldType) (renderer.TypedValueType, bool) {
@@ -361,16 +455,4 @@ func validateRuntimeValueTypeCompatibility(source, target fields.ModuleField) er
 		return fmt.Errorf("type %q does not match target type %q", sourceType, targetType)
 	}
 	return nil
-}
-
-func widgetActionPath(module *BaseModule, action actions.ModuleAction) string {
-	base := apiQueryURL(module.Path + "/" + module.Name)
-	switch action.Action() {
-	case actions.ModuleActionNameView:
-		return base + "/view/:bykey/:value"
-	case actions.ModuleActionNameDefrec:
-		return base + "/defrec/"
-	default:
-		return base
-	}
 }

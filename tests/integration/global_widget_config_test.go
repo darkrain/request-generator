@@ -29,7 +29,6 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 	group := engine.Group("")
 	id := pg.IntegerColumn("id")
 	parentID := pg.IntegerColumn("parent_id")
-	relatedID := pg.IntegerColumn("related_id")
 
 	master := &module.BaseModule{
 		Name:   "master_records",
@@ -57,58 +56,62 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 		},
 	}
 	workspace := &module.BaseModule{
-		Name: "workspace_entry",
-		Path: "/workspace",
-		Fields: []fields.ModuleField{
-			{Column: id, Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView},
-			{Column: relatedID, Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView},
-		},
+		Name:   "workspace_entry",
+		Path:   "/workspace",
+		Fields: []fields.ModuleField{{Column: id, Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView}},
 		Render: renderer.Universal{List: &renderer.ListPage{Actions: []renderer.Action{{
 			ID:   "open_workspace",
 			Type: renderer.ActionAPI,
+			API:  &renderer.APIAction{Method: "PUT", Endpoint: "/api/workspace/workspace_entry"},
 			AfterSuccess: &renderer.ActionResult{Widget: &renderer.WidgetTarget{
 				ID:    "work-area",
 				State: renderer.WidgetTargetOpen,
 				Selection: &renderer.WidgetSelectionResultBinding{
-					SourceField: "related_id",
+					Source: renderer.WidgetActionResultSource{
+						Resource: renderer.WidgetActionResultResource{Module: "workspace_entry", Action: "add"},
+						Field:    "value",
+					},
 				},
 				Refresh: []renderer.WorkspaceRefreshTarget{renderer.WorkspaceRefreshDetail},
 			}},
 		}}}},
-		Actions: []actions.ModuleAction{actions.ListModuleAction{
-			Label:      "Workspace entry",
-			Permission: []actions.Role{"member"},
-			Auth:       true,
-			Widget: &actions.WidgetConfig{
-				ID: "work-area",
-				Renderer: renderer.GlobalWidget{
-					Surface: renderer.WidgetSurface{
-						Kind:       renderer.WidgetSurfaceDrawer,
-						Placement:  renderer.WidgetPlacementShellEnd,
-						LoadPolicy: renderer.WidgetLoadOnOpen,
-					},
-					Workspace: &renderer.WorkspaceWidget{
-						Selection: renderer.WorkspaceSelection{Field: "id"},
-						Master:    renderer.WorkspaceResource{Module: "master_records", Action: "list"},
-						Detail: renderer.WorkspaceResource{
-							Module: "detail_records",
-							Action: "list",
-							Bindings: []renderer.WidgetRequestBinding{{
-								Target: renderer.WidgetRequestBindingFilter,
-								Field:  "parent_id",
-								Source: widgetSelectionSource("id"),
+		Actions: []actions.ModuleAction{
+			actions.ListModuleAction{
+				Label:      "Workspace entry",
+				Permission: []actions.Role{"member"},
+				Auth:       true,
+				Widget: &actions.WidgetConfig{
+					ID: "work-area",
+					Renderer: renderer.GlobalWidget{
+						Surface: renderer.WidgetSurface{
+							Kind:       renderer.WidgetSurfaceDrawer,
+							Placement:  renderer.WidgetPlacementShellEnd,
+							LoadPolicy: renderer.WidgetLoadOnOpen,
+						},
+						Workspace: &renderer.WorkspaceWidget{
+							Selection: renderer.WorkspaceSelection{Field: "id"},
+							Master:    renderer.WorkspaceResource{Module: "master_records", Action: "list"},
+							Detail: renderer.WorkspaceResource{
+								Module: "detail_records",
+								Action: "list",
+								Bindings: []renderer.WidgetRequestBinding{{
+									Target: renderer.WidgetRequestBindingFilter,
+									Field:  "parent_id",
+									Source: widgetSelectionSource("id"),
+								}},
+							},
+							Subscriptions: []renderer.WorkspaceSubscription{{
+								Module:      "detail_records",
+								Actions:     []string{"add", "update"},
+								Correlation: renderer.WorkspaceCorrelationBinding{EventField: "parent_id"},
+								Refresh:     []renderer.WorkspaceRefreshTarget{renderer.WorkspaceRefreshMaster, renderer.WorkspaceRefreshDetail},
 							}},
 						},
-						Subscriptions: []renderer.WorkspaceSubscription{{
-							Module:      "detail_records",
-							Actions:     []string{"add", "update"},
-							Correlation: renderer.WorkspaceCorrelationBinding{EventField: "parent_id"},
-							Refresh:     []renderer.WorkspaceRefreshTarget{renderer.WorkspaceRefreshMaster, renderer.WorkspaceRefreshDetail},
-						}},
 					},
 				},
 			},
-		}},
+			actions.AddModuleAction{Label: "Add workspace entry", Permission: []actions.Role{"member"}, Auth: true},
+		},
 	}
 	resource := &module.BaseModule{
 		Name:   "resource_entry",

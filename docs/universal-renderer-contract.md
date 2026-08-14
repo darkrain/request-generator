@@ -861,9 +861,12 @@ workspace. Generator проверяет scope, поле и тип значени
 
 `target` также закрыт. `path_by_key` и `path_value` заполняют два обязательных
 placeholder view action; `path_by_key` принимает только строковый literal из
-`ViewModuleAction.By`. `filter` требует `field` из статически объявленного
-filter list action и выводит query name как `filter[field]`. Поэтому config не
-может содержать `selecion.id`, `filter[unknown]` или неполный view URL.
+`ViewModuleAction.By`. `filter` выводит query name как `filter[field]`.
+Доступность каждого filter binding generator определяет при построении config
+через `effectiveListFilters`, поэтому учитываются `Filter`, `FilterFunc`,
+`FilterCondition` и virtual filters. Если хотя бы один binding недоступен в
+текущем контексте, widget не попадает в config; статическая проверка не ведёт
+собственный дублирующий реестр фильтров.
 
 `surface.kind`: `drawer` или `popup`. `surface.placement`: `shell_start`,
 `shell_end` или `center`; drawer нельзя разместить в `center`.
@@ -878,7 +881,8 @@ filter list action и выводит query name как `filter[field]`. Поэт
 ### Цель Действия И Realtime
 
 Стандартный `renderer.Action` открывает или закрывает зарегистрированный
-widget через `after_success.widget` или `after_error.widget`:
+widget через `after_success.widget` или `after_error.widget`. Selection
+разрешён только в `after_success`:
 
 ```json
 {
@@ -886,17 +890,26 @@ widget через `after_success.widget` или `after_error.widget`:
     "widget": {
       "id": "work-area",
       "state": "open",
-      "selection": {"source_field": "related_id"},
+      "selection": {
+        "source": {
+          "resource": {"module": "workspace_entry", "action": "add"},
+          "field": "value"
+        }
+      },
       "refresh": ["detail"]
     }
   }
 }
 ```
 
-`selection.source_field` является **источником** из успешного ответа standard
-action. Generator проверяет, что это поле есть у action resource и его тип
-совместим с `workspace.selection.field`; target никогда не повторяется в
-action result. Возможные refresh targets: `master`, `detail`.
+`selection.source.resource` описывает standard action, чей успешный HTTP
+response является источником значения. `renderer.Action` обязан быть `api`
+action и его `method`/`endpoint` должны точно совпадать с generated request
+этого resource. Generator проверяет `selection.source.field` по типизированной
+схеме ответа resource и сопоставляет его тип с `workspace.selection.field`.
+Сейчас scalar source поддерживает стандартный `add`: `value` (number) и
+`primary_key` (string). Target никогда не повторяется в action result.
+Возможные refresh targets: `master`, `detail`.
 
 Producer объявляет correlation у write action, который её публикует:
 

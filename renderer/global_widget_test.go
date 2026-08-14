@@ -72,7 +72,7 @@ func TestGlobalWidgetValidateRejectsInvalidContract(t *testing.T) {
 			edit: func(widget *GlobalWidget) {
 				widget.Workspace.Detail.Bindings[0].Source = WidgetValueSource{Literal: &TypedValue{Type: TypedValueNumber, Number: 1}}
 			},
-			err: "renderer.GlobalWidget: workspace: detail must bind a selection runtime value",
+			err: "renderer.GlobalWidget: workspace: detail must bind selection field \"id\"",
 		},
 		{
 			name: "binding source must be a union",
@@ -125,7 +125,10 @@ func TestActionResultWidgetTargetUsesResultField(t *testing.T) {
 			ID:    "work-area",
 			State: WidgetTargetOpen,
 			Selection: &WidgetSelectionResultBinding{
-				SourceField: "related_id",
+				Source: WidgetActionResultSource{
+					Resource: WidgetActionResultResource{Module: "records", Action: "add"},
+					Field:    "value",
+				},
 			},
 			Refresh: []WorkspaceRefreshTarget{WorkspaceRefreshDetail},
 		}},
@@ -133,16 +136,29 @@ func TestActionResultWidgetTargetUsesResultField(t *testing.T) {
 	require.NoError(t, render.Validate())
 
 	cloned := render.Clone()
-	cloned.Record.Actions[0].AfterSuccess.Widget.Selection.SourceField = "changed"
+	cloned.Record.Actions[0].AfterSuccess.Widget.Selection.Source.Field = "changed"
 	cloned.Record.Actions[0].AfterSuccess.Widget.Refresh[0] = WorkspaceRefreshMaster
-	require.Equal(t, "related_id", render.Record.Actions[0].AfterSuccess.Widget.Selection.SourceField)
+	require.Equal(t, "value", render.Record.Actions[0].AfterSuccess.Widget.Selection.Source.Field)
 	require.Equal(t, WorkspaceRefreshDetail, render.Record.Actions[0].AfterSuccess.Widget.Refresh[0])
 
-	targets := render.WidgetTargets()
+	targets := render.WidgetTargetActions()
 	require.Len(t, targets, 1)
-	require.Equal(t, "work-area", targets[0].ID)
+	require.Equal(t, "work-area", targets[0].Target.ID)
+	require.True(t, targets[0].AfterSuccess)
+	encoded, err := json.Marshal(render)
+	require.NoError(t, err)
+	require.Contains(t, string(encoded), `"selection":{"source":{"resource":{"module":"records","action":"add"},"field":"value"}}`)
 
 	invalid := render.Clone()
+	invalid.Record.Actions[0].AfterError = &ActionResult{Widget: &WidgetTarget{
+		ID: "work-area",
+		Selection: &WidgetSelectionResultBinding{Source: WidgetActionResultSource{
+			Resource: WidgetActionResultResource{Module: "records", Action: "add"}, Field: "value",
+		}},
+	}}
+	require.EqualError(t, invalid.Validate(), `renderer.Universal: record page action "open": after error: widget selection is only allowed after success`)
+
+	invalid = render.Clone()
 	invalid.Record.Actions[0].AfterSuccess.Widget.State = WidgetTargetClose
 	require.EqualError(t, invalid.Validate(), `renderer.Universal: record page action "open": after success: widget: closed widget cannot set selection`)
 

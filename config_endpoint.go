@@ -424,26 +424,30 @@ func (generator *Generator) buildWidget(c *gin.Context, owner *BaseModule, actio
 
 func (generator *Generator) buildWidgetLoad(c *gin.Context, owner *BaseModule, action actions.ModuleAction, widget actions.WidgetConfig, role string) (renderer.WidgetLoad, bool, error) {
 	if widget.Renderer.Workspace == nil {
-		resource, err := generator.buildWidgetResourceLoad(c, owner, action, widget.Bindings, role)
-		if err != nil {
-			return renderer.WidgetLoad{}, false, err
+		resource, available, err := generator.buildWidgetResourceLoad(c, owner, action, widget.Bindings, role, nil)
+		if err != nil || !available {
+			return renderer.WidgetLoad{}, available, err
 		}
 		return renderer.WidgetLoad{Resource: &resource}, true, nil
 	}
 
 	workspace := widget.Renderer.Workspace
-	master, available, err := generator.buildReferencedWidgetResourceLoad(c, workspace.Master, role)
+	selection, err := generator.workspaceSelectionScope(widget.ID, *workspace)
+	if err != nil {
+		return renderer.WidgetLoad{}, false, err
+	}
+	master, available, err := generator.buildReferencedWidgetResourceLoad(c, workspace.Master, role, nil)
 	if err != nil || !available {
 		return renderer.WidgetLoad{}, available, err
 	}
-	detail, available, err := generator.buildReferencedWidgetResourceLoad(c, workspace.Detail, role)
+	detail, available, err := generator.buildReferencedWidgetResourceLoad(c, workspace.Detail, role, &selection)
 	if err != nil || !available {
 		return renderer.WidgetLoad{}, available, err
 	}
 	return renderer.WidgetLoad{Master: &master, Detail: &detail}, true, nil
 }
 
-func (generator *Generator) buildReferencedWidgetResourceLoad(c *gin.Context, resource renderer.WorkspaceResource, role string) (renderer.WidgetResourceLoad, bool, error) {
+func (generator *Generator) buildReferencedWidgetResourceLoad(c *gin.Context, resource renderer.WorkspaceResource, role string, selection *widgetSelectionScope) (renderer.WidgetResourceLoad, bool, error) {
 	module, ok := generator.moduleByName(resource.Module)
 	if !ok {
 		return renderer.WidgetResourceLoad{}, false, fmt.Errorf("widget resource references unknown module %q", resource.Module)
@@ -455,21 +459,25 @@ func (generator *Generator) buildReferencedWidgetResourceLoad(c *gin.Context, re
 	if !hasPermission(action, role) {
 		return renderer.WidgetResourceLoad{}, false, nil
 	}
-	load, err := generator.buildWidgetResourceLoad(c, module, action, resource.Bindings, role)
-	if err != nil {
-		return renderer.WidgetResourceLoad{}, false, err
+	load, available, err := generator.buildWidgetResourceLoad(c, module, action, resource.Bindings, role, selection)
+	if err != nil || !available {
+		return renderer.WidgetResourceLoad{}, available, err
 	}
 	return load, true, nil
 }
 
-func (generator *Generator) buildWidgetResourceLoad(c *gin.Context, module *BaseModule, action actions.ModuleAction, bindings []renderer.WidgetRequestBinding, role string) (renderer.WidgetResourceLoad, error) {
+func (generator *Generator) buildWidgetResourceLoad(c *gin.Context, module *BaseModule, action actions.ModuleAction, bindings []renderer.WidgetRequestBinding, role string, selection *widgetSelectionScope) (renderer.WidgetResourceLoad, bool, error) {
+	available, err := generator.validateWidgetRequestBindingAvailability(c, module, action, bindings, selection)
+	if err != nil || !available {
+		return renderer.WidgetResourceLoad{}, available, err
+	}
 	render, err := module.RenderFor(c)
 	if err != nil {
-		return renderer.WidgetResourceLoad{}, err
+		return renderer.WidgetResourceLoad{}, false, err
 	}
 	route := generator.buildRouteForAction(module, render, action, role)
 	if route.Query == nil {
-		return renderer.WidgetResourceLoad{}, fmt.Errorf("widget resource %q action %q has no request", module.Name, action.Action())
+		return renderer.WidgetResourceLoad{}, false, fmt.Errorf("widget resource %q action %q has no request", module.Name, action.Action())
 	}
 	return renderer.WidgetResourceLoad{
 		Request: renderer.APIAction{
@@ -477,7 +485,7 @@ func (generator *Generator) buildWidgetResourceLoad(c *gin.Context, module *Base
 			Endpoint: route.Query.Url,
 		},
 		Bindings: append([]renderer.WidgetRequestBinding(nil), bindings...),
-	}, nil
+	}, true, nil
 }
 
 func (generator *Generator) moduleByName(name string) (*BaseModule, bool) {
