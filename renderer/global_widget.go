@@ -23,11 +23,17 @@ func (widget GlobalWidget) Clone() GlobalWidget {
 	return cloned
 }
 
-// LocalizeGlobalWidget mirrors the renderer localization entry point. The
-// current widget contract deliberately has no copy fields: all user-visible
-// text belongs to the referenced action responses.
-func LocalizeGlobalWidget(widget GlobalWidget, _ TextResolver) GlobalWidget {
-	return widget.Clone()
+// LocalizeGlobalWidget resolves the user-visible command labels while keeping
+// the widget request contract detached from its producer value.
+func LocalizeGlobalWidget(widget GlobalWidget, resolve TextResolver) GlobalWidget {
+	localized := widget.Clone()
+	if localized.Workspace == nil || resolve == nil {
+		return localized
+	}
+	for index := range localized.Workspace.Commands {
+		localized.Workspace.Commands[index].Label = resolve(localized.Workspace.Commands[index].Label, "")
+	}
+	return localized
 }
 
 func (widget GlobalWidget) Validate() error {
@@ -99,6 +105,7 @@ type WorkspaceWidget struct {
 	Summary       *WorkspaceResource      `json:"summary,omitempty"`
 	Master        WorkspaceResource       `json:"master"`
 	Detail        WorkspaceResource       `json:"detail"`
+	Commands      []WorkspaceCommand      `json:"commands,omitempty"`
 	Subscriptions []WorkspaceSubscription `json:"subscriptions,omitempty"`
 }
 
@@ -120,6 +127,16 @@ func (workspace WorkspaceWidget) Validate() error {
 	if !workspace.Detail.hasSelectionBinding(workspace.Selection.Field) {
 		return fmt.Errorf("detail must bind selection field %q", workspace.Selection.Field)
 	}
+	seenCommands := make(map[string]struct{}, len(workspace.Commands))
+	for index, command := range workspace.Commands {
+		if err := command.Validate(); err != nil {
+			return fmt.Errorf("command %d: %w", index, err)
+		}
+		if _, exists := seenCommands[command.ID]; exists {
+			return fmt.Errorf("command %q is duplicated", command.ID)
+		}
+		seenCommands[command.ID] = struct{}{}
+	}
 	seenSubscriptions := make(map[string]struct{}, len(workspace.Subscriptions))
 	for index, subscription := range workspace.Subscriptions {
 		if err := subscription.Validate(); err != nil {
@@ -135,6 +152,8 @@ func (workspace WorkspaceWidget) Validate() error {
 }
 
 type WorkspaceSelection struct {
+	// Field identifies the current master row. Bindings may read this field or
+	// another declared scalar field from that same selected row.
 	Field string `json:"field"`
 }
 
@@ -162,6 +181,33 @@ type WorkspaceResource struct {
 	Bindings []WidgetRequestBinding `json:"bindings,omitempty"`
 }
 
+// WorkspaceCommand invokes a standard write action from the current workspace
+// selection. The generator resolves its request contract and validates every
+// typed binding; a producer never supplies a URL or an untyped request body.
+type WorkspaceCommand struct {
+	ID string `json:"id"`
+	// Label is a producer translation key and is localized in /api/config.
+	Label string `json:"label"`
+	WorkspaceResource
+	Refresh []WorkspaceRefreshTarget `json:"refresh"`
+}
+
+func (command WorkspaceCommand) Validate() error {
+	if command.ID == "" {
+		return fmt.Errorf("id is required")
+	}
+	if command.Label == "" {
+		return fmt.Errorf("label is required")
+	}
+	if err := command.WorkspaceResource.Validate("resource"); err != nil {
+		return err
+	}
+	if len(command.Refresh) == 0 {
+		return fmt.Errorf("refresh targets are required")
+	}
+	return ValidateWorkspaceRefreshTargets(command.Refresh)
+}
+
 func (resource WorkspaceResource) Validate(name string) error {
 	if err := resource.ActionResource.Validate(name); err != nil {
 		return err
@@ -186,12 +232,13 @@ const (
 	WidgetRequestBindingPathByKey WidgetRequestBindingTarget = "path_by_key"
 	WidgetRequestBindingPathValue WidgetRequestBindingTarget = "path_value"
 	WidgetRequestBindingFilter    WidgetRequestBindingTarget = "filter"
+	WidgetRequestBindingBody      WidgetRequestBindingTarget = "body"
 )
 
 // WidgetRequestBinding applies a typed literal or a known runtime value to a
 // generated request. The target determines the request parameter name:
-// path_by_key and path_value map to view placeholders, while filter derives
-// filter[field] from Field.
+// path_by_key and path_value map to view, update or delete placeholders;
+// filter derives filter[field] from Field; body derives a JSON body field.
 type WidgetRequestBinding struct {
 	Target WidgetRequestBindingTarget `json:"target"`
 	Field  string                     `json:"field,omitempty"`
@@ -253,6 +300,10 @@ func ValidateWidgetRequestBindings(bindings []WidgetRequestBinding) error {
 		case WidgetRequestBindingFilter:
 			if binding.Field == "" {
 				return fmt.Errorf("binding %d filter field is required", index)
+			}
+		case WidgetRequestBindingBody:
+			if binding.Field == "" {
+				return fmt.Errorf("binding %d body field is required", index)
 			}
 		default:
 			return fmt.Errorf("binding %d has unsupported target %q", index, binding.Target)
@@ -475,11 +526,20 @@ type WidgetResourceLoad struct {
 	Bindings []WidgetRequestBinding `json:"bindings,omitempty"`
 }
 
+// WorkspaceCommandLoad is the generated request contract for one workspace
+// command. The UI executes it by applying the typed bindings to Request.
+type WorkspaceCommandLoad struct {
+	ID       string                 `json:"id"`
+	Request  APIAction              `json:"request"`
+	Bindings []WidgetRequestBinding `json:"bindings,omitempty"`
+}
+
 type WidgetLoad struct {
-	Resource *WidgetResourceLoad `json:"resource,omitempty"`
-	Summary  *WidgetResourceLoad `json:"summary,omitempty"`
-	Master   *WidgetResourceLoad `json:"master,omitempty"`
-	Detail   *WidgetResourceLoad `json:"detail,omitempty"`
+	Resource *WidgetResourceLoad    `json:"resource,omitempty"`
+	Summary  *WidgetResourceLoad    `json:"summary,omitempty"`
+	Master   *WidgetResourceLoad    `json:"master,omitempty"`
+	Detail   *WidgetResourceLoad    `json:"detail,omitempty"`
+	Commands []WorkspaceCommandLoad `json:"commands,omitempty"`
 }
 
 func cloneWorkspaceWidget(value *WorkspaceWidget) *WorkspaceWidget {
@@ -494,8 +554,22 @@ func cloneWorkspaceWidget(value *WorkspaceWidget) *WorkspaceWidget {
 	}
 	cloned.Master.Bindings = cloneWidgetRequestBindings(value.Master.Bindings)
 	cloned.Detail.Bindings = cloneWidgetRequestBindings(value.Detail.Bindings)
+	cloned.Commands = cloneWorkspaceCommands(value.Commands)
 	cloned.Subscriptions = cloneWorkspaceSubscriptions(value.Subscriptions)
 	return &cloned
+}
+
+func cloneWorkspaceCommands(values []WorkspaceCommand) []WorkspaceCommand {
+	if values == nil {
+		return nil
+	}
+	cloned := make([]WorkspaceCommand, len(values))
+	for index, value := range values {
+		cloned[index] = value
+		cloned[index].Bindings = cloneWidgetRequestBindings(value.Bindings)
+		cloned[index].Refresh = cloneSlice(value.Refresh)
+	}
+	return cloned
 }
 
 func cloneWidgetRequestBindings(values []WidgetRequestBinding) []WidgetRequestBinding {
@@ -563,11 +637,25 @@ func cloneWidgetResourceLoad(value *WidgetResourceLoad) *WidgetResourceLoad {
 	return &cloned
 }
 
+func cloneWorkspaceCommandLoads(values []WorkspaceCommandLoad) []WorkspaceCommandLoad {
+	if values == nil {
+		return nil
+	}
+	cloned := make([]WorkspaceCommandLoad, len(values))
+	for index, value := range values {
+		cloned[index] = value
+		cloned[index].Request = *cloneAPIAction(&value.Request)
+		cloned[index].Bindings = cloneWidgetRequestBindings(value.Bindings)
+	}
+	return cloned
+}
+
 func (value WidgetLoad) Clone() WidgetLoad {
 	return WidgetLoad{
 		Resource: cloneWidgetResourceLoad(value.Resource),
 		Summary:  cloneWidgetResourceLoad(value.Summary),
 		Master:   cloneWidgetResourceLoad(value.Master),
 		Detail:   cloneWidgetResourceLoad(value.Detail),
+		Commands: cloneWorkspaceCommandLoads(value.Commands),
 	}
 }

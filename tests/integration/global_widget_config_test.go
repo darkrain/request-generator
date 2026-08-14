@@ -29,16 +29,22 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 	group := engine.Group("")
 	id := pg.IntegerColumn("id")
 	parentID := pg.IntegerColumn("parent_id")
+	participantID := pg.IntegerColumn("participant_id")
+	status := pg.StringColumn("status")
 
 	master := &module.BaseModule{
-		Name:   "master_records",
-		Path:   "/workspace",
-		Fields: []fields.ModuleField{{Column: id, Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView}},
+		Name: "master_records",
+		Path: "/workspace",
+		Fields: []fields.ModuleField{
+			{Column: id, Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView},
+			{Column: participantID, Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView},
+		},
 		Render: renderer.Universal{List: &renderer.ListPage{}},
 		Actions: []actions.ModuleAction{actions.ListModuleAction{
 			Label:      "Master records",
 			Permission: []actions.Role{"member"},
 			Auth:       true,
+			Columns:    []pg.Column{id, participantID},
 		}},
 	}
 	summary := &module.BaseModule{
@@ -65,6 +71,26 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 			actions.AddModuleAction{Realtime: &actions.RealtimeEventConfig{CorrelationField: "parent_id"}},
 			actions.UpdateModuleAction{Realtime: &actions.RealtimeEventConfig{CorrelationField: "parent_id"}},
 		},
+	}
+	state := &module.BaseModule{
+		Name: "state_records",
+		Path: "/workspace",
+		Fields: []fields.ModuleField{
+			{Column: id, Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView},
+			{Column: status, Type: fields.ModuleFieldTypeString, FormType: fields.ModuleFieldFormTypeText},
+		},
+		Actions: []actions.ModuleAction{actions.UpdateModuleAction{
+			Label:      "Set status",
+			Permission: []actions.Role{"member"},
+			Auth:       true,
+			By:         []pg.Column{id},
+			Columns:    []pg.Column{status},
+		}, actions.DeleteModuleAction{
+			Label:      "Delete status",
+			Permission: []actions.Role{"admin"},
+			Auth:       true,
+			By:         []pg.Column{id},
+		}},
 	}
 	workspace := &module.BaseModule{
 		Name:   "workspace_entry",
@@ -111,6 +137,24 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 									Source: widgetSelectionSource("id"),
 								}},
 							},
+							Commands: []renderer.WorkspaceCommand{{
+								ID:    "set_status",
+								Label: "workspace.command.set_status",
+								WorkspaceResource: renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "state_records", Action: "update"}, Bindings: []renderer.WidgetRequestBinding{
+									{Target: renderer.WidgetRequestBindingPathByKey, Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "id"}}},
+									{Target: renderer.WidgetRequestBindingPathValue, Source: widgetSelectionSource("participant_id")},
+									{Target: renderer.WidgetRequestBindingBody, Field: "status", Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "active"}}},
+								}},
+								Refresh: []renderer.WorkspaceRefreshTarget{renderer.WorkspaceRefreshMaster, renderer.WorkspaceRefreshDetail},
+							}, {
+								ID:    "delete_status",
+								Label: "workspace.command.delete_status",
+								WorkspaceResource: renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "state_records", Action: "delete"}, Bindings: []renderer.WidgetRequestBinding{
+									{Target: renderer.WidgetRequestBindingPathByKey, Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "id"}}},
+									{Target: renderer.WidgetRequestBindingPathValue, Source: widgetSelectionSource("participant_id")},
+								}},
+								Refresh: []renderer.WorkspaceRefreshTarget{renderer.WorkspaceRefreshMaster},
+							}},
 							Subscriptions: []renderer.WorkspaceSubscription{{
 								Module:      "detail_records",
 								Actions:     []string{"add", "update"},
@@ -149,7 +193,7 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 		}},
 	}
 
-	generator := module.NewGenerator(nil, *group, []*module.BaseModule{master, summary, detail, workspace, resource}, func(_ actions.ModuleAction, _ []actions.Role) gin.HandlerFunc {
+	generator := module.NewGenerator(nil, *group, []*module.BaseModule{master, summary, detail, state, workspace, resource}, func(_ actions.ModuleAction, _ []actions.Role) gin.HandlerFunc {
 		return func(c *gin.Context) { c.Next() }
 	}, func(_ actions.ModuleAction) gin.HandlerFunc {
 		return func(c *gin.Context) {
@@ -197,6 +241,16 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 	require.Equal(t, renderer.WidgetRequestBindingFilter, workArea.Load.Detail.Bindings[0].Target)
 	require.Equal(t, "parent_id", workArea.Load.Detail.Bindings[0].Field)
 	require.Equal(t, "id", workArea.Load.Detail.Bindings[0].Source.Runtime.Field)
+	require.Len(t, workArea.Widget.Workspace.Commands, 1)
+	require.Equal(t, "workspace.command.set_status", workArea.Widget.Workspace.Commands[0].Label)
+	require.Len(t, workArea.Load.Commands, 1)
+	require.Equal(t, "set_status", workArea.Load.Commands[0].ID)
+	require.Equal(t, http.MethodPost, workArea.Load.Commands[0].Request.Method)
+	require.Equal(t, "/api/workspace/state_records/:bykey/:value", workArea.Load.Commands[0].Request.Endpoint)
+	require.Equal(t, renderer.WidgetRequestBindingPathValue, workArea.Load.Commands[0].Bindings[1].Target)
+	require.Equal(t, "participant_id", workArea.Load.Commands[0].Bindings[1].Source.Runtime.Field)
+	require.Equal(t, renderer.WidgetRequestBindingBody, workArea.Load.Commands[0].Bindings[2].Target)
+	require.Equal(t, "status", workArea.Load.Commands[0].Bindings[2].Field)
 
 	require.NotNil(t, resourceMenu)
 	require.Nil(t, resourceMenu.Widget.Workspace)
