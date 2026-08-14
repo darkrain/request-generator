@@ -16,6 +16,7 @@ import (
 	dbpkg "github.com/darkrain/request-generator/db"
 	"github.com/darkrain/request-generator/fields"
 	"github.com/darkrain/request-generator/icontext"
+	"github.com/darkrain/request-generator/renderer"
 	"github.com/gin-gonic/gin"
 	pg "github.com/go-jet/jet/v2/postgres"
 	"github.com/stretchr/testify/require"
@@ -356,6 +357,155 @@ func TestAtomicAdd_RejectsHooksAtConfigurationTime(t *testing.T) {
 			require.Panics(t, generator.Run)
 		})
 	}
+}
+
+func TestAtomicAddPublishesTypedRealtimeAfterCommit(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	id := pg.IntegerColumn("id")
+	title := pg.StringColumn("title")
+	chatID := pg.IntegerColumn("chat_id")
+	recipientUserIDs := pg.IntegerColumn("recipient_user_ids")
+	items := pg.NewTable("public", "atomic_items", "", id, title)
+	broker := module.NewMemoryBroker(module.MemoryBrokerOptions{MaxEvents: 10})
+	atomicModule := &module.BaseModule{
+		Name:       "atomic-items",
+		Path:       "/admin",
+		Table:      items,
+		PrimaryKey: id,
+		Fields: []fields.ModuleField{
+			{Column: id, Title: "ID", Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeNumber},
+			{Column: title, Title: "Title", Type: fields.ModuleFieldTypeString, FormType: fields.ModuleFieldFormTypeText},
+			{Column: chatID, Title: "Chat", Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView},
+			{Column: recipientUserIDs, Title: "Recipients", Type: fields.ModuleFieldTypeArray, FormType: fields.ModuleFieldFormTypeOnlyView},
+		},
+		Actions: []actions.ModuleAction{actions.AddModuleAction{
+			Mode: actions.AddModeAtomic,
+			Atomic: &actions.AtomicAddConfig{
+				Operation: func(ctx context.Context, executor actions.AtomicExecutor, input actions.AtomicInput) (actions.AtomicRecord, error) {
+					titleValue, err := input.RequireString("title")
+					if err != nil {
+						return actions.AtomicRecord{}, err
+					}
+					record, err := executor.Insert(ctx, actions.AtomicInsert{
+						Table:      items,
+						PrimaryKey: id,
+						Fields:     []actions.AtomicInsertField{{Column: title, Value: actions.AtomicString(titleValue)}},
+					})
+					if err != nil {
+						return actions.AtomicRecord{}, err
+					}
+					record.Fields = []actions.AtomicField{
+						{Name: "chat_id", Value: actions.AtomicInt(42)},
+						{Name: "recipient_user_ids", Value: actions.AtomicValue{Ints: []int64{2, 3}}},
+					}
+					return record, nil
+				},
+				ResultFields: []actions.AtomicResultField{
+					{Name: "chat_id", Kind: actions.AtomicValueKindInt},
+					{Name: "recipient_user_ids", Kind: actions.AtomicValueKindInts},
+				},
+				Publish: []actions.AtomicRealtimePublishConfig{{
+					Recipients: []actions.AtomicRealtimeRecipient{{
+						UserID: actions.AtomicValueSource{Scope: actions.AtomicValueSourceResult, Field: "recipient_user_ids"},
+					}},
+					Correlation: &actions.AtomicRealtimeCorrelation{
+						Field:  "chat_id",
+						Source: actions.AtomicValueSource{Scope: actions.AtomicValueSourceResult, Field: "chat_id"},
+					},
+				}},
+			},
+			Columns:    []pg.Column{title},
+			Permission: []actions.Role{actions.RoleAll},
+			Auth:       true,
+			Realtime:   &actions.RealtimeEventConfig{CorrelationField: "chat_id"},
+		}},
+	}
+
+	engine := gin.New()
+	group := engine.Group("")
+	generator := module.NewGenerator(
+		func(_ *module.BaseModule) dbpkg.DBExecutor { return dbpkg.NewDB(sqlDB) },
+		*group,
+		[]*module.BaseModule{atomicModule},
+		func(_ actions.ModuleAction, _ []actions.Role) gin.HandlerFunc {
+			return func(c *gin.Context) { c.Next() }
+		},
+		createMockAuthMiddleware(&icontext.UserInfo{ID: 1, Role: "admin"}),
+	)
+	generator.Realtime = module.RealtimeConfig{Enabled: true, Broker: broker}
+	generator.Run()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO public."atomic_items" ("title") VALUES ($1) RETURNING "id"`)).WithArgs("hello").WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(41))
+	mock.ExpectCommit()
+
+	w := executeJSONRequest(engine, http.MethodPut, "/admin/atomic-items", map[string]interface{}{"title": "hello"})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.NoError(t, mock.ExpectationsWereMet())
+
+	events, resync, err := broker.Replay(context.Background(), "0", 10)
+	require.NoError(t, err)
+	require.False(t, resync)
+	require.Len(t, events, 1)
+	require.Equal(t, []string{"user:2", "user:3"}, events[0].Topics)
+	require.Equal(t, "chat_id", events[0].Correlation.Field)
+	require.Equal(t, renderer.TypedValueNumber, events[0].Correlation.Value.Type)
+	require.Equal(t, float64(42), events[0].Correlation.Value.Number)
+}
+
+func TestAtomicAddDoesNotPublishRealtimeOnRollback(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	id := pg.IntegerColumn("id")
+	title := pg.StringColumn("title")
+	chatID := pg.IntegerColumn("chat_id")
+	recipientUserID := pg.IntegerColumn("recipient_user_id")
+	items := pg.NewTable("public", "atomic_items", "", id, title)
+	broker := module.NewMemoryBroker(module.MemoryBrokerOptions{MaxEvents: 10})
+	atomicModule := &module.BaseModule{
+		Name: "atomic-items", Path: "/admin", Table: items, PrimaryKey: id,
+		Fields: []fields.ModuleField{
+			{Column: title, Title: "Title", Type: fields.ModuleFieldTypeString, FormType: fields.ModuleFieldFormTypeText},
+			{Column: chatID, Title: "Chat", Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView},
+			{Column: recipientUserID, Title: "Recipient", Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView},
+		},
+		Actions: []actions.ModuleAction{actions.AddModuleAction{
+			Mode: actions.AddModeAtomic,
+			Atomic: &actions.AtomicAddConfig{
+				Operation: func(context.Context, actions.AtomicExecutor, actions.AtomicInput) (actions.AtomicRecord, error) {
+					return actions.AtomicRecord{}, errors.New("forced rollback")
+				},
+				ResultFields: []actions.AtomicResultField{{Name: "chat_id", Kind: actions.AtomicValueKindInt}, {Name: "recipient_user_id", Kind: actions.AtomicValueKindInt}},
+				Publish: []actions.AtomicRealtimePublishConfig{{
+					Recipients:  []actions.AtomicRealtimeRecipient{{UserID: actions.AtomicValueSource{Scope: actions.AtomicValueSourceResult, Field: "recipient_user_id"}}},
+					Correlation: &actions.AtomicRealtimeCorrelation{Field: "chat_id", Source: actions.AtomicValueSource{Scope: actions.AtomicValueSourceResult, Field: "chat_id"}},
+				}},
+			},
+			Columns: []pg.Column{title}, Permission: []actions.Role{actions.RoleAll}, Auth: true,
+			Realtime: &actions.RealtimeEventConfig{CorrelationField: "chat_id"},
+		}},
+	}
+	engine := gin.New()
+	group := engine.Group("")
+	generator := module.NewGenerator(func(_ *module.BaseModule) dbpkg.DBExecutor { return dbpkg.NewDB(sqlDB) }, *group, []*module.BaseModule{atomicModule}, func(_ actions.ModuleAction, _ []actions.Role) gin.HandlerFunc {
+		return func(c *gin.Context) { c.Next() }
+	}, createMockAuthMiddleware(&icontext.UserInfo{ID: 1, Role: "admin"}))
+	generator.Realtime = module.RealtimeConfig{Enabled: true, Broker: broker}
+	generator.Run()
+
+	mock.ExpectBegin()
+	mock.ExpectRollback()
+	w := executeJSONRequest(engine, http.MethodPut, "/admin/atomic-items", map[string]interface{}{"title": "hello"})
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	require.NoError(t, mock.ExpectationsWereMet())
+	events, _, err := broker.Replay(context.Background(), "0", 10)
+	require.NoError(t, err)
+	require.Empty(t, events)
 }
 
 func TestStandardAdd_RemainsUnchanged(t *testing.T) {

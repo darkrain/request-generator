@@ -142,6 +142,23 @@ type AtomicInsertField struct {
 	Value  AtomicValue `json:"value"`
 }
 
+// AtomicUpsert is a conflict-safe INSERT. With no UpdateFields it uses
+// ON CONFLICT DO NOTHING; otherwise it updates the declared fields and
+// returns the primary key of either path.
+type AtomicUpsert struct {
+	Insert          AtomicInsert        `json:"-"`
+	ConflictColumns []pg.Column         `json:"-"`
+	UpdateFields    []AtomicInsertField `json:"-"`
+}
+
+// AtomicUpsertResult separates a newly inserted record from a conflict path.
+// A do-nothing conflict has no record; callers can then SelectOne inside the
+// same generator-owned transaction.
+type AtomicUpsertResult struct {
+	Record   AtomicRecord `json:"record"`
+	Inserted bool         `json:"inserted"`
+}
+
 // AtomicValueKind declares the SQL result shape requested by AtomicSelect.
 // Keeping it explicit avoids leaking driver scan values into domain operations.
 type AtomicValueKind string
@@ -154,6 +171,15 @@ const (
 	AtomicValueKindStrings AtomicValueKind = "strings"
 	AtomicValueKindInts    AtomicValueKind = "ints"
 )
+
+func (kind AtomicValueKind) valid() bool {
+	switch kind {
+	case AtomicValueKindString, AtomicValueKindInt, AtomicValueKindFloat, AtomicValueKindBool, AtomicValueKindStrings, AtomicValueKindInts:
+		return true
+	default:
+		return false
+	}
+}
 
 type AtomicSelectField struct {
 	Name   string          `json:"name"`
@@ -233,15 +259,84 @@ func (record AtomicRecord) String(name string) (string, bool) {
 	return *value.String, true
 }
 
+// AtomicResultField declares a typed field an atomic operation may use as a
+// source for generator-owned side effects. It does not add a project DTO: the
+// field is still returned by AtomicRecord.Fields.
+type AtomicResultField struct {
+	Name string          `json:"name"`
+	Kind AtomicValueKind `json:"kind"`
+}
+
+func (field AtomicResultField) Validate() error {
+	if field.Name == "" {
+		return fmt.Errorf("atomic result field name is required")
+	}
+	if field.Name == "value" || field.Name == "primary_key" {
+		return fmt.Errorf("atomic result field %q is reserved", field.Name)
+	}
+	if !field.Kind.valid() {
+		return fmt.Errorf("atomic result field %q has unsupported kind %q", field.Name, field.Kind)
+	}
+	return nil
+}
+
+// AtomicValueSource references a normalized input or a declared atomic result
+// field. The closed source union prevents callbacks and map-based side effects.
+type AtomicValueSourceScope string
+
+const (
+	AtomicValueSourceInput  AtomicValueSourceScope = "input"
+	AtomicValueSourceResult AtomicValueSourceScope = "result"
+)
+
+type AtomicValueSource struct {
+	Scope AtomicValueSourceScope `json:"scope"`
+	Field string                 `json:"field"`
+}
+
+func (source AtomicValueSource) Validate() error {
+	if source.Field == "" {
+		return fmt.Errorf("atomic value source field is required")
+	}
+	switch source.Scope {
+	case AtomicValueSourceInput, AtomicValueSourceResult:
+		return nil
+	default:
+		return fmt.Errorf("atomic value source scope %q is unsupported", source.Scope)
+	}
+}
+
+// AtomicRealtimeRecipient maps a trusted numeric result field to the
+// generator-owned user topic. Input fields are intentionally not accepted so
+// a request cannot select its own recipients.
+type AtomicRealtimeRecipient struct {
+	UserID AtomicValueSource `json:"user_id"`
+}
+
+type AtomicRealtimeCorrelation struct {
+	Field  string            `json:"field"`
+	Source AtomicValueSource `json:"source"`
+}
+
+// AtomicRealtimePublishConfig declares a realtime event emitted after a
+// successful atomic transaction commit.
+type AtomicRealtimePublishConfig struct {
+	Recipients  []AtomicRealtimeRecipient  `json:"recipients"`
+	Correlation *AtomicRealtimeCorrelation `json:"correlation,omitempty"`
+}
+
 // AtomicExecutor deliberately exposes only the operations needed by domain
 // creation logic, not a driver transaction or connection.
 type AtomicExecutor interface {
 	Insert(context.Context, AtomicInsert) (AtomicRecord, error)
+	Upsert(context.Context, AtomicUpsert) (AtomicUpsertResult, error)
 	SelectOne(context.Context, AtomicSelect) (AtomicRecord, error)
 }
 
 type AtomicAddOperation func(context.Context, AtomicExecutor, AtomicInput) (AtomicRecord, error)
 
 type AtomicAddConfig struct {
-	Operation AtomicAddOperation `json:"-"`
+	Operation    AtomicAddOperation            `json:"-"`
+	ResultFields []AtomicResultField           `json:"result_fields,omitempty"`
+	Publish      []AtomicRealtimePublishConfig `json:"publish,omitempty"`
 }
