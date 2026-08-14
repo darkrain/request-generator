@@ -1409,6 +1409,33 @@ for _, recipient := range recipients {
 }
 ```
 
+Если сценарий должен изменить связанную запись до commit, используйте
+`executor.Update`. Контракт принимает только `set` и numeric `increment`; каждый
+update обязан иметь Jet `Where` и возвращает количество затронутых строк. Это
+позволяет операции явно прервать transaction при нарушении инварианта доступа.
+
+```go
+updated, err := executor.Update(ctx, actions.AtomicUpdate{
+    Table: chatParticipants,
+    Fields: []actions.AtomicUpdateField{
+        {
+            Column:    chatParticipants.UnreadCount,
+            Operation: actions.AtomicUpdateIncrement,
+            Value:     actions.AtomicInt(1),
+        },
+    },
+    Where: chatParticipants.ChatID.EQ(pg.Int(chatID)).AND(
+        chatParticipants.ProfileID.EQ(pg.Int(recipientProfileID)),
+    ),
+})
+if err != nil || updated != 1 {
+    return actions.AtomicRecord{}, errors.New("recipient participant was not updated")
+}
+```
+
+`set` поддерживает string, int, float, bool, timestamp и timestamp with time
+zone. Для времени используется `actions.AtomicTime(time.Now().UTC())`.
+
 Для идемпотентного создания с уникальным ключом используется `executor.Upsert`.
 Он получает typed insert, conflict columns и при необходимости typed update fields.
 Без `UpdateFields` executor выполняет `ON CONFLICT DO NOTHING`; в конфликтном

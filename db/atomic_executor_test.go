@@ -5,6 +5,7 @@ import (
 	"database/sql/driver"
 	"regexp"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/darkrain/request-generator/actions"
@@ -78,14 +79,16 @@ func TestAtomicExecutorSelectManyReturnsTypedRows(t *testing.T) {
 	active := pg.BoolColumn("active")
 	memberIDs := pg.StringColumn("member_ids")
 	tags := pg.StringColumn("tags")
-	profiles := pg.NewTable("public", "profiles", "", id, name, rating, active, memberIDs, tags)
+	createdAt := pg.TimestampzColumn("created_at")
+	profiles := pg.NewTable("public", "profiles", "", id, name, rating, active, memberIDs, tags, createdAt)
+	firstCreatedAt := time.Date(2026, time.August, 14, 17, 30, 0, 0, time.UTC)
 
 	mock.ExpectBegin()
 	tx, err := sqlDB.Begin()
 	require.NoError(t, err)
-	mock.ExpectQuery("ORDER BY").WillReturnRows(sqlmock.NewRows([]string{"name", "id", "rating", "active", "member_ids", "tags"}).
-		AddRow("Ada", 17, 4.5, true, "{101,102}", "{vip,verified}").
-		AddRow("Lin", 19, 3.25, false, "{}", "{}"))
+	mock.ExpectQuery("ORDER BY").WillReturnRows(sqlmock.NewRows([]string{"name", "id", "rating", "active", "member_ids", "tags", "created_at"}).
+		AddRow("Ada", 17, 4.5, true, "{101,102}", "{vip,verified}", firstCreatedAt).
+		AddRow("Lin", 19, 3.25, false, "{}", "{}", firstCreatedAt.Add(time.Minute)))
 	mock.ExpectRollback()
 
 	records, err := NewAtomicExecutor(tx).SelectMany(context.Background(), actions.AtomicSelectMany{
@@ -98,6 +101,7 @@ func TestAtomicExecutorSelectManyReturnsTypedRows(t *testing.T) {
 				{Name: "active", Column: active, Kind: actions.AtomicValueKindBool},
 				{Name: "member_ids", Column: memberIDs, Kind: actions.AtomicValueKindInts},
 				{Name: "tags", Column: tags, Kind: actions.AtomicValueKindStrings},
+				{Name: "created_at", Column: createdAt, Kind: actions.AtomicValueKindTime},
 			},
 			Where: active.IS_TRUE(),
 		},
@@ -125,6 +129,9 @@ func TestAtomicExecutorSelectManyReturnsTypedRows(t *testing.T) {
 	tagsValue, ok := records[0].Field("tags")
 	require.True(t, ok)
 	require.Equal(t, []string{"vip", "verified"}, tagsValue.Strings)
+	createdAtValue, ok := records[0].Field("created_at")
+	require.True(t, ok)
+	require.Equal(t, firstCreatedAt, *createdAtValue.Time)
 
 	require.NoError(t, tx.Rollback())
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -191,6 +198,125 @@ func TestAtomicExecutorSelectManyRequiresBoundedOrder(t *testing.T) {
 	})
 	require.EqualError(t, err, "atomic select many requires a positive limit")
 
+	require.NoError(t, tx.Rollback())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAtomicExecutorUpdateSetAndIncrement(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	id := pg.IntegerColumn("id")
+	name := pg.StringColumn("name")
+	unreadCount := pg.IntegerColumn("unread_count")
+	profiles := pg.NewTable("public", "profiles", "", id, name, unreadCount)
+	mock.ExpectBegin()
+	tx, err := sqlDB.Begin()
+	require.NoError(t, err)
+	mock.ExpectExec("UPDATE").WithArgs("Renamed", int64(1), int64(17)).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectRollback()
+
+	updated, err := NewAtomicExecutor(tx).Update(context.Background(), actions.AtomicUpdate{
+		Table: profiles,
+		Fields: []actions.AtomicUpdateField{
+			{Column: name, Operation: actions.AtomicUpdateSet, Value: actions.AtomicString("Renamed")},
+			{Column: unreadCount, Operation: actions.AtomicUpdateIncrement, Value: actions.AtomicInt(1)},
+		},
+		Where: id.EQ(pg.Int(17)),
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), updated)
+	require.NoError(t, tx.Rollback())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAtomicExecutorUpdateRequiresFieldsAndWhereBeforeExecutingSQL(t *testing.T) {
+	for _, testCase := range []struct {
+		name   string
+		update actions.AtomicUpdate
+	}{
+		{
+			name: "fields",
+			update: actions.AtomicUpdate{
+				Table: pg.NewTable("public", "profiles", "", pg.IntegerColumn("id")),
+				Where: pg.IntegerColumn("id").EQ(pg.Int(17)),
+			},
+		},
+		{
+			name: "where",
+			update: actions.AtomicUpdate{
+				Table: pg.NewTable("public", "profiles", "", pg.IntegerColumn("id"), pg.StringColumn("name")),
+				Fields: []actions.AtomicUpdateField{{
+					Column:    pg.StringColumn("name"),
+					Operation: actions.AtomicUpdateSet,
+					Value:     actions.AtomicString("Renamed"),
+				}},
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			sqlDB, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = sqlDB.Close() })
+
+			mock.ExpectBegin()
+			tx, err := sqlDB.Begin()
+			require.NoError(t, err)
+			mock.ExpectRollback()
+
+			_, err = NewAtomicExecutor(tx).Update(context.Background(), testCase.update)
+			require.EqualError(t, err, "atomic update requires table, fields, and where")
+			require.NoError(t, tx.Rollback())
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestAtomicExecutorUpdateRejectsUnsupportedOperation(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	id := pg.IntegerColumn("id")
+	name := pg.StringColumn("name")
+	profiles := pg.NewTable("public", "profiles", "", id, name)
+	mock.ExpectBegin()
+	tx, err := sqlDB.Begin()
+	require.NoError(t, err)
+	mock.ExpectRollback()
+
+	_, err = NewAtomicExecutor(tx).Update(context.Background(), actions.AtomicUpdate{
+		Table:  profiles,
+		Fields: []actions.AtomicUpdateField{{Column: name, Operation: actions.AtomicUpdateIncrement, Value: actions.AtomicInt(1)}},
+		Where:  id.EQ(pg.Int(17)),
+	})
+	require.EqualError(t, err, `atomic update field 0: string column "name" requires string value`)
+	require.NoError(t, tx.Rollback())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAtomicExecutorUpdateReturnsZeroAffectedRows(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	id := pg.IntegerColumn("id")
+	active := pg.BoolColumn("active")
+	profiles := pg.NewTable("public", "profiles", "", id, active)
+	mock.ExpectBegin()
+	tx, err := sqlDB.Begin()
+	require.NoError(t, err)
+	mock.ExpectExec("UPDATE").WithArgs(false, int64(17)).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectRollback()
+
+	updated, err := NewAtomicExecutor(tx).Update(context.Background(), actions.AtomicUpdate{
+		Table:  profiles,
+		Fields: []actions.AtomicUpdateField{{Column: active, Operation: actions.AtomicUpdateSet, Value: actions.AtomicBool(false)}},
+		Where:  id.EQ(pg.Int(17)),
+	})
+	require.NoError(t, err)
+	require.Zero(t, updated)
 	require.NoError(t, tx.Rollback())
 	require.NoError(t, mock.ExpectationsWereMet())
 }
