@@ -124,6 +124,9 @@ func (generator *Generator) Run() {
 		if err := validateAtomicAddActions(module); err != nil {
 			panic(fmt.Sprintf("invalid atomic add config in module %s: %v", module.Name, err))
 		}
+		if err := validateAtomicUpdateActions(module); err != nil {
+			panic(fmt.Sprintf("invalid atomic update config in module %s: %v", module.Name, err))
+		}
 		if err := module.Render.Validate(); err != nil {
 			if module.RenderFunc != nil {
 				panic(fmt.Sprintf("invalid base renderer config in module %s: %v", module.Name, err))
@@ -364,6 +367,60 @@ func validateAtomicAddActions(module *BaseModule) error {
 			}
 		default:
 			return fmt.Errorf("unsupported add mode %q", action.Mode)
+		}
+	}
+	return nil
+}
+
+func validateAtomicUpdateActions(module *BaseModule) error {
+	for _, moduleAction := range module.Actions {
+		var action actions.UpdateModuleAction
+		switch value := moduleAction.(type) {
+		case actions.UpdateModuleAction:
+			action = value
+		case *actions.UpdateModuleAction:
+			if value == nil {
+				continue
+			}
+			action = *value
+		default:
+			continue
+		}
+		switch action.Mode {
+		case "", actions.UpdateModeStandard:
+			continue
+		case actions.UpdateModeAtomic:
+			if action.Atomic == nil || action.Atomic.Operation == nil {
+				return fmt.Errorf("atomic update action requires an operation")
+			}
+			if err := validateAtomicUpdateConfig(module, action); err != nil {
+				return err
+			}
+			if action.BeforeAction != nil || action.AfterAction != nil {
+				return fmt.Errorf("atomic update action cannot define before or after hooks")
+			}
+			if len(module.RoleBeforeHook) > 0 || len(module.RoleAfterHook) > 0 {
+				return fmt.Errorf("atomic update action cannot be used by a module with role hooks")
+			}
+			if _, err := atomicPrimaryKeyKind(module); err != nil {
+				return err
+			}
+			if len(action.By) == 0 {
+				return fmt.Errorf("atomic update action requires selector fields")
+			}
+			for _, by := range action.By {
+				field := module.GetFieldByColumn(by)
+				if field == nil {
+					return fmt.Errorf("atomic update selector field %q is not declared in module fields", by.Name())
+				}
+				switch field.Type {
+				case fields.ModuleFieldTypeString, fields.ModuleFieldTypeInt, fields.ModuleFieldTypeFloat:
+				default:
+					return fmt.Errorf("atomic update selector field %q has unsupported type %q", by.Name(), field.Type)
+				}
+			}
+		default:
+			return fmt.Errorf("unsupported update mode %q", action.Mode)
 		}
 	}
 	return nil
@@ -940,7 +997,7 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 			}
 			committed = true
 			response.Response(l, c, output)
-			generator.publishAtomicRealtime(c, module, output, atomicPublishes)
+			generator.publishAtomicRealtime(c, module, actions.ModuleActionNameAdd, output, atomicPublishes)
 			return
 		}
 
@@ -1221,25 +1278,28 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 		l, _ := icontext.GetLogger(ctx)
 		role := actions.GetRoleFromContext(c)
 		lang := generator.getLang(c)
+		var err error
 
-		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
-			if err := hook(c); err != nil {
-				response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+		if action.Mode != actions.UpdateModeAtomic {
+			if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
+				if err := hook(c); err != nil {
+					response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+					return
+				}
+			}
+			defer func() {
+				if hook := actions.ResolveRoleAfterHook(module.RoleAfterHook, role); hook != nil {
+					hook(c)
+				}
+			}()
+
+			err = action.BeforeRequest(c)
+			if err != nil {
+				if !c.Writer.Written() {
+					response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, nil)
+				}
 				return
 			}
-		}
-		defer func() {
-			if hook := actions.ResolveRoleAfterHook(module.RoleAfterHook, role); hook != nil {
-				hook(c)
-			}
-		}()
-
-		err := action.BeforeRequest(c)
-		if err != nil {
-			if !c.Writer.Written() {
-				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, nil)
-			}
-			return
 		}
 
 		whereKey := c.Param("bykey")
@@ -1261,6 +1321,14 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 				"value param not found",
 			})
 			return
+		}
+		var atomicSelector actions.AtomicSelector
+		if action.Mode == actions.UpdateModeAtomic {
+			atomicSelector, err = atomicUpdateSelectorFromRoute(c, module, action.By, whereKey, whereValue)
+			if err != nil {
+				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, []string{err.Error()})
+				return
+			}
 		}
 
 		var input map[string]interface{}
@@ -1295,16 +1363,20 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 		}
 
 		tc := generator.buildTranslationContext(module)
-		if tc != nil {
+		if tc != nil && action.Mode != actions.UpdateModeAtomic {
 			tc.EntityID = whereValue
 		}
 
 		mapInput := generator.mapRequestInput(c, input, module, columns)
 
 		// Build WHERE condition: primary key + optional role/action filters
+		selectorValue := interface{}(whereValue)
+		if action.Mode == actions.UpdateModeAtomic {
+			selectorValue = atomicSelector.Value.Interface()
+		}
 		where := pg.BoolExpression(pg.RawBool(
 			fmt.Sprintf(`"%s" = #val`, whereKey),
-			pg.RawArgs{"#val": whereValue},
+			pg.RawArgs{"#val": selectorValue},
 		))
 		if whereFn := actions.ResolveRoleWhere(module.RoleWhere, role); whereFn != nil {
 			if roleWhere := whereFn(c); roleWhere != nil {
@@ -1317,6 +1389,70 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 			}
 		}
 		where = appendRelationScopeWhere(module, where, scope)
+
+		if action.Mode == actions.UpdateModeAtomic {
+			atomicInput, err := atomicInputFromFields(realFields, mapInput)
+			if err != nil {
+				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, []string{err.Error()})
+				return
+			}
+			rawDB := generator.db(module).RawDB()
+			if rawDB == nil {
+				response.ErrorResponse(l, c, http.StatusInternalServerError, GeneratorErrorUpdate, []string{"atomic update requires a SQL database"})
+				return
+			}
+			tx, err := rawDB.BeginTx(ctx, nil)
+			if err != nil {
+				response.ErrorResponse(l, c, http.StatusInternalServerError, GeneratorErrorUpdate, []string{err.Error()})
+				return
+			}
+			committed := false
+			defer func() {
+				if !committed {
+					_ = tx.Rollback()
+				}
+			}()
+			executor := db.NewAtomicExecutor(tx)
+			recordID, err := atomicUpdateSubject(ctx, executor, module, where)
+			if err != nil {
+				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, []string{"atomic update target is unavailable"})
+				return
+			}
+			output, err := action.Atomic.Operation(ctx, executor, actions.AtomicUpdateInput{
+				Input:    atomicInput,
+				Selector: atomicSelector,
+			})
+			if err != nil {
+				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, []string{err.Error()})
+				return
+			}
+			if output.PrimaryKey == "" {
+				output.PrimaryKey = module.PrimaryKey.Name()
+			}
+			if err := validateAtomicUpdateResult(action.Atomic, output); err != nil {
+				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, []string{err.Error()})
+				return
+			}
+			atomicPublishes, err := atomicUpdateRealtimePublishes(action.Atomic, atomicInput, output)
+			if err != nil {
+				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, []string{err.Error()})
+				return
+			}
+			if tc != nil {
+				if err := db.UpsertTranslations(tx, tc, recordID, realFields, mapInput); err != nil {
+					response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, []string{err.Error()})
+					return
+				}
+			}
+			if err := tx.Commit(); err != nil {
+				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, []string{err.Error()})
+				return
+			}
+			committed = true
+			response.Response(l, c, output)
+			generator.publishAtomicRealtime(c, module, actions.ModuleActionNameUpdate, output, atomicPublishes)
+			return
+		}
 
 		_, err = generator.db(module).Update(l, module.Table, module.PrimaryKey, realFields, mapInput, where, tc)
 		if err != nil {

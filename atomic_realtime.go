@@ -14,8 +14,20 @@ func validateAtomicAddConfig(module *BaseModule, action actions.AddModuleAction)
 	if config == nil {
 		return fmt.Errorf("atomic add action requires an operation")
 	}
-	resultFields := make(map[string]actions.AtomicValueKind, len(config.ResultFields))
-	for _, field := range config.ResultFields {
+	return validateAtomicResultConfig(module, action.Realtime, config.ResultFields, config.Publish)
+}
+
+func validateAtomicUpdateConfig(module *BaseModule, action actions.UpdateModuleAction) error {
+	config := action.Atomic
+	if config == nil {
+		return fmt.Errorf("atomic update action requires an operation")
+	}
+	return validateAtomicResultConfig(module, action.Realtime, config.ResultFields, config.Publish)
+}
+
+func validateAtomicResultConfig(module *BaseModule, realtime *actions.RealtimeEventConfig, resultFieldList []actions.AtomicResultField, configuredPublishes []actions.AtomicRealtimePublishConfig) error {
+	resultFields := make(map[string]actions.AtomicValueKind, len(resultFieldList))
+	for _, field := range resultFieldList {
 		if err := field.Validate(); err != nil {
 			return err
 		}
@@ -24,13 +36,13 @@ func validateAtomicAddConfig(module *BaseModule, action actions.AddModuleAction)
 		}
 		resultFields[field.Name] = field.Kind
 	}
-	if len(config.Publish) == 0 {
+	if len(configuredPublishes) == 0 {
 		return nil
 	}
-	if action.Realtime == nil || action.Realtime.CorrelationField == "" {
+	if realtime == nil || realtime.CorrelationField == "" {
 		return fmt.Errorf("atomic realtime publish requires declared realtime correlation")
 	}
-	for index, publish := range config.Publish {
+	for index, publish := range configuredPublishes {
 		if len(publish.Recipients) == 0 {
 			return fmt.Errorf("atomic realtime publish %d requires recipients", index)
 		}
@@ -52,8 +64,8 @@ func validateAtomicAddConfig(module *BaseModule, action actions.AddModuleAction)
 		if publish.Correlation == nil {
 			return fmt.Errorf("atomic realtime publish %d requires correlation", index)
 		}
-		if publish.Correlation.Field != action.Realtime.CorrelationField {
-			return fmt.Errorf("atomic realtime publish %d correlation field %q does not match declared field %q", index, publish.Correlation.Field, action.Realtime.CorrelationField)
+		if publish.Correlation.Field != realtime.CorrelationField {
+			return fmt.Errorf("atomic realtime publish %d correlation field %q does not match declared field %q", index, publish.Correlation.Field, realtime.CorrelationField)
 		}
 		if err := publish.Correlation.Source.Validate(); err != nil {
 			return fmt.Errorf("atomic realtime publish %d correlation: %w", index, err)
@@ -120,17 +132,31 @@ func atomicKindTypedValueType(kind actions.AtomicValueKind) (renderer.TypedValue
 }
 
 func validateAtomicResult(config *actions.AtomicAddConfig, record actions.AtomicRecord) error {
+	if config == nil {
+		return nil
+	}
+	return validateAtomicResultFields(config.ResultFields, record)
+}
+
+func validateAtomicUpdateResult(config *actions.AtomicUpdateConfig, record actions.AtomicRecord) error {
+	if config == nil {
+		return nil
+	}
+	return validateAtomicResultFields(config.ResultFields, record)
+}
+
+func validateAtomicResultFields(resultFields []actions.AtomicResultField, record actions.AtomicRecord) error {
 	if err := record.Validate(); err != nil {
 		return err
 	}
-	if config == nil || len(config.ResultFields) == 0 {
+	if len(resultFields) == 0 {
 		return nil
 	}
 	actual := make(map[string]actions.AtomicValueKind, len(record.Fields))
 	for _, field := range record.Fields {
 		actual[field.Name] = atomicValueKind(field.Value)
 	}
-	for _, declared := range config.ResultFields {
+	for _, declared := range resultFields {
 		kind, exists := actual[declared.Name]
 		if !exists {
 			return fmt.Errorf("atomic result field %q is missing", declared.Name)
@@ -162,15 +188,29 @@ func atomicValueKind(value actions.AtomicValue) actions.AtomicValueKind {
 }
 
 func atomicRealtimePublishes(config *actions.AtomicAddConfig, input actions.AtomicInput, record actions.AtomicRecord) ([]RealtimePublish, error) {
-	if config == nil || len(config.Publish) == 0 {
+	if config == nil {
+		return nil, nil
+	}
+	return atomicRealtimePublishesFor(config.Publish, input, record)
+}
+
+func atomicUpdateRealtimePublishes(config *actions.AtomicUpdateConfig, input actions.AtomicInput, record actions.AtomicRecord) ([]RealtimePublish, error) {
+	if config == nil {
+		return nil, nil
+	}
+	return atomicRealtimePublishesFor(config.Publish, input, record)
+}
+
+func atomicRealtimePublishesFor(configuredPublishes []actions.AtomicRealtimePublishConfig, input actions.AtomicInput, record actions.AtomicRecord) ([]RealtimePublish, error) {
+	if len(configuredPublishes) == 0 {
 		return nil, nil
 	}
 	result := make(map[string]actions.AtomicValue, len(record.Fields))
 	for _, field := range record.Fields {
 		result[field.Name] = field.Value
 	}
-	publishes := make([]RealtimePublish, 0, len(config.Publish))
-	for index, configured := range config.Publish {
+	publishes := make([]RealtimePublish, 0, len(configuredPublishes))
+	for index, configured := range configuredPublishes {
 		if configured.Correlation == nil {
 			return nil, fmt.Errorf("atomic realtime publish %d requires correlation", index)
 		}
@@ -256,8 +296,8 @@ func atomicTypedValue(value actions.AtomicValue) (renderer.TypedValue, error) {
 	}
 }
 
-func (generator *Generator) publishAtomicRealtime(c *gin.Context, module *BaseModule, record actions.AtomicRecord, publishes []RealtimePublish) {
+func (generator *Generator) publishAtomicRealtime(c *gin.Context, module *BaseModule, action actions.ModuleActionName, record actions.AtomicRecord, publishes []RealtimePublish) {
 	for _, publish := range publishes {
-		generator.publishRealtimeEvent(c, module, actions.ModuleActionNameAdd, record, publish)
+		generator.publishRealtimeEvent(c, module, action, record, publish)
 	}
 }
