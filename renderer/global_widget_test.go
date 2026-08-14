@@ -33,6 +33,16 @@ func validGlobalWorkspace() GlobalWidget {
 					Source: widgetSelectionSource("id"),
 				}},
 			},
+			Commands: []WorkspaceCommand{{
+				ID:    "set_status",
+				Label: "workspace.command.set_status",
+				WorkspaceResource: WorkspaceResource{ActionResource: ActionResource{Module: "state_records", Action: "update"}, Bindings: []WidgetRequestBinding{
+					{Target: WidgetRequestBindingPathByKey, Source: WidgetValueSource{Literal: &TypedValue{Type: TypedValueString, String: "id"}}},
+					{Target: WidgetRequestBindingPathValue, Source: widgetSelectionSource("participant_id")},
+					{Target: WidgetRequestBindingBody, Field: "status", Source: WidgetValueSource{Literal: &TypedValue{Type: TypedValueString, String: "active"}}},
+				}},
+				Refresh: []WorkspaceRefreshTarget{WorkspaceRefreshMaster, WorkspaceRefreshDetail},
+			}},
 			Subscriptions: []WorkspaceSubscription{{
 				Module:      "detail_records",
 				Actions:     []string{"add", "update"},
@@ -57,6 +67,7 @@ func TestGlobalWidgetValidateAndSerialize(t *testing.T) {
     "summary":{"module":"summary_records","action":"list"},
     "master":{"module":"master_records","action":"list"},
     "detail":{"module":"detail_records","action":"list","bindings":[{"target":"filter","field":"parent_id","source":{"runtime":{"scope":"selection","field":"id"}}}]},
+    "commands":[{"id":"set_status","label":"workspace.command.set_status","module":"state_records","action":"update","bindings":[{"target":"path_by_key","source":{"literal":{"type":"string","string":"id"}}},{"target":"path_value","source":{"runtime":{"scope":"selection","field":"participant_id"}}},{"target":"body","field":"status","source":{"literal":{"type":"string","string":"active"}}}],"refresh":["master","detail"]}],
     "subscriptions":[{"module":"detail_records","actions":["add","update"],"correlation":{"event_field":"parent_id"},"refresh":["master","detail"]}]
   }
 }`, string(encoded))
@@ -111,13 +122,39 @@ func TestGlobalWidgetCloneDoesNotShareWorkspaceState(t *testing.T) {
 	cloned := LocalizeGlobalWidget(source, func(value string, key string) string { return value + key })
 	cloned.Workspace.Detail.Bindings[0].Source.Runtime.Field = "changed"
 	cloned.Workspace.Summary.Action = "view"
+	cloned.Workspace.Commands[0].Label = "changed"
+	cloned.Workspace.Commands[0].Bindings[2].Source.Literal.String = "disabled"
+	cloned.Workspace.Commands[0].Refresh[0] = WorkspaceRefreshDetail
 	cloned.Workspace.Subscriptions[0].Actions[0] = "delete"
 	cloned.Workspace.Subscriptions[0].Refresh[0] = WorkspaceRefreshDetail
 
 	require.Equal(t, "id", source.Workspace.Detail.Bindings[0].Source.Runtime.Field)
 	require.Equal(t, "list", source.Workspace.Summary.Action)
+	require.Equal(t, "workspace.command.set_status", source.Workspace.Commands[0].Label)
+	require.Equal(t, "active", source.Workspace.Commands[0].Bindings[2].Source.Literal.String)
+	require.Equal(t, WorkspaceRefreshMaster, source.Workspace.Commands[0].Refresh[0])
 	require.Equal(t, "add", source.Workspace.Subscriptions[0].Actions[0])
 	require.Equal(t, WorkspaceRefreshMaster, source.Workspace.Subscriptions[0].Refresh[0])
+}
+
+func TestLocalizeGlobalWidgetLocalizesCommandLabels(t *testing.T) {
+	source := validGlobalWorkspace()
+	localized := LocalizeGlobalWidget(source, func(value string, _ string) string {
+		return "translated:" + value
+	})
+
+	require.Equal(t, "translated:workspace.command.set_status", localized.Workspace.Commands[0].Label)
+	require.Equal(t, "workspace.command.set_status", source.Workspace.Commands[0].Label)
+}
+
+func TestGlobalWorkspaceCommandValidation(t *testing.T) {
+	widget := validGlobalWorkspace()
+	widget.Workspace.Commands = append(widget.Workspace.Commands, widget.Workspace.Commands[0])
+	require.EqualError(t, widget.Validate(), `renderer.GlobalWidget: workspace: command "set_status" is duplicated`)
+
+	widget = validGlobalWorkspace()
+	widget.Workspace.Commands[0].Refresh = nil
+	require.EqualError(t, widget.Validate(), `renderer.GlobalWidget: workspace: command 0: refresh targets are required`)
 }
 
 func TestGlobalWorkspaceAllowsOmittedSummary(t *testing.T) {

@@ -798,6 +798,30 @@ Media: &renderer.FieldMediaConfig{
           }
         ]
       },
+      "commands": [
+        {
+          "id": "set_status",
+          "label": "Set status",
+          "module": "state_records",
+          "action": "update",
+          "bindings": [
+            {
+              "target": "path_by_key",
+              "source": {"literal": {"type": "string", "string": "id"}}
+            },
+            {
+              "target": "path_value",
+              "source": {"runtime": {"scope": "selection", "field": "participant_id"}}
+            },
+            {
+              "target": "body",
+              "field": "status",
+              "source": {"literal": {"type": "string", "string": "active"}}
+            }
+          ],
+          "refresh": ["master", "detail"]
+        }
+      ],
       "subscriptions": [
         {
           "module": "detail_records",
@@ -820,7 +844,28 @@ Media: &renderer.FieldMediaConfig{
           "source": {"runtime": {"scope": "selection", "field": "id"}}
         }
       ]
-    }
+    },
+    "commands": [
+      {
+        "id": "set_status",
+        "request": {"method": "POST", "endpoint": "/api/workspace/state_records/:bykey/:value"},
+        "bindings": [
+          {
+            "target": "path_by_key",
+            "source": {"literal": {"type": "string", "string": "id"}}
+          },
+          {
+            "target": "path_value",
+            "source": {"runtime": {"scope": "selection", "field": "participant_id"}}
+          },
+          {
+            "target": "body",
+            "field": "status",
+            "source": {"literal": {"type": "string", "string": "active"}}
+          }
+        ]
+      }
+    ]
   }
 }
 ```
@@ -868,6 +913,42 @@ Widget: &actions.WidgetConfig{
                     }},
                 }},
             },
+            Commands: []renderer.WorkspaceCommand{{
+                ID:    "set_status",
+                Label: "workspace.command.set_status",
+                WorkspaceResource: renderer.WorkspaceResource{
+                    ActionResource: renderer.ActionResource{
+                        Module: "state_records",
+                        Action: "update",
+                    },
+                    Bindings: []renderer.WidgetRequestBinding{
+                        {
+                            Target: renderer.WidgetRequestBindingPathByKey,
+                            Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{
+                                Type: renderer.TypedValueString, String: "id",
+                            }},
+                        },
+                        {
+                            Target: renderer.WidgetRequestBindingPathValue,
+                            Source: renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{
+                                Scope: renderer.WidgetRuntimeValueSourceSelection,
+                                Field: "participant_id",
+                            }},
+                        },
+                        {
+                            Target: renderer.WidgetRequestBindingBody,
+                            Field:  "status",
+                            Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{
+                                Type: renderer.TypedValueString, String: "active",
+                            }},
+                        },
+                    },
+                },
+                Refresh: []renderer.WorkspaceRefreshTarget{
+                    renderer.WorkspaceRefreshMaster,
+                    renderer.WorkspaceRefreshDetail,
+                },
+            }},
         },
     },
 }
@@ -888,11 +969,14 @@ sort, field schema или presentation.
 master resource. Binding не содержит произвольные `name`/`value` строки. Его
 `source` - закрытый union: `literal` с `TypedValue` либо `runtime`. Сейчас
 runtime scope содержит только `current_user.id` и поле `selection`, объявленное
-workspace. Generator проверяет scope, поле и тип значения.
+workspace. `selection` указывает поле, идентифицирующее выбранную строку;
+runtime source может читать любой скалярный field этой строки, возвращаемый
+master action. Generator проверяет scope, поле и тип значения.
 
 `target` также закрыт. `path_by_key` и `path_value` заполняют два обязательных
-placeholder view action; `path_by_key` принимает только строковый literal из
-`ViewModuleAction.By`. `filter` выводит query name как `filter[field]`.
+placeholder view/update/delete action; `path_by_key` принимает только строковый
+literal из `By`. `filter` выводит query name как `filter[field]`. `body`
+заполняет поле JSON body и требует явно объявленного field целевого модуля.
 Доступность каждого filter binding generator определяет при построении config
 через `effectiveListFilters`, поэтому учитываются `Filter`, `FilterFunc`,
 `FilterCondition` и virtual filters. Если хотя бы один binding недоступен в
@@ -908,6 +992,16 @@ placeholder view action; `path_by_key` принимает только стро�
 `load.resource` содержит generated request и optional typed bindings. Это
 позволяет использовать тот же контракт для shell-level record/form/list без
 отдельного frontend renderer.
+
+`workspace.commands` описывает операции над текущим выбором. Каждая команда
+имеет стабильный `id`, translation key `label`, ссылку на стандартный `add`,
+`update` или `delete` action, typed bindings и обязательный список `refresh`.
+URL и method не задаются producer-ом: generator выводит их в
+`load.commands[]`. У `add` разрешены только `body` bindings, у `update` -
+`path_by_key`, `path_value` и один или несколько `body`, у `delete` - только
+два path bindings. Команда, недоступная текущей роли или текущему набору
+write-fields, удаляется одновременно из `workspace.commands` и
+`load.commands`; сам workspace продолжает работать.
 
 ### Цель Действия И Realtime
 

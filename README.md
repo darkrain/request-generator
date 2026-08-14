@@ -615,6 +615,16 @@ Actions: []actions.ModuleAction{
 связанного action. При realtime refresh допустимы `summary`, `master` и
 `detail`.
 
+`WorkspaceWidget.Commands` задаёт типизированные write-команды для текущей
+строки master. Команда ссылается на стандартный `add`, `update` или `delete`
+action, содержит только typed bindings и refresh targets; generator сам
+выводит method и endpoint в `widgets[].load.commands`. Для `update` обязательны
+`path_by_key`, `path_value` и хотя бы один `body` binding. Runtime source
+`selection` может использовать любой скалярный field, возвращаемый
+master-action для выбранной строки, а generator проверяет существование и тип
+каждого значения. Недоступные роли или write-fields исключают только
+соответствующую команду, не весь widget.
+
 ### Этап 5. Описание полей (ModuleField)
 
 Каждое поле описывает одну колонку/виртуальное поле модуля:
