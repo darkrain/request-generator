@@ -268,12 +268,33 @@ func TestWidgetLoadCloneDoesNotShareCommandInputState(t *testing.T) {
 		Input: &WorkspaceCommandInputLoad{Definition: WidgetResourceLoad{
 			Request: APIAction{Method: "GET", Endpoint: "/api/entries/defrec/"},
 		}},
+		AfterSuccess: &ActionResult{Widget: &WidgetTarget{ID: "other", State: WidgetTargetOpen}},
 	}}}
 
 	cloned := load.Clone()
 	cloned.Commands[0].Input.Definition.Request.Endpoint = "/changed"
+	cloned.Commands[0].AfterSuccess.Widget.ID = "changed-widget"
 
 	require.Equal(t, "/api/entries/defrec/", load.Commands[0].Input.Definition.Request.Endpoint)
+	require.Equal(t, "other", load.Commands[0].AfterSuccess.Widget.ID)
+}
+
+func TestWorkspaceCommandAllowsTypedAfterSuccess(t *testing.T) {
+	command := WorkspaceCommand{
+		ID:    "open",
+		Label: "workspace.command.open",
+		AfterSuccess: &ActionResult{Widget: &WidgetTarget{
+			ID:    "chat-workspace",
+			State: WidgetTargetOpen,
+		}},
+		WorkspaceResource: WorkspaceResource{ActionResource: ActionResource{Module: "entries", Action: "update"}},
+		Refresh:           []WorkspaceRefreshTarget{WorkspaceRefreshMaster},
+	}
+	require.NoError(t, command.Validate())
+
+	command.AfterSuccess.Widget.State = WidgetTargetClose
+	command.AfterSuccess.Widget.Selection = &WidgetSelectionResultBinding{Source: ActionResultSource{Resource: ActionResource{Module: "entries", Action: "update"}, Field: ActionResultFieldValue}}
+	require.EqualError(t, command.Validate(), "after success: widget: closed widget cannot set selection")
 }
 
 func TestGlobalWorkspaceAllowsOmittedSummary(t *testing.T) {

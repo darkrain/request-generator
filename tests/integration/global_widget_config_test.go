@@ -164,6 +164,14 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 							}, {
 								ID:    "create_detail",
 								Label: "workspace.command.create_detail",
+								AfterSuccess: &renderer.ActionResult{Widget: &renderer.WidgetTarget{
+									ID:    "work-area",
+									State: renderer.WidgetTargetOpen,
+									Selection: &renderer.WidgetSelectionResultBinding{Source: renderer.ActionResultSource{
+										Resource: renderer.ActionResource{Module: "detail_records", Action: "add"},
+										Field:    renderer.ActionResultFieldValue,
+									}},
+								}},
 								Input: &renderer.WorkspaceCommandInput{Fields: []string{"text"}},
 								WorkspaceResource: renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "detail_records", Action: "add"}, Bindings: []renderer.WidgetRequestBinding{
 									{Target: renderer.WidgetRequestBindingBody, Field: "parent_id", Source: widgetSelectionSource("id")},
@@ -281,6 +289,9 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 	require.Equal(t, http.MethodPut, workArea.Load.Commands[1].Request.Method)
 	require.Equal(t, "/api/workspace/detail_records", workArea.Load.Commands[1].Request.Endpoint)
 	require.NotNil(t, workArea.Load.Commands[1].Input)
+	require.NotNil(t, workArea.Load.Commands[1].AfterSuccess)
+	require.NotNil(t, workArea.Load.Commands[1].AfterSuccess.Widget)
+	require.Equal(t, "work-area", workArea.Load.Commands[1].AfterSuccess.Widget.ID)
 	require.Equal(t, http.MethodGet, workArea.Load.Commands[1].Input.Definition.Request.Method)
 	require.Equal(t, "/api/workspace/detail_records/defrec/", workArea.Load.Commands[1].Input.Definition.Request.Endpoint)
 
