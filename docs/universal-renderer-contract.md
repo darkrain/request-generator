@@ -1331,14 +1331,15 @@ request-generator.
 |------|----------|
 | `list_page.layout.type`, `record_page.layout.type` | `one_column`, `two_column`, `three_column` |
 | `list_page.layout.max_width` | `none`, `sm`, `md`, `lg`, `xl`, `full` |
-| `list_page.grid.mode` | `table`, `cards` |
+| `list_page.grid.mode` | `table`, `cards`, `list` |
 | `pagination.mode` | `server`, `client` |
-| `card_schema.variant` | `default`, `media`, `compact` |
+| `card_schema.variant` | `default`, `media`, `compact`, `activity` |
 | `card_schema.surface_variant` | `default`, `primary`, `secondary` |
 | `card_schema.surface_effect` | `none`, `flat`, `elevated` |
 | `card_schema.action_layout` | `inline`, `edge_fill` |
 | `card_schema.media.ratio` | `square`, `portrait`, `landscape`, `wide` |
 | `card_schema.media.size` | `thumb`, `card`, `hero` |
+| `card_schema.meta.format` | `relative_time` |
 | `form_page.layout` | `one_column`, `two_column`, `three_column` |
 | `form_page.sections[].block.type` | `none`, `panel`, `card` |
 | `form_page.sections[].block.variant` | `default`, `compact` |
@@ -1428,15 +1429,50 @@ Pagination: `count`, `size`, `page`.
   "action_size": "sm",
   "action_layout": "edge_fill",
   "primary_action": "open",
+  "icon": {
+    "field": "kind",
+    "icon_map": {"message": "chat"},
+    "tone_map": {"message": "success"},
+    "fallback": "info"
+  },
   "media": {"field": "avatar", "ratio": "portrait", "size": "card"},
   "title": {"field": "name"},
   "subtitle": {"template": "@{{nick}}"},
+  "meta": {"field": "created_at", "format": "relative_time"},
   "description": {"field": "description"},
   "status": {"id": "status", "field": "status", "type": "status"},
   "badges": [],
   "stats": [],
   "actions": []
 }
+```
+
+`variant: "activity"` предназначен для вертикальных журналов событий и истории
+без привязки к доменному модулю. `icon` выбирает registry icon и tone по значению
+поля строки. `meta` является дополнительным коротким текстом; `relative_time`
+разрешён для date-like значения и форматируется UI kit согласно locale браузера.
+
+`list_page.group_by` группирует уже полученные, server-sorted rows только для
+визуального вывода. Он не меняет SQL query, filter, sort или pagination:
+
+```json
+{
+  "group_by": {
+    "field": "created_at",
+    "type": "date",
+    "today_label": "Today",
+    "yesterday_label": "Yesterday",
+    "this_week_label": "This week",
+    "earlier_label": "Earlier"
+  }
+}
+```
+
+Для enum badge producer может задать локализованный `label_map`; UI не обязан
+знать значения доменного enum:
+
+```json
+{"field":"priority","label_map":{"high":"High","low":"Low"}}
 ```
 
 `action_layout` определяет раскладку `actions`: пустое значение и `inline` используют обычный ряд. При `edge_fill` действия сохраняют объявленный порядок, а свободное место заполняет только действие без `icon_only`. `block` не меняет поведение этого поля.

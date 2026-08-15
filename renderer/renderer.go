@@ -326,6 +326,9 @@ func validateListPage(scope string, page *ListPage) error {
 	if page == nil {
 		return nil
 	}
+	if err := page.GroupBy.Validate(); err != nil {
+		return fmt.Errorf("renderer.Universal: %s: %w", scope, err)
+	}
 	if err := validateActions(scope, page.Actions); err != nil {
 		return err
 	}
@@ -734,11 +737,36 @@ type ListPage struct {
 	Layout     *Layout                `json:"layout,omitempty"`
 	Filters    *Filters               `json:"filters,omitempty"`
 	Summary    *Summary               `json:"summary,omitempty"`
+	GroupBy    *ListGroupBy           `json:"group_by,omitempty"`
 	Grid       *Grid                  `json:"grid,omitempty"`
 	Pagination *Pagination            `json:"pagination,omitempty"`
 	CardSchema *CardSchema            `json:"card_schema,omitempty"`
 	Context    map[string]interface{} `json:"context,omitempty"`
 	Actions    []Action               `json:"actions,omitempty"`
+}
+
+// ListGroupBy controls presentation-only grouping of already server-sorted list rows.
+// It never changes list filtering, ordering or pagination semantics.
+type ListGroupBy struct {
+	Field          string          `json:"field,omitempty"`
+	Type           ListGroupByType `json:"type,omitempty"`
+	TodayLabel     string          `json:"today_label,omitempty"`
+	YesterdayLabel string          `json:"yesterday_label,omitempty"`
+	ThisWeekLabel  string          `json:"this_week_label,omitempty"`
+	EarlierLabel   string          `json:"earlier_label,omitempty"`
+}
+
+func (group *ListGroupBy) Validate() error {
+	if group == nil {
+		return nil
+	}
+	if group.Field == "" {
+		return fmt.Errorf("renderer.ListGroupBy: field is required")
+	}
+	if group.Type != ListGroupByDate {
+		return fmt.Errorf("renderer.ListGroupBy: unsupported type %q", group.Type)
+	}
+	return nil
 }
 
 type Summary struct {
@@ -766,9 +794,11 @@ type CardSchema struct {
 	DeleteActionSize SizeToken        `json:"delete_action_size,omitempty"`
 	ActionLayout     CardActionLayout `json:"action_layout,omitempty"`
 	PrimaryAction    string           `json:"primary_action,omitempty"`
+	Icon             *IconBinding     `json:"icon,omitempty"`
 	Media            *Media           `json:"media,omitempty"`
 	Title            *TextBinding     `json:"title,omitempty"`
 	Subtitle         *TextBinding     `json:"subtitle,omitempty"`
+	Meta             *TextBinding     `json:"meta,omitempty"`
 	SubtitleTone     string           `json:"subtitle_tone,omitempty"`
 	Description      *TextBinding     `json:"description,omitempty"`
 	Status           *StatusBinding   `json:"status,omitempty"`
@@ -783,10 +813,28 @@ func (schema *CardSchema) Validate() error {
 	}
 	switch schema.ActionLayout {
 	case "", CardActionLayoutInline, CardActionLayoutEdgeFill:
-		return nil
+		// Valid action layouts need no additional handling.
 	default:
 		return fmt.Errorf("renderer.CardSchema: unsupported action layout %q", schema.ActionLayout)
 	}
+	for _, binding := range []*TextBinding{schema.Title, schema.Subtitle, schema.Meta, schema.Description} {
+		if err := binding.Validate(); err != nil {
+			return err
+		}
+	}
+	if schema.Icon != nil && schema.Icon.Field == "" {
+		return fmt.Errorf("renderer.CardSchema: icon field is required")
+	}
+	return nil
+}
+
+// IconBinding resolves an icon and its visual tone from a row value. Maps are
+// presentation metadata; business values remain in the row itself.
+type IconBinding struct {
+	Field    string            `json:"field,omitempty"`
+	IconMap  map[string]string `json:"icon_map,omitempty"`
+	ToneMap  map[string]string `json:"tone_map,omitempty"`
+	Fallback string            `json:"fallback,omitempty"`
 }
 
 type Media struct {
@@ -905,8 +953,21 @@ func (cropper *MediaCropperConfig) Validate() error {
 }
 
 type TextBinding struct {
-	Field    string `json:"field,omitempty"`
-	Template string `json:"template,omitempty"`
+	Field    string     `json:"field,omitempty"`
+	Template string     `json:"template,omitempty"`
+	Format   TextFormat `json:"format,omitempty"`
+}
+
+func (binding *TextBinding) Validate() error {
+	if binding == nil {
+		return nil
+	}
+	switch binding.Format {
+	case "", TextFormatRelativeTime:
+		return nil
+	default:
+		return fmt.Errorf("renderer.TextBinding: unsupported format %q", binding.Format)
+	}
 }
 
 type StatusBinding struct {
@@ -930,6 +991,7 @@ type Badge struct {
 	Placement string            `json:"placement,omitempty"`
 	Label     string            `json:"label,omitempty"`
 	LabelKey  string            `json:"label_key,omitempty"`
+	LabelMap  map[string]string `json:"label_map,omitempty"`
 	Icon      string            `json:"icon,omitempty"`
 	Size      SizeToken         `json:"size,omitempty"`
 	Tone      string            `json:"tone,omitempty"`

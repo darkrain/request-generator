@@ -18,6 +18,7 @@ func cloneListPage(v *ListPage) *ListPage {
 	cp.Layout = cloneLayout(v.Layout)
 	cp.Filters = cloneFilters(v.Filters)
 	cp.Summary = cloneSummary(v.Summary)
+	cp.GroupBy = cloneListGroupBy(v.GroupBy)
 	cp.Grid = cloneGrid(v.Grid)
 	cp.Pagination = clonePagination(v.Pagination)
 	cp.CardSchema = cloneCardSchema(v.CardSchema)
@@ -252,19 +253,39 @@ func cloneSummary(v *Summary) *Summary {
 	return &cp
 }
 
+func cloneListGroupBy(v *ListGroupBy) *ListGroupBy {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	return &cp
+}
+
 func cloneCardSchema(v *CardSchema) *CardSchema {
 	if v == nil {
 		return nil
 	}
 	cp := *v
 	cp.Media = cloneMedia(v.Media)
+	cp.Icon = cloneIconBinding(v.Icon)
 	cp.Title = cloneTextBinding(v.Title)
 	cp.Subtitle = cloneTextBinding(v.Subtitle)
+	cp.Meta = cloneTextBinding(v.Meta)
 	cp.Description = cloneTextBinding(v.Description)
 	cp.Status = cloneStatusBinding(v.Status)
 	cp.Badges = cloneBadges(v.Badges)
 	cp.Stats = cloneBadges(v.Stats)
 	cp.Actions = cloneActions(v.Actions)
+	return &cp
+}
+
+func cloneIconBinding(v *IconBinding) *IconBinding {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.IconMap = cloneMap(v.IconMap)
+	cp.ToneMap = cloneMap(v.ToneMap)
 	return &cp
 }
 
@@ -295,6 +316,7 @@ func cloneBadges(values []Badge) []Badge {
 		out[i].Value = cloneTextBinding(v.Value)
 		out[i].Marker = clonePtr(v.Marker)
 		out[i].ToneMap = cloneMap(v.ToneMap)
+		out[i].LabelMap = cloneMap(v.LabelMap)
 		out[i].Then = cloneBadgeState(v.Then)
 		out[i].Else = cloneBadgeState(v.Else)
 	}
