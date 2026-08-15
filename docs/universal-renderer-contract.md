@@ -272,6 +272,13 @@ Consumer выполняет `load.request` с bindings, использует п�
 `form_page`, `fields`, `item` и `form_page.actions` без domain-specific
 веток. Секция с недоступным target action не попадает в response.
 
+### Поле времени
+
+`form_type: "time"` представляет значение времени суток в формате `HH:MM`.
+Для PostgreSQL `TIME` module использует `fields.TimeOfDayConverter` на записи
+и `fields.TimeOfDayResultValue` на чтении: UI не получает техническую дату,
+которую драйвер использует при сканировании значения `TIME`.
+
 ### Field Matrix
 
 `field.matrix` задает раскладку уже описанных typed полей формы. Matrix не

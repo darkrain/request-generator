@@ -92,6 +92,7 @@ type ModuleFieldFormType string
 
 const (
 	ModuleFieldFormTypeText        ModuleFieldFormType = "text"
+	ModuleFieldFormTypeTime        ModuleFieldFormType = "time"
 	ModuleFieldFormTypeNumber      ModuleFieldFormType = "number"
 	ModuleFieldFormTypeTextArea    ModuleFieldFormType = "textarea"
 	ModuleFieldFormTypeSelect      ModuleFieldFormType = "select"
@@ -106,6 +107,8 @@ func ModuleFieldFormTypeOf(value string) (ModuleFieldFormType, error) {
 	switch value {
 	case string(ModuleFieldFormTypeText):
 		return ModuleFieldFormTypeMap, nil
+	case string(ModuleFieldFormTypeTime):
+		return ModuleFieldFormTypeTime, nil
 	case string(ModuleFieldFormTypeNumber):
 		return ModuleFieldFormTypeNumber, nil
 	case string(ModuleFieldFormTypeTextArea):
