@@ -124,6 +124,7 @@ type GridMode string
 const (
 	GridModeTable GridMode = "table"
 	GridModeCards GridMode = "cards"
+	GridModeList  GridMode = "list"
 )
 
 type PaginationMode string
@@ -136,9 +137,22 @@ const (
 type CardVariant string
 
 const (
-	CardVariantDefault CardVariant = "default"
-	CardVariantMedia   CardVariant = "media"
-	CardVariantCompact CardVariant = "compact"
+	CardVariantDefault  CardVariant = "default"
+	CardVariantMedia    CardVariant = "media"
+	CardVariantCompact  CardVariant = "compact"
+	CardVariantActivity CardVariant = "activity"
+)
+
+type ListGroupByType string
+
+const (
+	ListGroupByDate ListGroupByType = "date"
+)
+
+type TextFormat string
+
+const (
+	TextFormatRelativeTime TextFormat = "relative_time"
 )
 
 type SurfaceVariant string

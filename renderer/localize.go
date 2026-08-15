@@ -96,6 +96,9 @@ func (localizer textLocalizer) localizeListPage(page *ListPage) {
 	if page.Summary != nil {
 		localizer.localizeTextFields(&page.Summary.Title, &page.Summary.TitleFallback)
 	}
+	if page.GroupBy != nil {
+		localizer.localizeTextFields(&page.GroupBy.TodayLabel, &page.GroupBy.YesterdayLabel, &page.GroupBy.ThisWeekLabel, &page.GroupBy.EarlierLabel)
+	}
 	if page.CardSchema != nil {
 		localizer.localizeCardSchema(page.CardSchema)
 	}
@@ -165,6 +168,9 @@ func (localizer textLocalizer) localizeCardSchema(schema *CardSchema) {
 func (localizer textLocalizer) localizeBadge(badge *Badge) {
 	badge.Label = localizer.localizeRendererText(badge.Label, badge.LabelKey)
 	badge.LabelKey = ""
+	for value, label := range badge.LabelMap {
+		badge.LabelMap[value] = localizer.localizeRendererText(label, "")
+	}
 	if badge.Then != nil {
 		badge.Then.Label = localizer.localizeRendererText(badge.Then.Label, badge.Then.LabelKey)
 		badge.Then.LabelKey = ""
