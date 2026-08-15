@@ -12,6 +12,7 @@ import (
 	"github.com/darkrain/request-generator/renderer"
 	"github.com/darkrain/request-generator/response"
 	"github.com/gin-gonic/gin"
+	pg "github.com/go-jet/jet/v2/postgres"
 )
 
 // ConfigResponse структурирует ответ эндпоинта /api/config
@@ -766,7 +767,7 @@ func (generator *Generator) buildViewChild(module *BaseModule, render renderer.U
 		Title:    a.Label,
 		Renderer: viewRouteIdentity(render, viewActionPageType(a)),
 		PageType: viewRoutePageType(render, viewActionPageType(a)),
-		Query:    standardActionRouteQuery(module, a),
+		Query:    standardRecordActionRouteQuery(module, a, a.By),
 	}, true
 }
 
@@ -779,8 +780,33 @@ func (generator *Generator) buildUpdateChild(module *BaseModule, render renderer
 		Title:    a.Label,
 		Renderer: render.FormIdentity(),
 		PageType: render.FormRoutePageType(),
-		Query:    standardActionRouteQuery(module, a),
+		Query:    standardRecordActionRouteQuery(module, a, a.By),
 	}, true
+}
+
+// standardRecordActionRouteQuery binds the generated :id child route to the
+// standard selector placeholders. The first allowed selector is used, except
+// that a module primary key wins when it is explicitly allowed.
+func standardRecordActionRouteQuery(module *BaseModule, action actions.ModuleAction, by []pg.Column) *RouteQuery {
+	query := standardActionRouteQuery(module, action)
+	if query == nil || len(by) == 0 {
+		return query
+	}
+	byKey := by[0].Name()
+	for _, column := range by {
+		if column.Name() == module.PrimaryKey.Name() {
+			byKey = column.Name()
+			break
+		}
+	}
+	params := make(map[string]interface{}, len(query.Params)+2)
+	for key, value := range query.Params {
+		params[key] = value
+	}
+	params["bykey"] = byKey
+	params["value"] = "{id}"
+	query.Params = params
+	return query
 }
 
 func (generator *Generator) buildAddChild(module *BaseModule, render renderer.Universal, a actions.AddModuleAction, role string) (RouteConfig, bool) {
