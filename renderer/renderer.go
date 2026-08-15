@@ -1023,6 +1023,7 @@ func validateFormWorkflow(page *FormPage) error {
 type FormSection struct {
 	ID           string                 `json:"id,omitempty"`
 	Title        string                 `json:"title,omitempty"`
+	StepHint     string                 `json:"step_hint,omitempty"`
 	PanelTitle   string                 `json:"panel_title,omitempty"`
 	Subtitle     string                 `json:"subtitle,omitempty"`
 	Renderer     RendererKey            `json:"renderer,omitempty"`
