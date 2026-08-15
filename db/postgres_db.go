@@ -381,6 +381,12 @@ func (db *DB) List(
 			if !ok || definition.Column == nil {
 				continue
 			}
+			// A logical filter key may point at a joined column through the typed
+			// registry. Preserve an explicitly dotted request target, otherwise
+			// qualify the predicate with the declared column table.
+			if len(parts) == 1 {
+				tblRef = columnTableRef(definition.Column, tblRef)
+			}
 			colName = definition.Column.Name()
 			ft := definition.Type
 			fmt2 := definition.FormType
