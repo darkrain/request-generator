@@ -325,6 +325,16 @@ func cloneIconBinding(v *IconBinding) *IconBinding {
 	cp := *v
 	cp.IconMap = cloneMap(v.IconMap)
 	cp.ToneMap = cloneMap(v.ToneMap)
+	cp.Marker = cloneIconMarker(v.Marker)
+	return &cp
+}
+
+func cloneIconMarker(v *IconMarker) *IconMarker {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.VisibleIf = cloneCondition(v.VisibleIf)
 	return &cp
 }
 
@@ -356,6 +366,7 @@ func cloneBadges(values []Badge) []Badge {
 		out[i].Marker = clonePtr(v.Marker)
 		out[i].ToneMap = cloneMap(v.ToneMap)
 		out[i].LabelMap = cloneMap(v.LabelMap)
+		out[i].VisibleIf = cloneCondition(v.VisibleIf)
 		out[i].Then = cloneBadgeState(v.Then)
 		out[i].Else = cloneBadgeState(v.Else)
 	}

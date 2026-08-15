@@ -1525,7 +1525,11 @@ Pagination: `count`, `size`, `page`.
     "field": "kind",
     "icon_map": {"message": "chat"},
     "tone_map": {"message": "success"},
-    "fallback": "info"
+    "fallback": "info",
+    "marker": {
+      "visible_if": {"path": "record.unread", "truthy": true},
+      "tone": "cyan"
+    }
   },
   "media": {"field": "avatar", "ratio": "portrait", "size": "card"},
   "title": {"field": "name"},
@@ -1541,8 +1545,14 @@ Pagination: `count`, `size`, `page`.
 
 `variant: "activity"` предназначен для вертикальных журналов событий и истории
 без привязки к доменному модулю. `icon` выбирает registry icon и tone по значению
-поля строки. `meta` является дополнительным коротким текстом; `relative_time`
+поля строки. `icon.marker` задаёт нетекстовый индикатор и его условие видимости
+относительно текущей строки. `meta` является дополнительным коротким текстом; `relative_time`
 разрешён для date-like значения и форматируется UI kit согласно locale браузера.
+
+`badges[].visible_if` использует тот же `Condition` и позволяет producer-у
+показывать badge только для записей, где он несёт полезный визуальный сигнал.
+`badges[].variant` передаёт нейтральный renderer-token конкретного варианта
+отображения; его интерпретацию определяет UI kit.
 
 `list_page.group_by` группирует уже полученные, server-sorted rows только для
 визуального вывода. Он не меняет SQL query, filter, sort или pagination:

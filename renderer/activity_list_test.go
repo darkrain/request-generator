@@ -6,6 +6,7 @@ import (
 )
 
 func TestActivityListPresentationIsTypedAndLocalized(t *testing.T) {
+	markerVisible := true
 	source := Universal{List: &ListPage{
 		GroupBy: &ListGroupBy{
 			Field:          "created_at",
@@ -20,11 +21,14 @@ func TestActivityListPresentationIsTypedAndLocalized(t *testing.T) {
 				Field:   "kind",
 				IconMap: map[string]string{"message": "chat"},
 				ToneMap: map[string]string{"message": "success"},
+				Marker:  &IconMarker{VisibleIf: &Condition{Path: "record.read", Falsy: &markerVisible}, Tone: "cyan"},
 			},
 			Meta: &TextBinding{Field: "created_at", Format: TextFormatRelativeTime},
 			Badges: []Badge{{
-				Field:    "priority",
-				LabelMap: map[string]string{"high": "priority.high"},
+				Field:     "priority",
+				LabelMap:  map[string]string{"high": "priority.high"},
+				Variant:   "priority",
+				VisibleIf: &Condition{Path: "record.priority", In: []interface{}{"critical", "high"}},
 			}},
 		},
 	}}
@@ -44,6 +48,14 @@ func TestActivityListPresentationIsTypedAndLocalized(t *testing.T) {
 	cloned.List.CardSchema.Icon.IconMap["message"] = "bell"
 	if source.List.CardSchema.Icon.IconMap["message"] != "chat" {
 		t.Fatal("Clone() shares icon map")
+	}
+	cloned.List.CardSchema.Icon.Marker.Tone = "pink"
+	if source.List.CardSchema.Icon.Marker.Tone != "cyan" {
+		t.Fatal("Clone() shares icon marker")
+	}
+	cloned.List.CardSchema.Badges[0].VisibleIf.Path = "record.other"
+	if source.List.CardSchema.Badges[0].VisibleIf.Path != "record.priority" {
+		t.Fatal("Clone() shares badge visibility condition")
 	}
 
 	payload, err := json.Marshal(source)

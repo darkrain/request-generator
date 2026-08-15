@@ -916,6 +916,14 @@ type IconBinding struct {
 	IconMap  map[string]string `json:"icon_map,omitempty"`
 	ToneMap  map[string]string `json:"tone_map,omitempty"`
 	Fallback string            `json:"fallback,omitempty"`
+	Marker   *IconMarker       `json:"marker,omitempty"`
+}
+
+// IconMarker is a small non-textual state indicator displayed on a bound icon.
+// Its visibility is defined by the producer-owned record condition.
+type IconMarker struct {
+	VisibleIf *Condition `json:"visible_if,omitempty"`
+	Tone      string     `json:"tone,omitempty"`
 }
 
 type Media struct {
@@ -1065,6 +1073,7 @@ type StatusBinding struct {
 type Badge struct {
 	ID        string            `json:"id,omitempty"`
 	Type      string            `json:"type,omitempty"`
+	Variant   string            `json:"variant,omitempty"`
 	Field     string            `json:"field,omitempty"`
 	IfField   string            `json:"if_field,omitempty"`
 	Value     *TextBinding      `json:"value,omitempty"`
@@ -1078,6 +1087,7 @@ type Badge struct {
 	Tone      string            `json:"tone,omitempty"`
 	ToneMap   map[string]string `json:"tone_map,omitempty"`
 	Marker    *bool             `json:"marker,omitempty"`
+	VisibleIf *Condition        `json:"visible_if,omitempty"`
 	Then      *BadgeState       `json:"then,omitempty"`
 	Else      *BadgeState       `json:"else,omitempty"`
 }
