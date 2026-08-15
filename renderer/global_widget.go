@@ -190,6 +190,9 @@ type WorkspaceResource struct {
 // typed binding; a producer never supplies a URL or an untyped request body.
 type WorkspaceCommand struct {
 	ID string `json:"id"`
+	// Trigger runs the command from a declared workspace lifecycle event rather
+	// than rendering it as an interactive control.
+	Trigger WorkspaceCommandTrigger `json:"trigger,omitempty"`
 	// Label is a producer translation key and is localized in /api/config.
 	Label string `json:"label"`
 	// Presentation shares the visual contract of normal renderer actions. It
@@ -218,6 +221,14 @@ func (command WorkspaceCommand) Validate() error {
 	if command.Label == "" {
 		return fmt.Errorf("label is required")
 	}
+	switch command.Trigger {
+	case "", WorkspaceCommandTriggerSelectionOpen:
+	default:
+		return fmt.Errorf("trigger %q is unsupported", command.Trigger)
+	}
+	if command.Trigger == WorkspaceCommandTriggerSelectionOpen && command.RequireSelection != nil && !*command.RequireSelection {
+		return fmt.Errorf("selection_open trigger requires selection")
+	}
 	if err := command.Input.Validate(command.Bindings); err != nil {
 		return fmt.Errorf("input: %w", err)
 	}
@@ -241,6 +252,13 @@ func (command WorkspaceCommand) Validate() error {
 	}
 	return ValidateWorkspaceRefreshTargets(command.Refresh)
 }
+
+// WorkspaceCommandTrigger controls when a workspace command runs.
+type WorkspaceCommandTrigger string
+
+const (
+	WorkspaceCommandTriggerSelectionOpen WorkspaceCommandTrigger = "selection_open"
+)
 
 // WorkspaceCommandInput declares values that the workspace may collect for a
 // standard add command. The module defrec endpoint remains the single source
