@@ -280,6 +280,22 @@ func TestWorkspaceCommandWithoutSelectionRejectsSelectionBinding(t *testing.T) {
 	require.EqualError(t, command.Validate(), "does not require selection but binding reads selection")
 }
 
+func TestWorkspaceCommandRejectsSelectionTriggerWithoutSelection(t *testing.T) {
+	requireSelection := false
+	command := WorkspaceCommand{
+		ID:               "mark-all",
+		Label:            "workspace.command.mark_all",
+		Trigger:          WorkspaceCommandTriggerSelectionOpen,
+		RequireSelection: &requireSelection,
+		WorkspaceResource: WorkspaceResource{ActionResource: ActionResource{
+			Module: "entries",
+			Action: "update",
+		}},
+		Refresh: []WorkspaceRefreshTarget{WorkspaceRefreshMaster},
+	}
+	require.EqualError(t, command.Validate(), "selection_open trigger requires selection")
+}
+
 func TestWorkspaceSubscriptionWithoutCorrelationIsValid(t *testing.T) {
 	subscription := WorkspaceSubscription{
 		Module:  "entries",

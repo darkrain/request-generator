@@ -255,6 +255,8 @@ func (command WorkspaceCommand) Validate() error {
 	}
 	if command.Trigger != "" && command.Input != nil {
 		return fmt.Errorf("triggered command must not declare input")
+	if command.Trigger == WorkspaceCommandTriggerSelectionOpen && command.RequireSelection != nil && !*command.RequireSelection {
+		return fmt.Errorf("selection_open trigger requires selection")
 	}
 	if err := command.Input.Validate(command.Bindings); err != nil {
 		return fmt.Errorf("input: %w", err)
@@ -299,7 +301,6 @@ func (trigger WorkspaceCommandTrigger) Validate() error {
 		return fmt.Errorf("unsupported value %q", trigger)
 	}
 }
-
 // WorkspaceCommandInput declares values that the workspace may collect for a
 // standard add command. The module defrec endpoint remains the single source
 // of field metadata; Fields is only its allowlist.
