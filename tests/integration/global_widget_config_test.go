@@ -190,7 +190,7 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 							Subscriptions: []renderer.WorkspaceSubscription{{
 								Module:      "detail_records",
 								Actions:     []string{"add", "update"},
-								Correlation: renderer.WorkspaceCorrelationBinding{EventField: "parent_id"},
+								Correlation: &renderer.WorkspaceCorrelationBinding{EventField: "parent_id"},
 								Refresh:     []renderer.WorkspaceRefreshTarget{renderer.WorkspaceRefreshMaster, renderer.WorkspaceRefreshDetail},
 							}},
 						},

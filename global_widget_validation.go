@@ -114,7 +114,13 @@ func (generator *Generator) validateWorkspaceWidget(id string, workspace rendere
 				return fmt.Errorf("widget %q subscription %q references unknown action %q", id, subscription.Module, name)
 			}
 			event := actions.RealtimeEvent(action)
-			if event == nil || event.CorrelationField == "" {
+			if event == nil {
+				return fmt.Errorf("widget %q subscription %q action %q does not declare realtime event", id, subscription.Module, name)
+			}
+			if subscription.Correlation == nil {
+				continue
+			}
+			if event.CorrelationField == "" {
 				return fmt.Errorf("widget %q subscription %q action %q does not declare realtime correlation", id, subscription.Module, name)
 			}
 			if event.CorrelationField != subscription.Correlation.EventField {
