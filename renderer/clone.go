@@ -375,6 +375,8 @@ func cloneFormSections(values []FormSection) []FormSection {
 		out[i].MediaItems = cloneSlice(v.MediaItems)
 		out[i].MediaLabels = clonePtr(v.MediaLabels)
 		out[i].MediaActions = cloneMediaGalleryActions(v.MediaActions)
+		out[i].Resource = cloneResource(v.Resource)
+		out[i].Load = cloneResourceLoad(v.Load)
 	}
 	return out
 }

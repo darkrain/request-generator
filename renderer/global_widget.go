@@ -164,9 +164,9 @@ func (surface WidgetSurface) Validate() error {
 // shell surface. Resources remain normal module actions.
 type WorkspaceWidget struct {
 	Selection       WorkspaceSelection      `json:"selection"`
-	Summary         *WorkspaceResource      `json:"summary,omitempty"`
-	Master          WorkspaceResource       `json:"master"`
-	Detail          WorkspaceResource       `json:"detail"`
+	Summary         *Resource               `json:"summary,omitempty"`
+	Master          Resource                `json:"master"`
+	Detail          Resource                `json:"detail"`
 	ComposerActions []Action                `json:"composer_actions,omitempty"`
 	Commands        []WorkspaceCommand      `json:"commands,omitempty"`
 	Subscriptions   []WorkspaceSubscription `json:"subscriptions,omitempty"`
@@ -259,11 +259,20 @@ func (resource ActionResource) Validate(name string) error {
 	return nil
 }
 
-// WorkspaceResource adds request bindings to an ActionResource. URL, method,
+// Resource adds request bindings to an ActionResource. URL, method,
 // paging, sorting and response presentation remain owned by the action.
-type WorkspaceResource struct {
+type Resource struct {
 	ActionResource
-	Bindings []WidgetRequestBinding `json:"bindings,omitempty"`
+	Bindings []RequestBinding `json:"bindings,omitempty"`
+}
+
+func cloneResource(value *Resource) *Resource {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	cloned.Bindings = cloneRequestBindings(value.Bindings)
+	return &cloned
 }
 
 // WorkspaceCommand invokes a standard write action from the current workspace
@@ -279,20 +288,20 @@ type WorkspaceCommand struct {
 	Trigger WorkspaceCommandTrigger `json:"trigger,omitempty"`
 	// Presentation shares the visual contract of normal renderer actions. It
 	// deliberately excludes request and routing fields: those are generated
-	// from WorkspaceResource.
+	// from Resource.
 	Presentation *ActionPresentation `json:"presentation,omitempty"`
 	// Input permits an add command to bind values entered in the workspace.
 	// Field definitions remain owned by the target module defrec response.
 	Input *WorkspaceCommandInput `json:"input,omitempty"`
 	// AfterSuccess applies the typed result of this standard command to the
 	// shell, for example by opening another registered global widget. The
-	// command request remains generated from WorkspaceResource.
+	// command request remains generated from Resource.
 	AfterSuccess *ActionResult `json:"after_success,omitempty"`
 	// RequireSelection controls whether the command needs a selected master
 	// row. It defaults to true. A false value is valid only for commands whose
 	// bindings do not read the selection runtime scope.
 	RequireSelection *bool `json:"require_selection,omitempty"`
-	WorkspaceResource
+	Resource
 	Refresh []WorkspaceRefreshTarget `json:"refresh"`
 }
 
@@ -315,7 +324,7 @@ func (command WorkspaceCommand) Validate() error {
 	if err := command.Input.Validate(command.Bindings); err != nil {
 		return fmt.Errorf("input: %w", err)
 	}
-	if err := command.WorkspaceResource.Validate("resource"); err != nil {
+	if err := command.Resource.Validate("resource"); err != nil {
 		return err
 	}
 	if command.AfterSuccess != nil {
@@ -325,7 +334,7 @@ func (command WorkspaceCommand) Validate() error {
 	}
 	if command.RequireSelection != nil && !*command.RequireSelection {
 		for _, binding := range command.Bindings {
-			if binding.Source.Runtime != nil && binding.Source.Runtime.Scope == WidgetRuntimeValueSourceSelection {
+			if binding.Source.Runtime != nil && binding.Source.Runtime.Scope == RuntimeValueSourceSelection {
 				return fmt.Errorf("does not require selection but binding reads selection")
 			}
 		}
@@ -362,10 +371,10 @@ type WorkspaceCommandInput struct {
 	Fields []string `json:"fields"`
 }
 
-func (input *WorkspaceCommandInput) Validate(bindings []WidgetRequestBinding) error {
-	inputBindings := make([]WidgetRequestBinding, 0)
+func (input *WorkspaceCommandInput) Validate(bindings []RequestBinding) error {
+	inputBindings := make([]RequestBinding, 0)
 	for _, binding := range bindings {
-		if binding.Source.Runtime != nil && binding.Source.Runtime.Scope == WidgetRuntimeValueSourceInput {
+		if binding.Source.Runtime != nil && binding.Source.Runtime.Scope == RuntimeValueSourceInput {
 			inputBindings = append(inputBindings, binding)
 		}
 	}
@@ -390,7 +399,7 @@ func (input *WorkspaceCommandInput) Validate(bindings []WidgetRequestBinding) er
 	}
 	bound := make(map[string]struct{}, len(inputBindings))
 	for _, binding := range inputBindings {
-		if binding.Target != WidgetRequestBindingBody {
+		if binding.Target != RequestBindingBody {
 			return fmt.Errorf("runtime input source only supports body bindings")
 		}
 		field := binding.Source.Runtime.Field
@@ -410,17 +419,17 @@ func (input *WorkspaceCommandInput) Validate(bindings []WidgetRequestBinding) er
 	return nil
 }
 
-func (resource WorkspaceResource) Validate(name string) error {
+func (resource Resource) Validate(name string) error {
 	if err := resource.ActionResource.Validate(name); err != nil {
 		return err
 	}
-	return ValidateWidgetRequestBindings(resource.Bindings)
+	return ValidateRequestBindings(resource.Bindings)
 }
 
-func (resource WorkspaceResource) hasSelectionBinding(field string) bool {
+func (resource Resource) hasSelectionBinding(field string) bool {
 	for _, binding := range resource.Bindings {
 		if binding.Source.Runtime != nil &&
-			binding.Source.Runtime.Scope == WidgetRuntimeValueSourceSelection &&
+			binding.Source.Runtime.Scope == RuntimeValueSourceSelection &&
 			binding.Source.Runtime.Field == field {
 			return true
 		}
@@ -428,46 +437,46 @@ func (resource WorkspaceResource) hasSelectionBinding(field string) bool {
 	return false
 }
 
-type WidgetRequestBindingTarget string
+type RequestBindingTarget string
 
 const (
-	WidgetRequestBindingPathByKey WidgetRequestBindingTarget = "path_by_key"
-	WidgetRequestBindingPathValue WidgetRequestBindingTarget = "path_value"
-	WidgetRequestBindingFilter    WidgetRequestBindingTarget = "filter"
-	WidgetRequestBindingBody      WidgetRequestBindingTarget = "body"
+	RequestBindingPathByKey RequestBindingTarget = "path_by_key"
+	RequestBindingPathValue RequestBindingTarget = "path_value"
+	RequestBindingFilter    RequestBindingTarget = "filter"
+	RequestBindingBody      RequestBindingTarget = "body"
 )
 
-// WidgetRequestBinding applies a typed literal or a known runtime value to a
+// RequestBinding applies a typed literal or a known runtime value to a
 // generated request. The target determines the request parameter name:
 // path_by_key and path_value map to view, update or delete placeholders;
 // filter derives filter[field] from Field; body derives a JSON body field.
-type WidgetRequestBinding struct {
-	Target WidgetRequestBindingTarget `json:"target"`
-	Field  string                     `json:"field,omitempty"`
-	Source WidgetValueSource          `json:"source"`
+type RequestBinding struct {
+	Target RequestBindingTarget `json:"target"`
+	Field  string               `json:"field,omitempty"`
+	Source ValueSource          `json:"source"`
 }
 
-type WidgetRuntimeValueSource string
+type RuntimeValueSource string
 
 const (
-	WidgetRuntimeValueSourceCurrentUser WidgetRuntimeValueSource = "current_user"
-	WidgetRuntimeValueSourceSelection   WidgetRuntimeValueSource = "selection"
-	WidgetRuntimeValueSourceInput       WidgetRuntimeValueSource = "input"
+	RuntimeValueSourceCurrentUser RuntimeValueSource = "current_user"
+	RuntimeValueSourceSelection   RuntimeValueSource = "selection"
+	RuntimeValueSourceInput       RuntimeValueSource = "input"
 )
 
-type WidgetRuntimeValue struct {
-	Scope WidgetRuntimeValueSource `json:"scope"`
-	Field string                   `json:"field"`
+type RuntimeValue struct {
+	Scope RuntimeValueSource `json:"scope"`
+	Field string             `json:"field"`
 }
 
-// WidgetValueSource is a closed union. Literal values are serialized with
+// ValueSource is a closed union. Literal values are serialized with
 // their type; runtime values can only come from a generator-defined scope.
-type WidgetValueSource struct {
-	Literal *TypedValue         `json:"literal,omitempty"`
-	Runtime *WidgetRuntimeValue `json:"runtime,omitempty"`
+type ValueSource struct {
+	Literal *TypedValue   `json:"literal,omitempty"`
+	Runtime *RuntimeValue `json:"runtime,omitempty"`
 }
 
-func (source WidgetValueSource) Validate() error {
+func (source ValueSource) Validate() error {
 	variants := 0
 	if source.Literal != nil {
 		variants++
@@ -481,7 +490,7 @@ func (source WidgetValueSource) Validate() error {
 			return fmt.Errorf("runtime field is required")
 		}
 		switch source.Runtime.Scope {
-		case WidgetRuntimeValueSourceCurrentUser, WidgetRuntimeValueSourceSelection, WidgetRuntimeValueSourceInput:
+		case RuntimeValueSourceCurrentUser, RuntimeValueSourceSelection, RuntimeValueSourceInput:
 		default:
 			return fmt.Errorf("runtime scope %q is unsupported", source.Runtime.Scope)
 		}
@@ -492,19 +501,19 @@ func (source WidgetValueSource) Validate() error {
 	return nil
 }
 
-func ValidateWidgetRequestBindings(bindings []WidgetRequestBinding) error {
+func ValidateRequestBindings(bindings []RequestBinding) error {
 	seen := make(map[string]struct{}, len(bindings))
 	for index, binding := range bindings {
 		switch binding.Target {
-		case WidgetRequestBindingPathByKey, WidgetRequestBindingPathValue:
+		case RequestBindingPathByKey, RequestBindingPathValue:
 			if binding.Field != "" {
 				return fmt.Errorf("binding %d %s must not define field", index, binding.Target)
 			}
-		case WidgetRequestBindingFilter:
+		case RequestBindingFilter:
 			if binding.Field == "" {
 				return fmt.Errorf("binding %d filter field is required", index)
 			}
-		case WidgetRequestBindingBody:
+		case RequestBindingBody:
 			if binding.Field == "" {
 				return fmt.Errorf("binding %d body field is required", index)
 			}
@@ -759,12 +768,12 @@ func (render Universal) Actions() []Action {
 	return result
 }
 
-// WidgetResourceLoad is the resolved request for one global widget resource.
-// The response itself provides the existing ListPage, RecordPage or FormPage
+// ResourceLoad is the resolved request for a standard action resource. The
+// response itself provides the existing ListPage, RecordPage or FormPage
 // presentation metadata.
-type WidgetResourceLoad struct {
-	Request  APIAction              `json:"request"`
-	Bindings []WidgetRequestBinding `json:"bindings,omitempty"`
+type ResourceLoad struct {
+	Request  APIAction        `json:"request"`
+	Bindings []RequestBinding `json:"bindings,omitempty"`
 }
 
 // WorkspaceCommandLoad is the generated request contract for one workspace
@@ -772,7 +781,7 @@ type WidgetResourceLoad struct {
 type WorkspaceCommandLoad struct {
 	ID           string                     `json:"id"`
 	Request      APIAction                  `json:"request"`
-	Bindings     []WidgetRequestBinding     `json:"bindings,omitempty"`
+	Bindings     []RequestBinding           `json:"bindings,omitempty"`
 	Input        *WorkspaceCommandInputLoad `json:"input,omitempty"`
 	AfterSuccess *ActionResult              `json:"after_success,omitempty"`
 }
@@ -780,14 +789,14 @@ type WorkspaceCommandLoad struct {
 // WorkspaceCommandInputLoad contains the generated definition request for a
 // command input. The UI loads it and keeps only command.Input.Fields.
 type WorkspaceCommandInputLoad struct {
-	Definition WidgetResourceLoad `json:"definition"`
+	Definition ResourceLoad `json:"definition"`
 }
 
 type WidgetLoad struct {
-	Resource *WidgetResourceLoad    `json:"resource,omitempty"`
-	Summary  *WidgetResourceLoad    `json:"summary,omitempty"`
-	Master   *WidgetResourceLoad    `json:"master,omitempty"`
-	Detail   *WidgetResourceLoad    `json:"detail,omitempty"`
+	Resource *ResourceLoad          `json:"resource,omitempty"`
+	Summary  *ResourceLoad          `json:"summary,omitempty"`
+	Master   *ResourceLoad          `json:"master,omitempty"`
+	Detail   *ResourceLoad          `json:"detail,omitempty"`
 	Commands []WorkspaceCommandLoad `json:"commands,omitempty"`
 }
 
@@ -798,11 +807,11 @@ func cloneWorkspaceWidget(value *WorkspaceWidget) *WorkspaceWidget {
 	cloned := *value
 	if value.Summary != nil {
 		summary := *value.Summary
-		summary.Bindings = cloneWidgetRequestBindings(value.Summary.Bindings)
+		summary.Bindings = cloneRequestBindings(value.Summary.Bindings)
 		cloned.Summary = &summary
 	}
-	cloned.Master.Bindings = cloneWidgetRequestBindings(value.Master.Bindings)
-	cloned.Detail.Bindings = cloneWidgetRequestBindings(value.Detail.Bindings)
+	cloned.Master.Bindings = cloneRequestBindings(value.Master.Bindings)
+	cloned.Detail.Bindings = cloneRequestBindings(value.Detail.Bindings)
 	cloned.ComposerActions = cloneActions(value.ComposerActions)
 	cloned.Commands = cloneWorkspaceCommands(value.Commands)
 	cloned.Subscriptions = cloneWorkspaceSubscriptions(value.Subscriptions)
@@ -844,7 +853,7 @@ func cloneWorkspaceCommands(values []WorkspaceCommand) []WorkspaceCommand {
 			input.Fields = cloneSlice(value.Input.Fields)
 			cloned[index].Input = &input
 		}
-		cloned[index].Bindings = cloneWidgetRequestBindings(value.Bindings)
+		cloned[index].Bindings = cloneRequestBindings(value.Bindings)
 		cloned[index].Refresh = cloneSlice(value.Refresh)
 		cloned[index].AfterSuccess = cloneActionResult(value.AfterSuccess)
 		if value.RequireSelection != nil {
@@ -855,19 +864,19 @@ func cloneWorkspaceCommands(values []WorkspaceCommand) []WorkspaceCommand {
 	return cloned
 }
 
-func cloneWidgetRequestBindings(values []WidgetRequestBinding) []WidgetRequestBinding {
+func cloneRequestBindings(values []RequestBinding) []RequestBinding {
 	if values == nil {
 		return nil
 	}
-	cloned := make([]WidgetRequestBinding, len(values))
+	cloned := make([]RequestBinding, len(values))
 	for index, value := range values {
 		cloned[index] = value
-		cloned[index].Source = cloneWidgetValueSource(value.Source)
+		cloned[index].Source = cloneValueSource(value.Source)
 	}
 	return cloned
 }
 
-func cloneWidgetValueSource(value WidgetValueSource) WidgetValueSource {
+func cloneValueSource(value ValueSource) ValueSource {
 	cloned := value
 	if value.Literal != nil {
 		literal := *value.Literal
@@ -926,13 +935,13 @@ func cloneWidgetTarget(value *WidgetTarget) *WidgetTarget {
 	return &cloned
 }
 
-func cloneWidgetResourceLoad(value *WidgetResourceLoad) *WidgetResourceLoad {
+func cloneResourceLoad(value *ResourceLoad) *ResourceLoad {
 	if value == nil {
 		return nil
 	}
 	cloned := *value
 	cloned.Request = *cloneAPIAction(&value.Request)
-	cloned.Bindings = cloneWidgetRequestBindings(value.Bindings)
+	cloned.Bindings = cloneRequestBindings(value.Bindings)
 	return &cloned
 }
 
@@ -944,10 +953,10 @@ func cloneWorkspaceCommandLoads(values []WorkspaceCommandLoad) []WorkspaceComman
 	for index, value := range values {
 		cloned[index] = value
 		cloned[index].Request = *cloneAPIAction(&value.Request)
-		cloned[index].Bindings = cloneWidgetRequestBindings(value.Bindings)
+		cloned[index].Bindings = cloneRequestBindings(value.Bindings)
 		if value.Input != nil {
 			input := *value.Input
-			input.Definition = *cloneWidgetResourceLoad(&value.Input.Definition)
+			input.Definition = *cloneResourceLoad(&value.Input.Definition)
 			cloned[index].Input = &input
 		}
 		cloned[index].AfterSuccess = cloneActionResult(value.AfterSuccess)
@@ -957,10 +966,10 @@ func cloneWorkspaceCommandLoads(values []WorkspaceCommandLoad) []WorkspaceComman
 
 func (value WidgetLoad) Clone() WidgetLoad {
 	return WidgetLoad{
-		Resource: cloneWidgetResourceLoad(value.Resource),
-		Summary:  cloneWidgetResourceLoad(value.Summary),
-		Master:   cloneWidgetResourceLoad(value.Master),
-		Detail:   cloneWidgetResourceLoad(value.Detail),
+		Resource: cloneResourceLoad(value.Resource),
+		Summary:  cloneResourceLoad(value.Summary),
+		Master:   cloneResourceLoad(value.Master),
+		Detail:   cloneResourceLoad(value.Detail),
 		Commands: cloneWorkspaceCommandLoads(value.Commands),
 	}
 }

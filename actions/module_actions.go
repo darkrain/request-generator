@@ -28,10 +28,10 @@ type ModuleAction interface {
 }
 
 type WidgetConfig struct {
-	ID       string                          `json:"id"`
-	Order    int                             `json:"order,omitempty"`
-	Renderer renderer.GlobalWidget           `json:"renderer"`
-	Bindings []renderer.WidgetRequestBinding `json:"bindings,omitempty"`
+	ID       string                    `json:"id"`
+	Order    int                       `json:"order,omitempty"`
+	Renderer renderer.GlobalWidget     `json:"renderer"`
+	Bindings []renderer.RequestBinding `json:"bindings,omitempty"`
 }
 
 func (config WidgetConfig) Validate() error {
@@ -44,7 +44,7 @@ func (config WidgetConfig) Validate() error {
 	if config.Renderer.Workspace != nil && len(config.Bindings) != 0 {
 		return fmt.Errorf("workspace widget bindings must be declared by a workspace resource")
 	}
-	return renderer.ValidateWidgetRequestBindings(config.Bindings)
+	return renderer.ValidateRequestBindings(config.Bindings)
 }
 
 type JoinType string

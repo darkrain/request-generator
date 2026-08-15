@@ -12,16 +12,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func selectionSource(field string) renderer.WidgetValueSource {
-	return renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{
-		Scope: renderer.WidgetRuntimeValueSourceSelection,
+func selectionSource(field string) renderer.ValueSource {
+	return renderer.ValueSource{Runtime: &renderer.RuntimeValue{
+		Scope: renderer.RuntimeValueSourceSelection,
 		Field: field,
 	}}
 }
 
-func inputSource(field string) renderer.WidgetValueSource {
-	return renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{
-		Scope: renderer.WidgetRuntimeValueSourceInput,
+func inputSource(field string) renderer.ValueSource {
+	return renderer.ValueSource{Runtime: &renderer.RuntimeValue{
+		Scope: renderer.RuntimeValueSourceInput,
 		Field: field,
 	}}
 }
@@ -39,9 +39,9 @@ func TestValidateGlobalWidgets(t *testing.T) {
 				Surface: renderer.WidgetSurface{Kind: renderer.WidgetSurfaceDrawer, Placement: renderer.WidgetPlacementShellEnd, LoadPolicy: renderer.WidgetLoadOnOpen},
 				Workspace: &renderer.WorkspaceWidget{
 					Selection: renderer.WorkspaceSelection{Field: "id"},
-					Master:    renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "unknown", Action: "list"}},
-					Detail: renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "detail_records", Action: "list"}, Bindings: []renderer.WidgetRequestBinding{{
-						Target: renderer.WidgetRequestBindingFilter,
+					Master:    renderer.Resource{ActionResource: renderer.ActionResource{Module: "unknown", Action: "list"}},
+					Detail: renderer.Resource{ActionResource: renderer.ActionResource{Module: "detail_records", Action: "list"}, Bindings: []renderer.RequestBinding{{
+						Target: renderer.RequestBindingFilter,
 						Field:  "parent_id",
 						Source: selectionSource("id"),
 					}}},
@@ -152,8 +152,8 @@ func TestValidateWorkspaceCommandInput(t *testing.T) {
 		ID:    "create",
 		Label: "workspace.command.create",
 		Input: &renderer.WorkspaceCommandInput{Fields: []string{"text"}},
-		WorkspaceResource: renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "entries", Action: "add"}, Bindings: []renderer.WidgetRequestBinding{{
-			Target: renderer.WidgetRequestBindingBody,
+		Resource: renderer.Resource{ActionResource: renderer.ActionResource{Module: "entries", Action: "add"}, Bindings: []renderer.RequestBinding{{
+			Target: renderer.RequestBindingBody,
 			Field:  "text",
 			Source: inputSource("text"),
 		}}},
@@ -179,7 +179,7 @@ func TestValidateWorkspaceCommandInput(t *testing.T) {
 	require.EqualError(t, generator.validateWorkspaceCommand("workspace", command, selection), `widget "workspace" command "create" input: is only supported by add action`)
 }
 
-func TestValidateWidgetRequestBindingShapeRequiresCompleteViewPath(t *testing.T) {
+func TestValidateRequestBindingShapeRequiresCompleteViewPath(t *testing.T) {
 	id := pg.IntegerColumn("id")
 	module := &BaseModule{
 		Name:   "records",
@@ -187,9 +187,9 @@ func TestValidateWidgetRequestBindingShapeRequiresCompleteViewPath(t *testing.T)
 		Fields: []fields.ModuleField{{Column: id, Type: fields.ModuleFieldTypeInt}},
 	}
 	action := actions.ViewModuleAction{By: []pg.Column{id}}
-	err := validateWidgetRequestBindingShape(module, action, []renderer.WidgetRequestBinding{{
-		Target: renderer.WidgetRequestBindingPathByKey,
-		Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{
+	err := validateRequestBindingShape(module, action, []renderer.RequestBinding{{
+		Target: renderer.RequestBindingPathByKey,
+		Source: renderer.ValueSource{Literal: &renderer.TypedValue{
 			Type:   renderer.TypedValueString,
 			String: "id",
 		}},
@@ -197,7 +197,7 @@ func TestValidateWidgetRequestBindingShapeRequiresCompleteViewPath(t *testing.T)
 	require.EqualError(t, err, "view action requires path_by_key and path_value bindings")
 }
 
-func TestValidateWidgetRequestBindingShapeForUpdateCommand(t *testing.T) {
+func TestValidateRequestBindingShapeForUpdateCommand(t *testing.T) {
 	id := pg.IntegerColumn("id")
 	status := pg.StringColumn("status")
 	module := &BaseModule{
@@ -208,37 +208,37 @@ func TestValidateWidgetRequestBindingShapeForUpdateCommand(t *testing.T) {
 		},
 	}
 	action := actions.UpdateModuleAction{By: []pg.Column{id}, Columns: []pg.Column{status}}
-	err := validateWidgetRequestBindingShape(module, action, []renderer.WidgetRequestBinding{
-		{Target: renderer.WidgetRequestBindingPathByKey, Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "id"}}},
-		{Target: renderer.WidgetRequestBindingPathValue, Source: selectionSource("participant_id")},
-		{Target: renderer.WidgetRequestBindingBody, Field: "status", Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "active"}}},
+	err := validateRequestBindingShape(module, action, []renderer.RequestBinding{
+		{Target: renderer.RequestBindingPathByKey, Source: renderer.ValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "id"}}},
+		{Target: renderer.RequestBindingPathValue, Source: selectionSource("participant_id")},
+		{Target: renderer.RequestBindingBody, Field: "status", Source: renderer.ValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "active"}}},
 	})
 	require.NoError(t, err)
 
-	err = validateWidgetRequestBindingShape(module, action, []renderer.WidgetRequestBinding{
-		{Target: renderer.WidgetRequestBindingPathByKey, Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "id"}}},
-		{Target: renderer.WidgetRequestBindingPathValue, Source: selectionSource("participant_id")},
+	err = validateRequestBindingShape(module, action, []renderer.RequestBinding{
+		{Target: renderer.RequestBindingPathByKey, Source: renderer.ValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "id"}}},
+		{Target: renderer.RequestBindingPathValue, Source: selectionSource("participant_id")},
 	})
 	require.EqualError(t, err, "update action requires body bindings")
 
-	err = validateWidgetRequestBindingShape(module, action, []renderer.WidgetRequestBinding{
-		{Target: renderer.WidgetRequestBindingPathByKey, Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "id"}}},
-		{Target: renderer.WidgetRequestBindingPathValue, Source: selectionSource("participant_id")},
-		{Target: renderer.WidgetRequestBindingBody, Field: "status", Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueNumber, Number: 1}}},
+	err = validateRequestBindingShape(module, action, []renderer.RequestBinding{
+		{Target: renderer.RequestBindingPathByKey, Source: renderer.ValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "id"}}},
+		{Target: renderer.RequestBindingPathValue, Source: selectionSource("participant_id")},
+		{Target: renderer.RequestBindingBody, Field: "status", Source: renderer.ValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueNumber, Number: 1}}},
 	})
 	require.EqualError(t, err, `body field "status" literal type "number" does not match expected type "string"`)
 
 	context, _ := ginTestContext()
-	available, err := (&Generator{}).validateWidgetRequestBindingAvailability(context, module, action, []renderer.WidgetRequestBinding{
-		{Target: renderer.WidgetRequestBindingBody, Field: "status", Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "active"}}},
-		{Target: renderer.WidgetRequestBindingPathValue, Source: selectionSource("participant_id")},
-		{Target: renderer.WidgetRequestBindingPathByKey, Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "id"}}},
+	available, err := (&Generator{}).validateRequestBindingAvailability(context, module, action, []renderer.RequestBinding{
+		{Target: renderer.RequestBindingBody, Field: "status", Source: renderer.ValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "active"}}},
+		{Target: renderer.RequestBindingPathValue, Source: selectionSource("participant_id")},
+		{Target: renderer.RequestBindingPathByKey, Source: renderer.ValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "id"}}},
 	}, &widgetSelectionScope{Fields: map[string]renderer.TypedValueType{"participant_id": renderer.TypedValueNumber}}, nil)
 	require.NoError(t, err)
 	require.True(t, available)
 }
 
-func TestValidateWidgetRequestBindingAvailabilityRejectsUnknownRuntimeSourceField(t *testing.T) {
+func TestValidateRequestBindingAvailabilityRejectsUnknownRuntimeSourceField(t *testing.T) {
 	id := pg.IntegerColumn("id")
 	module := &BaseModule{
 		Name:   "records",
@@ -247,18 +247,18 @@ func TestValidateWidgetRequestBindingAvailabilityRejectsUnknownRuntimeSourceFiel
 	}
 	action := actions.ViewModuleAction{By: []pg.Column{id}}
 	context, _ := ginTestContext()
-	available, err := (&Generator{}).validateWidgetRequestBindingAvailability(context, module, action, []renderer.WidgetRequestBinding{
+	available, err := (&Generator{}).validateRequestBindingAvailability(context, module, action, []renderer.RequestBinding{
 		{
-			Target: renderer.WidgetRequestBindingPathByKey,
-			Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{
+			Target: renderer.RequestBindingPathByKey,
+			Source: renderer.ValueSource{Literal: &renderer.TypedValue{
 				Type:   renderer.TypedValueString,
 				String: "id",
 			}},
 		},
 		{
-			Target: renderer.WidgetRequestBindingPathValue,
-			Source: renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{
-				Scope: renderer.WidgetRuntimeValueSourceCurrentUser,
+			Target: renderer.RequestBindingPathValue,
+			Source: renderer.ValueSource{Runtime: &renderer.RuntimeValue{
+				Scope: renderer.RuntimeValueSourceCurrentUser,
 				Field: "subject",
 			}},
 		},
@@ -267,7 +267,7 @@ func TestValidateWidgetRequestBindingAvailabilityRejectsUnknownRuntimeSourceFiel
 	require.EqualError(t, err, `current_user field "subject" is not declared`)
 }
 
-func TestWidgetRequestBindingAvailabilityUsesEffectiveListFilters(t *testing.T) {
+func TestRequestBindingAvailabilityUsesEffectiveListFilters(t *testing.T) {
 	id := pg.IntegerColumn("id")
 	parentID := pg.IntegerColumn("parent_id")
 	module := &BaseModule{
@@ -277,18 +277,18 @@ func TestWidgetRequestBindingAvailabilityUsesEffectiveListFilters(t *testing.T) 
 			{Column: parentID, Type: fields.ModuleFieldTypeInt, FilterCondition: func(*gin.Context) bool { return false }},
 		},
 	}
-	binding := renderer.WidgetRequestBinding{
-		Target: renderer.WidgetRequestBindingFilter,
+	binding := renderer.RequestBinding{
+		Target: renderer.RequestBindingFilter,
 		Field:  "parent_id",
-		Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueNumber, Number: 1}},
+		Source: renderer.ValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueNumber, Number: 1}},
 	}
 	context, _ := ginTestContext()
-	available, err := (&Generator{}).validateWidgetRequestBindingAvailability(context, module, actions.ListModuleAction{Filter: []pg.Column{parentID}}, []renderer.WidgetRequestBinding{binding}, nil, nil)
+	available, err := (&Generator{}).validateRequestBindingAvailability(context, module, actions.ListModuleAction{Filter: []pg.Column{parentID}}, []renderer.RequestBinding{binding}, nil, nil)
 	require.NoError(t, err)
 	require.False(t, available)
 
 	module.Fields[1].FilterCondition = nil
-	available, err = (&Generator{}).validateWidgetRequestBindingAvailability(context, module, actions.ListModuleAction{FilterFunc: func(*gin.Context) []pg.Column { return []pg.Column{parentID} }}, []renderer.WidgetRequestBinding{binding}, nil, nil)
+	available, err = (&Generator{}).validateRequestBindingAvailability(context, module, actions.ListModuleAction{FilterFunc: func(*gin.Context) []pg.Column { return []pg.Column{parentID} }}, []renderer.RequestBinding{binding}, nil, nil)
 	require.NoError(t, err)
 	require.True(t, available)
 
@@ -299,7 +299,7 @@ func TestWidgetRequestBindingAvailabilityUsesEffectiveListFilters(t *testing.T) 
 		Widget: &actions.WidgetConfig{
 			ID:       "records-filter",
 			Renderer: renderer.GlobalWidget{Surface: renderer.WidgetSurface{Kind: renderer.WidgetSurfaceDrawer, Placement: renderer.WidgetPlacementShellStart, LoadPolicy: renderer.WidgetLoadOnOpen}},
-			Bindings: []renderer.WidgetRequestBinding{binding},
+			Bindings: []renderer.RequestBinding{binding},
 		},
 	}}
 	require.NoError(t, (&Generator{Modules: []*BaseModule{module}}).validateGlobalWidgets())
@@ -342,18 +342,18 @@ func TestWidgetConfigRejectsIgnoredWorkspaceBindings(t *testing.T) {
 			Surface: renderer.WidgetSurface{Kind: renderer.WidgetSurfaceDrawer, Placement: renderer.WidgetPlacementShellEnd, LoadPolicy: renderer.WidgetLoadOnOpen},
 			Workspace: &renderer.WorkspaceWidget{
 				Selection: renderer.WorkspaceSelection{Field: "id"},
-				Master:    renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "master", Action: "list"}},
-				Detail: renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "detail", Action: "list"}, Bindings: []renderer.WidgetRequestBinding{{
-					Target: renderer.WidgetRequestBindingFilter,
+				Master:    renderer.Resource{ActionResource: renderer.ActionResource{Module: "master", Action: "list"}},
+				Detail: renderer.Resource{ActionResource: renderer.ActionResource{Module: "detail", Action: "list"}, Bindings: []renderer.RequestBinding{{
+					Target: renderer.RequestBindingFilter,
 					Field:  "parent_id",
 					Source: selectionSource("id"),
 				}}},
 			},
 		},
-		Bindings: []renderer.WidgetRequestBinding{{
-			Target: renderer.WidgetRequestBindingFilter,
+		Bindings: []renderer.RequestBinding{{
+			Target: renderer.RequestBindingFilter,
 			Field:  "ignored",
-			Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{
+			Source: renderer.ValueSource{Literal: &renderer.TypedValue{
 				Type:   renderer.TypedValueString,
 				String: "value",
 			}},
@@ -416,20 +416,20 @@ func validGlobalWidgetModules() []*BaseModule {
 				Surface: renderer.WidgetSurface{Kind: renderer.WidgetSurfaceDrawer, Placement: renderer.WidgetPlacementShellEnd, LoadPolicy: renderer.WidgetLoadOnOpen},
 				Workspace: &renderer.WorkspaceWidget{
 					Selection: renderer.WorkspaceSelection{Field: "id"},
-					Summary:   &renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "summary_records", Action: "list"}},
-					Master:    renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "master_records", Action: "list"}},
-					Detail: renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "detail_records", Action: "list"}, Bindings: []renderer.WidgetRequestBinding{{
-						Target: renderer.WidgetRequestBindingFilter,
+					Summary:   &renderer.Resource{ActionResource: renderer.ActionResource{Module: "summary_records", Action: "list"}},
+					Master:    renderer.Resource{ActionResource: renderer.ActionResource{Module: "master_records", Action: "list"}},
+					Detail: renderer.Resource{ActionResource: renderer.ActionResource{Module: "detail_records", Action: "list"}, Bindings: []renderer.RequestBinding{{
+						Target: renderer.RequestBindingFilter,
 						Field:  "parent_id",
 						Source: selectionSource("id"),
 					}}},
 					Commands: []renderer.WorkspaceCommand{{
 						ID:    "set_status",
 						Label: "workspace.command.set_status",
-						WorkspaceResource: renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "state_records", Action: "update"}, Bindings: []renderer.WidgetRequestBinding{
-							{Target: renderer.WidgetRequestBindingPathByKey, Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "id"}}},
-							{Target: renderer.WidgetRequestBindingPathValue, Source: selectionSource("participant_id")},
-							{Target: renderer.WidgetRequestBindingBody, Field: "status", Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "active"}}},
+						Resource: renderer.Resource{ActionResource: renderer.ActionResource{Module: "state_records", Action: "update"}, Bindings: []renderer.RequestBinding{
+							{Target: renderer.RequestBindingPathByKey, Source: renderer.ValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "id"}}},
+							{Target: renderer.RequestBindingPathValue, Source: selectionSource("participant_id")},
+							{Target: renderer.RequestBindingBody, Field: "status", Source: renderer.ValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "active"}}},
 						}},
 						Refresh: []renderer.WorkspaceRefreshTarget{renderer.WorkspaceRefreshMaster, renderer.WorkspaceRefreshDetail},
 					}},

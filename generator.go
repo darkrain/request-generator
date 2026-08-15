@@ -743,6 +743,10 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
+		if err := generator.resolveFormSectionResources(c, &render, role); err != nil {
+			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			return
+		}
 		render = generator.localizeRenderer(lang, render)
 		if err := validateListFilterAvailability(render.List, filter); err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
@@ -1093,6 +1097,10 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
+		if err := generator.resolveFormSectionResources(c, &render, actions.GetRoleFromContext(c)); err != nil {
+			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			return
+		}
 		render = generator.localizeRenderer(lang, render)
 		defrecResponse := response.NewDefrecResponse(output)
 		defrecResponse.AttachRender(render)
@@ -1245,6 +1253,10 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 
 		render, err := module.RenderFor(c)
 		if err != nil {
+			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			return
+		}
+		if err := generator.resolveFormSectionResources(c, &render, role); err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}

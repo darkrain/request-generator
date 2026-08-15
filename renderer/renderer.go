@@ -86,6 +86,14 @@ func (r Universal) Validate() error {
 			if err := validateFormSectionColumns(section); err != nil {
 				return err
 			}
+			if section.Resource != nil {
+				if section.Renderer != RendererUniversalSection {
+					return fmt.Errorf("renderer.Universal: resource section %q requires renderer %q", section.ID, RendererUniversalSection)
+				}
+				if err := section.Resource.Validate("resource"); err != nil {
+					return fmt.Errorf("renderer.Universal: resource section %q: %w", section.ID, err)
+				}
+			}
 			if section.ListPage != nil {
 				if err := validateListPage("form section list page", section.ListPage); err != nil {
 					return err
@@ -1092,6 +1100,7 @@ type FormSection struct {
 	StepHint     string                 `json:"step_hint,omitempty"`
 	PanelTitle   string                 `json:"panel_title,omitempty"`
 	Subtitle     string                 `json:"subtitle,omitempty"`
+	LoadingLabel string                 `json:"loading_label,omitempty"`
 	Renderer     RendererKey            `json:"renderer,omitempty"`
 	Group        string                 `json:"group,omitempty"`
 	GroupTitle   string                 `json:"group_title,omitempty"`
@@ -1108,6 +1117,12 @@ type FormSection struct {
 	MediaItems   []MediaGalleryItem     `json:"media_items,omitempty"`
 	MediaLabels  *MediaGalleryLabels    `json:"media_labels,omitempty"`
 	MediaActions *MediaGalleryActions   `json:"media_actions,omitempty"`
+	// Resource declares another standard module action rendered inside this
+	// section. It stays server-side: Generator resolves it to Load per request.
+	Resource *Resource `json:"-"`
+	// Load is the generated executable request for Resource. Consumers never
+	// construct endpoints or bindings for a resource section.
+	Load *ResourceLoad `json:"load,omitempty"`
 }
 
 type FieldMatrixType string
