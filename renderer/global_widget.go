@@ -1,6 +1,7 @@
 package renderer
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -94,6 +95,9 @@ type WidgetSurface struct {
 	CloseLabel string            `json:"close_label,omitempty"`
 	BackLabel  string            `json:"back_label,omitempty"`
 	MoreLabel  string            `json:"more_label,omitempty"`
+	// Size is a renderer token used by consumers to select the appropriate
+	// compact or expansive surface treatment without producer CSS.
+	Size SizeToken `json:"size,omitempty"`
 	// Trigger declares an optional shell control that opens this widget. Its
 	// Badge binds to the widget summary record, so the consumer never has to
 	// infer a domain-specific counter.
@@ -140,6 +144,13 @@ func (surface WidgetSurface) Validate() error {
 	case WidgetLoadOnOpen, WidgetLoadEager:
 	default:
 		return fmt.Errorf("unsupported load policy %q", surface.LoadPolicy)
+	}
+	if surface.Size != "" {
+		switch surface.Size {
+		case SizeXS, SizeSM, SizeMD, SizeLG, SizeXL:
+		default:
+			return fmt.Errorf("unsupported size %q", surface.Size)
+		}
 	}
 	if surface.Trigger != nil {
 		if err := surface.Trigger.Validate(); err != nil {
@@ -212,7 +223,11 @@ func (workspace WorkspaceWidget) Validate() error {
 		if subscription.Correlation != nil {
 			correlationField = subscription.Correlation.EventField
 		}
-		key := subscription.Module + "\x00" + strings.Join(subscription.Actions, "\x00") + "\x00" + correlationField
+		condition, err := json.Marshal(subscription.EventCondition)
+		if err != nil {
+			return fmt.Errorf("subscription %d event condition: %w", index, err)
+		}
+		key := subscription.Module + "\x00" + strings.Join(subscription.Actions, "\x00") + "\x00" + correlationField + "\x00" + string(condition)
 		if _, exists := seenSubscriptions[key]; exists {
 			return fmt.Errorf("subscription %d is duplicated", index)
 		}
@@ -293,6 +308,7 @@ func (command WorkspaceCommand) Validate() error {
 	}
 	if command.Trigger != "" && command.Input != nil {
 		return fmt.Errorf("triggered command must not declare input")
+	}
 	if command.Trigger == WorkspaceCommandTriggerSelectionOpen && command.RequireSelection != nil && !*command.RequireSelection {
 		return fmt.Errorf("selection_open trigger requires selection")
 	}
@@ -534,6 +550,10 @@ func ValidateWorkspaceRefreshTargets(targets []WorkspaceRefreshTarget) error {
 type WorkspaceSubscription struct {
 	Module  string   `json:"module"`
 	Actions []string `json:"actions"`
+	// EventCondition is evaluated against { event } on the consumer. It lets
+	// one standard action expose several typed realtime effects without the
+	// client branching on a module-specific payload convention.
+	EventCondition *Condition `json:"event_condition,omitempty"`
 	// Correlation narrows refreshes to the selected master row. When absent,
 	// every authorized matching realtime event refreshes the declared targets.
 	Correlation *WorkspaceCorrelationBinding `json:"correlation,omitempty"`
@@ -590,7 +610,10 @@ func (subscription WorkspaceSubscription) Validate() error {
 	if subscription.Correlation != nil && subscription.Correlation.EventField == "" {
 		return fmt.Errorf("correlation event field is required when correlation is set")
 	}
-	if len(subscription.Refresh) == 0 {
+	if subscription.EventCondition != nil && !hasCondition(subscription.EventCondition) {
+		return fmt.Errorf("event condition is invalid")
+	}
+	if len(subscription.Refresh) == 0 && subscription.Toast == nil {
 		return fmt.Errorf("refresh targets are required")
 	}
 	if subscription.Toast != nil {
@@ -874,6 +897,7 @@ func cloneWorkspaceSubscriptions(values []WorkspaceSubscription) []WorkspaceSubs
 			correlation := *value.Correlation
 			cloned[index].Correlation = &correlation
 		}
+		cloned[index].EventCondition = cloneCondition(value.EventCondition)
 		cloned[index].Toast = cloneWorkspaceSubscriptionToast(value.Toast)
 	}
 	return cloned
