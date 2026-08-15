@@ -270,6 +270,29 @@ func TestWorkspaceSubscriptionWithoutCorrelationIsValid(t *testing.T) {
 	require.NoError(t, subscription.Validate())
 }
 
+func TestWorkspaceSubscriptionToastIsValidatedAndCloned(t *testing.T) {
+	subscription := WorkspaceSubscription{
+		Module:  "events",
+		Actions: []string{"add"},
+		Refresh: []WorkspaceRefreshTarget{WorkspaceRefreshMaster},
+		Toast: &WorkspaceSubscriptionToast{
+			Title:   &TextBinding{Field: "title"},
+			Message: &TextBinding{Field: "message"},
+			Tone:    "info",
+		},
+	}
+	require.NoError(t, subscription.Validate())
+
+	cloned := cloneWorkspaceSubscriptions([]WorkspaceSubscription{subscription})
+	require.Len(t, cloned, 1)
+	require.NotSame(t, subscription.Toast, cloned[0].Toast)
+	cloned[0].Toast.Title.Field = "changed"
+	require.Equal(t, "title", subscription.Toast.Title.Field)
+
+	subscription.Toast = &WorkspaceSubscriptionToast{}
+	require.EqualError(t, subscription.Validate(), "toast: title or message is required")
+}
+
 func TestWidgetLoadCloneDoesNotShareCommandInputState(t *testing.T) {
 	load := WidgetLoad{Commands: []WorkspaceCommandLoad{{
 		ID: "create-entry",
