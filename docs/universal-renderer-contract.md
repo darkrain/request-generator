@@ -1459,6 +1459,50 @@ Sort format: `field:asc` или `field:desc`.
 
 Pagination: `count`, `size`, `page`.
 
+`list_page.filters.presentation` выбирает только общий layout уже описанных
+контролов. Например, `toolbar` использует те же `pill_rows`, search и list
+actions, что и обычная filter bar; producer не передаёт для него отдельную
+схему и не меняет формат query.
+
+У `pill_rows` каждый элемент при необходимости может задать typed
+`presentation`:
+
+- `tabs` — эксклюзивная вкладка в toolbar;
+- `toggle` — переключатель одного filter value;
+- `summary` — интерактивная компактная разбивка для layout, который её
+  поддерживает.
+
+Все варианты продолжают использовать `key` и `val` как единственный источник
+server-side filter query. `count_field` ссылается на поле record, загруженного
+из `list_page.summary.load`.
+
+### Summary
+
+`list_page.summary` описывает заголовок и счётчики страницы. Это не часть
+`filters`: `summary.items` только связывает локализованную подпись с полем
+данных summary resource и не создаёт query parameter.
+
+```json
+{
+  "summary": {
+    "title": "Inbox",
+    "title_fallback": "This inbox",
+    "items": [
+      {"id": "all", "label": "All", "value_field": "all_count"},
+      {"id": "unread", "label": "Unread", "value_field": "unread_count"}
+    ],
+    "load": {
+      "request": {"method": "GET", "endpoint": "/api/state/view/:bykey/:value"},
+      "bindings": []
+    }
+  }
+}
+```
+
+`value_field` читается только из результата `summary.load`. Клиент не
+подсчитывает строки текущей страницы как fallback, поэтому server-side
+pagination и фильтры не искажают значение счётчиков.
+
 Пример named controls:
 
 ```json

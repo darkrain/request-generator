@@ -287,6 +287,7 @@ func cloneSummary(v *Summary) *Summary {
 		return nil
 	}
 	cp := *v
+	cp.Items = cloneSlice(v.Items)
 	cp.ShowOnline = clonePtr(v.ShowOnline)
 	cp.ShowAction = clonePtr(v.ShowAction)
 	cp.Resource = cloneResource(v.Resource)

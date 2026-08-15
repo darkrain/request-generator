@@ -335,8 +335,8 @@ func validateListPage(scope string, page *ListPage) error {
 	if err := validateActions(scope, page.Actions); err != nil {
 		return err
 	}
-	if page.Summary != nil && page.Summary.Resource != nil {
-		if err := page.Summary.Resource.Validate("summary resource"); err != nil {
+	if page.Summary != nil {
+		if err := page.Summary.Validate(); err != nil {
 			return fmt.Errorf("renderer.Universal: %s: %w", scope, err)
 		}
 	}
@@ -357,8 +357,8 @@ func validateListPage(scope string, page *ListPage) error {
 	if err := validateFilterGroups(scope, page.Filters); err != nil {
 		return err
 	}
-	if page.GroupBy != nil && page.GroupBy.Field == "" {
-		return fmt.Errorf("renderer.ListPage: group_by.field is required")
+	if err := validateFilterPills(scope, page.Filters); err != nil {
+		return err
 	}
 	return nil
 }
@@ -517,6 +517,23 @@ func validateFilterGroups(scope string, filters *Filters) error {
 	return nil
 }
 
+func validateFilterPills(scope string, filters *Filters) error {
+	if filters == nil {
+		return nil
+	}
+	if !filters.Presentation.Valid() {
+		return fmt.Errorf("renderer.Universal: %s filters have invalid presentation %q", scope, filters.Presentation)
+	}
+	for _, row := range append(append([][]FilterPill{}, filters.PillRows...), filters.SecondaryPillRows...) {
+		for _, pill := range row {
+			if !pill.Presentation.Valid() {
+				return fmt.Errorf("renderer.Universal: %s filter pill %q has invalid presentation %q", scope, pill.Label, pill.Presentation)
+			}
+		}
+	}
+	return nil
+}
+
 func validateFilterGroupContent(scope string, group FilterGroup, fieldOwners map[string]string) error {
 	if !group.Presentation.Valid() {
 		return fmt.Errorf("renderer.Universal: %s filter group %q has invalid presentation %q", scope, group.ID, group.Presentation)
@@ -667,6 +684,7 @@ type Layout struct {
 
 type Filters struct {
 	Renderer          RendererKey          `json:"renderer,omitempty"`
+	Presentation      FilterPresentation   `json:"presentation,omitempty"`
 	Enabled           bool                 `json:"enabled"`
 	PrimaryPlacement  string               `json:"primary_placement,omitempty"`
 	SecondaryEnabled  *bool                `json:"secondary_enabled,omitempty"`
@@ -682,6 +700,18 @@ type Filters struct {
 	Reset             *FilterReset         `json:"reset,omitempty"`
 	Text              *FilterText          `json:"text,omitempty"`
 	RangePresets      []FilterRangePresets `json:"range_presets,omitempty"`
+}
+
+// FilterPresentation selects a reusable arrangement of the controls declared
+// by Filters. It does not alter their request semantics.
+type FilterPresentation string
+
+const (
+	FilterPresentationToolbar FilterPresentation = "toolbar"
+)
+
+func (presentation FilterPresentation) Valid() bool {
+	return presentation == "" || presentation == FilterPresentationToolbar
 }
 
 type FilterGroupPlacement string
@@ -771,12 +801,35 @@ type FilterText struct {
 }
 
 type FilterPill struct {
-	Label      string `json:"label,omitempty"`
-	LabelKey   string `json:"label_key,omitempty"`
-	Key        string `json:"key,omitempty"`
-	Val        string `json:"val,omitempty"`
-	CountField string `json:"count_field,omitempty"`
-	Dot        bool   `json:"dot,omitempty"`
+	Label         string                 `json:"label,omitempty"`
+	LabelKey      string                 `json:"label_key,omitempty"`
+	GroupLabel    string                 `json:"group_label,omitempty"`
+	GroupLabelKey string                 `json:"group_label_key,omitempty"`
+	Key           string                 `json:"key,omitempty"`
+	Val           string                 `json:"val,omitempty"`
+	CountField    string                 `json:"count_field,omitempty"`
+	Dot           bool                   `json:"dot,omitempty"`
+	Presentation  FilterPillPresentation `json:"presentation,omitempty"`
+	Tone          string                 `json:"tone,omitempty"`
+}
+
+// FilterPillPresentation describes the visual control for an existing filter
+// pill. The key and val still fully define the generated list query.
+type FilterPillPresentation string
+
+const (
+	FilterPillPresentationTabs    FilterPillPresentation = "tabs"
+	FilterPillPresentationToggle  FilterPillPresentation = "toggle"
+	FilterPillPresentationSummary FilterPillPresentation = "summary"
+)
+
+func (presentation FilterPillPresentation) Valid() bool {
+	switch presentation {
+	case "", FilterPillPresentationTabs, FilterPillPresentationToggle, FilterPillPresentationSummary:
+		return true
+	default:
+		return false
+	}
 }
 
 type FilterReset struct {
@@ -855,14 +908,52 @@ func (group *ListGroupBy) Validate() error {
 }
 
 type Summary struct {
-	Title         string `json:"title,omitempty"`
-	TitleFallback string `json:"title_fallback,omitempty"`
-	ShowOnline    *bool  `json:"show_online,omitempty"`
-	ShowAction    *bool  `json:"show_action,omitempty"`
+	Title         string        `json:"title,omitempty"`
+	TitleFallback string        `json:"title_fallback,omitempty"`
+	Items         []SummaryItem `json:"items,omitempty"`
+	ShowOnline    *bool         `json:"show_online,omitempty"`
+	ShowAction    *bool         `json:"show_action,omitempty"`
 	// Resource is resolved by the generator into Load for the current
 	// principal. It supplies record data used by summary-bound list controls.
 	Resource *Resource     `json:"-"`
 	Load     *ResourceLoad `json:"load,omitempty"`
+}
+
+// SummaryItem binds one compact summary value to a field loaded by Summary.
+// It is presentation metadata only and does not affect a list query.
+type SummaryItem struct {
+	ID         string `json:"id"`
+	Label      string `json:"label,omitempty"`
+	LabelKey   string `json:"label_key,omitempty"`
+	ValueField string `json:"value_field"`
+}
+
+func (summary *Summary) Validate() error {
+	if summary == nil {
+		return nil
+	}
+	if summary.Resource != nil {
+		if err := summary.Resource.Validate("summary resource"); err != nil {
+			return err
+		}
+	}
+	ids := make(map[string]struct{}, len(summary.Items))
+	for _, item := range summary.Items {
+		if item.ID == "" {
+			return fmt.Errorf("renderer.Summary: item id is required")
+		}
+		if _, exists := ids[item.ID]; exists {
+			return fmt.Errorf("renderer.Summary: item %q is duplicated", item.ID)
+		}
+		ids[item.ID] = struct{}{}
+		if item.Label == "" && item.LabelKey == "" {
+			return fmt.Errorf("renderer.Summary: item %q label is required", item.ID)
+		}
+		if item.ValueField == "" {
+			return fmt.Errorf("renderer.Summary: item %q value field is required", item.ID)
+		}
+	}
+	return nil
 }
 
 type CardActionLayout string

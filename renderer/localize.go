@@ -95,6 +95,10 @@ func (localizer textLocalizer) localizeListPage(page *ListPage) {
 	}
 	if page.Summary != nil {
 		localizer.localizeTextFields(&page.Summary.Title, &page.Summary.TitleFallback)
+		for i := range page.Summary.Items {
+			page.Summary.Items[i].Label = localizer.localizeRendererText(page.Summary.Items[i].Label, page.Summary.Items[i].LabelKey)
+			page.Summary.Items[i].LabelKey = ""
+		}
 	}
 	if page.GroupBy != nil {
 		localizer.localizeTextFields(&page.GroupBy.TodayLabel, &page.GroupBy.YesterdayLabel, &page.GroupBy.ThisWeekLabel, &page.GroupBy.EarlierLabel)
@@ -149,6 +153,8 @@ func (localizer textLocalizer) localizeFilterPills(rows [][]FilterPill) {
 			pill := &rows[i][j]
 			pill.Label = localizer.localizeRendererText(pill.Label, pill.LabelKey)
 			pill.LabelKey = ""
+			pill.GroupLabel = localizer.localizeRendererText(pill.GroupLabel, pill.GroupLabelKey)
+			pill.GroupLabelKey = ""
 		}
 	}
 }
