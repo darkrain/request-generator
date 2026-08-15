@@ -252,6 +252,29 @@ func TestWorkspaceRejectsDuplicateComposerActions(t *testing.T) {
 	require.EqualError(t, widget.Validate(), `renderer.GlobalWidget: workspace: composer action "open_related" is duplicated`)
 }
 
+func TestWidgetTriggerIsLocalizedValidatedAndCloned(t *testing.T) {
+	widget := validGlobalWorkspace()
+	widget.Surface.Trigger = &WidgetTrigger{
+		Label: "workspace.notifications",
+		Icon:  "bell",
+		Badge: &Badge{Field: "unread_count", IfField: "unread_count", Tone: "pink"},
+	}
+	require.NoError(t, widget.Validate())
+
+	localized := LocalizeGlobalWidget(widget, func(value string, _ string) string {
+		return "translated:" + value
+	})
+	require.Equal(t, "translated:workspace.notifications", localized.Surface.Trigger.Label)
+	localized.Surface.Trigger.Badge.Field = "changed"
+	require.Equal(t, "unread_count", widget.Surface.Trigger.Badge.Field)
+
+	widget.Surface.Trigger = &WidgetTrigger{Label: "workspace.notifications"}
+	require.EqualError(t, widget.Validate(), "renderer.GlobalWidget: surface: trigger: icon is required")
+
+	widget.Surface.Trigger = &WidgetTrigger{Label: "workspace.notifications", Icon: "bell", Badge: &Badge{}}
+	require.EqualError(t, widget.Validate(), "renderer.GlobalWidget: surface: trigger: badge field or value is required")
+}
+
 func TestGlobalWorkspaceCommandValidation(t *testing.T) {
 	widget := validGlobalWorkspace()
 	widget.Workspace.Commands = append(widget.Workspace.Commands, widget.Workspace.Commands[0])
