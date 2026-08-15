@@ -2,12 +2,24 @@ package renderer
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
 func TestActivityListPresentationIsTypedAndLocalized(t *testing.T) {
 	markerVisible := true
 	source := Universal{List: &ListPage{
+		Summary: &Summary{Resource: &Resource{
+			ActionResource: ActionResource{Module: "activity_summary", Action: "view"},
+			Bindings: []RequestBinding{{
+				Target: RequestBindingPathValue,
+				Source: ValueSource{Runtime: &RuntimeValue{Scope: RuntimeValueSourceCurrentUser, Field: "id"}},
+			}},
+		}},
+		Filters: &Filters{PillRows: [][]FilterPill{{
+			{Label: "filter.all", CountField: "all_count"},
+			{Label: "filter.messages", Key: "category", Val: "messages", CountField: "messages_count"},
+		}}},
 		GroupBy: &ListGroupBy{
 			Field:          "created_at",
 			Type:           ListGroupByDate,
@@ -57,6 +69,10 @@ func TestActivityListPresentationIsTypedAndLocalized(t *testing.T) {
 	if source.List.CardSchema.Badges[0].VisibleIf.Path != "record.priority" {
 		t.Fatal("Clone() shares badge visibility condition")
 	}
+	cloned.List.Summary.Resource.Bindings[0].Source.Runtime.Field = "other"
+	if source.List.Summary.Resource.Bindings[0].Source.Runtime.Field != "id" {
+		t.Fatal("Clone() shares summary resource bindings")
+	}
 
 	payload, err := json.Marshal(source)
 	if err != nil {
@@ -64,6 +80,12 @@ func TestActivityListPresentationIsTypedAndLocalized(t *testing.T) {
 	}
 	if string(payload) == "" {
 		t.Fatal("Marshal() returned an empty payload")
+	}
+	if !strings.Contains(string(payload), `"count_field":"messages_count"`) {
+		t.Fatalf("Marshal() omitted pill count field: %s", payload)
+	}
+	if strings.Contains(string(payload), `"activity_summary"`) {
+		t.Fatalf("Marshal() exposed producer summary resource: %s", payload)
 	}
 }
 

@@ -335,6 +335,11 @@ func validateListPage(scope string, page *ListPage) error {
 	if err := validateActions(scope, page.Actions); err != nil {
 		return err
 	}
+	if page.Summary != nil && page.Summary.Resource != nil {
+		if err := page.Summary.Resource.Validate("summary resource"); err != nil {
+			return fmt.Errorf("renderer.Universal: %s: %w", scope, err)
+		}
+	}
 	if page.CardSchema != nil {
 		if err := page.CardSchema.Validate(); err != nil {
 			return err
@@ -768,9 +773,9 @@ type FilterText struct {
 type FilterPill struct {
 	Label      string `json:"label,omitempty"`
 	LabelKey   string `json:"label_key,omitempty"`
-	CountField string `json:"count_field,omitempty"`
 	Key        string `json:"key,omitempty"`
 	Val        string `json:"val,omitempty"`
+	CountField string `json:"count_field,omitempty"`
 	Dot        bool   `json:"dot,omitempty"`
 }
 
@@ -854,6 +859,10 @@ type Summary struct {
 	TitleFallback string `json:"title_fallback,omitempty"`
 	ShowOnline    *bool  `json:"show_online,omitempty"`
 	ShowAction    *bool  `json:"show_action,omitempty"`
+	// Resource is resolved by the generator into Load for the current
+	// principal. It supplies record data used by summary-bound list controls.
+	Resource *Resource     `json:"-"`
+	Load     *ResourceLoad `json:"load,omitempty"`
 }
 
 type CardActionLayout string

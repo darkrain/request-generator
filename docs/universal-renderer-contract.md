@@ -1554,6 +1554,31 @@ Pagination: `count`, `size`, `page`.
 `badges[].variant` передаёт нейтральный renderer-token конкретного варианта
 отображения; его интерпретацию определяет UI kit.
 
+Если вкладка list должна показывать серверный счётчик, она объявляет
+`count_field`. Значение берётся из одной summary-записи, описанной producer-ом
+в `list_page.summary.resource`. Generator скрывает исходную ссылку на модуль и
+отдаёт только стандартный `summary.load`; UI выполняет этот ресурс один раз и
+читает `item[count_field].value`. Нельзя считать такие значения по текущей
+странице или выполнять отдельный request для каждой вкладки.
+
+```json
+{
+  "summary": {
+    "title": "Inbox",
+    "load": {
+      "request": {"method": "GET", "endpoint": "/api/activity_summary/view/user_id/:value"},
+      "bindings": [{"target": "path_value", "source": {"runtime": {"scope": "current_user", "field": "id"}}}]
+    }
+  },
+  "filters": {
+    "pill_rows": [[
+      {"label": "All", "count_field": "all_count"},
+      {"label": "Messages", "key": "category", "val": "messages", "count_field": "messages_count"}
+    ]]
+  }
+}
+```
+
 `list_page.group_by` группирует уже полученные, server-sorted rows только для
 визуального вывода. Он не меняет SQL query, filter, sort или pagination:
 

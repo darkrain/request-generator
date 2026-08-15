@@ -289,6 +289,8 @@ func cloneSummary(v *Summary) *Summary {
 	cp := *v
 	cp.ShowOnline = clonePtr(v.ShowOnline)
 	cp.ShowAction = clonePtr(v.ShowAction)
+	cp.Resource = cloneResource(v.Resource)
+	cp.Load = cloneResourceLoad(v.Load)
 	return &cp
 }
 

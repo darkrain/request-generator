@@ -743,6 +743,10 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
+		if err := generator.resolveListSummaryResource(c, &render, role); err != nil {
+			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			return
+		}
 		if err := generator.resolveFormSectionResources(c, &render, role); err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return

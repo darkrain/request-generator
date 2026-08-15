@@ -513,6 +513,25 @@ func (generator *Generator) buildReferencedResourceLoad(c *gin.Context, resource
 	return load, true, nil
 }
 
+// resolveListSummaryResource converts a producer-owned record reference into
+// the standard request contract used by summary-bound list controls.
+func (generator *Generator) resolveListSummaryResource(c *gin.Context, render *renderer.Universal, role actions.Role) error {
+	if render == nil || render.List == nil || render.List.Summary == nil || render.List.Summary.Resource == nil {
+		return nil
+	}
+
+	load, available, err := generator.buildReferencedResourceLoad(c, *render.List.Summary.Resource, string(role), nil)
+	if err != nil {
+		return fmt.Errorf("list summary resource: %w", err)
+	}
+	if !available {
+		render.List.Summary.Load = nil
+		return nil
+	}
+	render.List.Summary.Load = &load
+	return nil
+}
+
 func (generator *Generator) buildWorkspaceCommandLoad(c *gin.Context, command renderer.WorkspaceCommand, role string, selection *widgetSelectionScope) (renderer.WorkspaceCommandLoad, bool, error) {
 	module, ok := generator.moduleByName(command.Module)
 	if !ok {
