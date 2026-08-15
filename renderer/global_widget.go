@@ -188,6 +188,10 @@ type WorkspaceCommand struct {
 	ID string `json:"id"`
 	// Label is a producer translation key and is localized in /api/config.
 	Label string `json:"label"`
+	// Trigger controls when the workspace invokes a command. An omitted trigger
+	// keeps the command user initiated; the command is rendered as either an
+	// action or an input form according to Input.
+	Trigger WorkspaceCommandTrigger `json:"trigger,omitempty"`
 	// Presentation shares the visual contract of normal renderer actions. It
 	// deliberately excludes request and routing fields: those are generated
 	// from WorkspaceResource.
@@ -206,6 +210,12 @@ func (command WorkspaceCommand) Validate() error {
 	if command.Label == "" {
 		return fmt.Errorf("label is required")
 	}
+	if err := command.Trigger.Validate(); err != nil {
+		return fmt.Errorf("trigger: %w", err)
+	}
+	if command.Trigger != "" && command.Input != nil {
+		return fmt.Errorf("triggered command must not declare input")
+	}
 	if err := command.Input.Validate(command.Bindings); err != nil {
 		return fmt.Errorf("input: %w", err)
 	}
@@ -216,6 +226,26 @@ func (command WorkspaceCommand) Validate() error {
 		return fmt.Errorf("refresh targets are required")
 	}
 	return ValidateWorkspaceRefreshTargets(command.Refresh)
+}
+
+// WorkspaceCommandTrigger identifies a lifecycle event that can invoke a
+// command without a separate user action. The trigger remains independent of
+// the business domain and operates only on the current workspace selection.
+type WorkspaceCommandTrigger string
+
+const (
+	// WorkspaceCommandTriggerSelectionOpen runs once after the workspace has
+	// loaded the detail resource for a newly opened selection.
+	WorkspaceCommandTriggerSelectionOpen WorkspaceCommandTrigger = "selection_open"
+)
+
+func (trigger WorkspaceCommandTrigger) Validate() error {
+	switch trigger {
+	case "", WorkspaceCommandTriggerSelectionOpen:
+		return nil
+	default:
+		return fmt.Errorf("unsupported value %q", trigger)
+	}
 }
 
 // WorkspaceCommandInput declares values that the workspace may collect for a

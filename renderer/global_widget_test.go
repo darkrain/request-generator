@@ -207,6 +207,22 @@ func TestWorkspaceCommandInputValidation(t *testing.T) {
 	}
 }
 
+func TestWorkspaceCommandTriggerValidation(t *testing.T) {
+	command := validGlobalWorkspace().Workspace.Commands[0]
+	command.Trigger = WorkspaceCommandTriggerSelectionOpen
+	require.NoError(t, command.Validate())
+	encoded, err := json.Marshal(command)
+	require.NoError(t, err)
+	require.Contains(t, string(encoded), `"trigger":"selection_open"`)
+
+	command.Input = &WorkspaceCommandInput{Fields: []string{"text"}}
+	require.EqualError(t, command.Validate(), "triggered command must not declare input")
+
+	command.Input = nil
+	command.Trigger = WorkspaceCommandTrigger("on_open")
+	require.EqualError(t, command.Validate(), `trigger: unsupported value "on_open"`)
+}
+
 func TestLocalizeGlobalWidgetLocalizesCommandLabels(t *testing.T) {
 	source := validGlobalWorkspace()
 	localized := LocalizeGlobalWidget(source, func(value string, _ string) string {
