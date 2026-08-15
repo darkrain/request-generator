@@ -410,6 +410,27 @@ func TestWidgetLoadCloneDoesNotShareCommandInputState(t *testing.T) {
 	require.Equal(t, "other", load.Commands[0].AfterSuccess.Widget.ID)
 }
 
+func TestWorkspaceFooterActionsAreValidatedClonedAndLocalized(t *testing.T) {
+	widget := validGlobalWorkspace()
+	widget.Workspace.FooterActions = []Action{{
+		ID:    "open-all",
+		Type:  ActionRoute,
+		Label: "workspace.open_all",
+		Route:  RouteAction{Path: "/records", Query: map[string]interface{}{"tab": "all"}},
+	}}
+	require.NoError(t, widget.Validate())
+
+	localized := LocalizeGlobalWidget(widget, func(value string, _ string) string { return "translated:" + value })
+	require.Equal(t, "translated:workspace.open_all", localized.Workspace.FooterActions[0].Label)
+	localizedRoute := localized.Workspace.FooterActions[0].Route.(RouteAction)
+	localizedRoute.Query["tab"] = "changed"
+	sourceRoute := widget.Workspace.FooterActions[0].Route.(RouteAction)
+	require.Equal(t, "all", sourceRoute.Query["tab"])
+
+	widget.Workspace.FooterActions[0].Type = ""
+	require.EqualError(t, widget.Validate(), `renderer.GlobalWidget: workspace: footer action "open-all": type is required`)
+}
+
 func TestWorkspaceCommandAllowsTypedAfterSuccess(t *testing.T) {
 	command := WorkspaceCommand{
 		ID:    "open",

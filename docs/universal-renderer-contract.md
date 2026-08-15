@@ -906,6 +906,16 @@ Media: &renderer.FieldMediaConfig{
           "refresh": ["master", "detail"]
         }
       ],
+      "footer_actions": [
+        {
+          "id": "open-all",
+          "type": "route",
+          "label": "Open all",
+          "variant": "primary",
+          "appearance": "solid",
+          "route": {"path": "/records"}
+        }
+      ],
       "subscriptions": [
         {
           "module": "detail_records",
@@ -953,6 +963,12 @@ Media: &renderer.FieldMediaConfig{
   }
 }
 ```
+
+`workspace.footer_actions` задаёт обычные typed `Action`, которые renderer
+размещает под master-списком. Это подходит для компактного popup-виджета,
+когда нужен переход на полную страницу или открытие modal. Каждое действие
+обязано иметь `id` и `type`; endpoint и client-side callback в этом поле не
+допускаются.
 
 ### Объявление В Producer
 
@@ -1039,6 +1055,16 @@ Widget: &actions.WidgetConfig{
                     renderer.WorkspaceRefreshMaster,
                     renderer.WorkspaceRefreshDetail,
                 },
+            }},
+            FooterActions: []renderer.Action{{
+                ID:    "open-all",
+                Type:  renderer.ActionRoute,
+                Label: "workspace.open_all",
+                ActionPresentation: renderer.ActionPresentation{
+                    Variant: renderer.ActionVariantPrimary,
+                    Appearance: renderer.ActionAppearanceSolid,
+                },
+                Route: renderer.RouteAction{Path: "/records"},
             }},
         },
     },

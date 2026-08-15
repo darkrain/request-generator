@@ -50,6 +50,8 @@ func LocalizeGlobalWidget(widget GlobalWidget, resolve TextResolver) GlobalWidge
 	localizer := textLocalizer{resolve: resolve}
 	for index := range localized.Workspace.ComposerActions {
 		localizer.localizeRendererAction(&localized.Workspace.ComposerActions[index])
+	for index := range localized.Workspace.FooterActions {
+		localizer.localizeRendererAction(&localized.Workspace.FooterActions[index])
 	}
 	return localized
 }
@@ -169,7 +171,11 @@ type WorkspaceWidget struct {
 	Detail          Resource                `json:"detail"`
 	ComposerActions []Action                `json:"composer_actions,omitempty"`
 	Commands        []WorkspaceCommand      `json:"commands,omitempty"`
-	Subscriptions   []WorkspaceSubscription `json:"subscriptions,omitempty"`
+	// FooterActions are regular typed actions rendered below the master list.
+	// They give compact popup workspaces a server-declared route or modal
+	// target without requiring a client-side special case.
+	FooterActions []Action                `json:"footer_actions,omitempty"`
+	Subscriptions []WorkspaceSubscription `json:"subscriptions,omitempty"`
 }
 
 func (workspace WorkspaceWidget) Validate() error {
@@ -213,6 +219,23 @@ func (workspace WorkspaceWidget) Validate() error {
 			return fmt.Errorf("command %q is duplicated", command.ID)
 		}
 		seenCommands[command.ID] = struct{}{}
+	}
+	seenFooterActions := make(map[string]struct{}, len(workspace.FooterActions))
+	for index := range workspace.FooterActions {
+		action := workspace.FooterActions[index]
+		if action.ID == "" {
+			return fmt.Errorf("footer action %d: id is required", index)
+		}
+		if action.Type == "" {
+			return fmt.Errorf("footer action %q: type is required", action.ID)
+		}
+		if err := action.Validate(); err != nil {
+			return fmt.Errorf("footer action %q: %w", action.ID, err)
+		}
+		if _, exists := seenFooterActions[action.ID]; exists {
+			return fmt.Errorf("footer action %q is duplicated", action.ID)
+		}
+		seenFooterActions[action.ID] = struct{}{}
 	}
 	seenSubscriptions := make(map[string]struct{}, len(workspace.Subscriptions))
 	for index, subscription := range workspace.Subscriptions {
@@ -814,6 +837,7 @@ func cloneWorkspaceWidget(value *WorkspaceWidget) *WorkspaceWidget {
 	cloned.Detail.Bindings = cloneRequestBindings(value.Detail.Bindings)
 	cloned.ComposerActions = cloneActions(value.ComposerActions)
 	cloned.Commands = cloneWorkspaceCommands(value.Commands)
+	cloned.FooterActions = cloneActions(value.FooterActions)
 	cloned.Subscriptions = cloneWorkspaceSubscriptions(value.Subscriptions)
 	return &cloned
 }
