@@ -587,17 +587,17 @@ Actions: []actions.ModuleAction{
                     LoadPolicy: renderer.WidgetLoadOnOpen,
                 },
             },
-            Bindings: []renderer.WidgetRequestBinding{
+            Bindings: []renderer.RequestBinding{
                 {
-                    Target: renderer.WidgetRequestBindingPathByKey,
-                    Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{
+                    Target: renderer.RequestBindingPathByKey,
+                    Source: renderer.ValueSource{Literal: &renderer.TypedValue{
                         Type: renderer.TypedValueString, String: "id",
                     }},
                 },
                 {
-                    Target: renderer.WidgetRequestBindingPathValue,
-                    Source: renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{
-                        Scope: renderer.WidgetRuntimeValueSourceCurrentUser, Field: "id",
+                    Target: renderer.RequestBindingPathValue,
+                    Source: renderer.ValueSource{Runtime: &renderer.RuntimeValue{
+                        Scope: renderer.RuntimeValueSourceCurrentUser, Field: "id",
                     }},
                 },
             },

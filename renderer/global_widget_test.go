@@ -7,9 +7,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func widgetSelectionSource(field string) WidgetValueSource {
-	return WidgetValueSource{Runtime: &WidgetRuntimeValue{
-		Scope: WidgetRuntimeValueSourceSelection,
+func widgetSelectionSource(field string) ValueSource {
+	return ValueSource{Runtime: &RuntimeValue{
+		Scope: RuntimeValueSourceSelection,
 		Field: field,
 	}}
 }
@@ -24,12 +24,12 @@ func validGlobalWorkspace() GlobalWidget {
 		},
 		Workspace: &WorkspaceWidget{
 			Selection: WorkspaceSelection{Field: "id"},
-			Summary:   &WorkspaceResource{ActionResource: ActionResource{Module: "summary_records", Action: "list"}},
-			Master:    WorkspaceResource{ActionResource: ActionResource{Module: "master_records", Action: "list"}},
-			Detail: WorkspaceResource{
+			Summary:   &Resource{ActionResource: ActionResource{Module: "summary_records", Action: "list"}},
+			Master:    Resource{ActionResource: ActionResource{Module: "master_records", Action: "list"}},
+			Detail: Resource{
 				ActionResource: ActionResource{Module: "detail_records", Action: "list"},
-				Bindings: []WidgetRequestBinding{{
-					Target: WidgetRequestBindingFilter,
+				Bindings: []RequestBinding{{
+					Target: RequestBindingFilter,
 					Field:  "parent_id",
 					Source: widgetSelectionSource("id"),
 				}},
@@ -45,10 +45,10 @@ func validGlobalWorkspace() GlobalWidget {
 					Active:     "is_active",
 					VisibleIf:  &Condition{Path: "enabled", Equals: true},
 				},
-				WorkspaceResource: WorkspaceResource{ActionResource: ActionResource{Module: "state_records", Action: "update"}, Bindings: []WidgetRequestBinding{
-					{Target: WidgetRequestBindingPathByKey, Source: WidgetValueSource{Literal: &TypedValue{Type: TypedValueString, String: "id"}}},
-					{Target: WidgetRequestBindingPathValue, Source: widgetSelectionSource("participant_id")},
-					{Target: WidgetRequestBindingBody, Field: "status", Source: WidgetValueSource{Literal: &TypedValue{Type: TypedValueString, String: "active"}}},
+				Resource: Resource{ActionResource: ActionResource{Module: "state_records", Action: "update"}, Bindings: []RequestBinding{
+					{Target: RequestBindingPathByKey, Source: ValueSource{Literal: &TypedValue{Type: TypedValueString, String: "id"}}},
+					{Target: RequestBindingPathValue, Source: widgetSelectionSource("participant_id")},
+					{Target: RequestBindingBody, Field: "status", Source: ValueSource{Literal: &TypedValue{Type: TypedValueString, String: "active"}}},
 				}},
 				Refresh: []WorkspaceRefreshTarget{WorkspaceRefreshMaster, WorkspaceRefreshDetail},
 			}},
@@ -91,14 +91,14 @@ func TestGlobalWidgetValidateRejectsInvalidContract(t *testing.T) {
 		{
 			name: "selection is not bound by detail",
 			edit: func(widget *GlobalWidget) {
-				widget.Workspace.Detail.Bindings[0].Source = WidgetValueSource{Literal: &TypedValue{Type: TypedValueNumber, Number: 1}}
+				widget.Workspace.Detail.Bindings[0].Source = ValueSource{Literal: &TypedValue{Type: TypedValueNumber, Number: 1}}
 			},
 			err: "renderer.GlobalWidget: workspace: detail must bind selection field \"id\"",
 		},
 		{
 			name: "binding source must be a union",
 			edit: func(widget *GlobalWidget) {
-				widget.Workspace.Detail.Bindings[0].Source = WidgetValueSource{}
+				widget.Workspace.Detail.Bindings[0].Source = ValueSource{}
 			},
 			err: "renderer.GlobalWidget: workspace: binding 0 source: must contain exactly one of literal or runtime",
 		},
@@ -149,15 +149,15 @@ func TestGlobalWidgetCloneDoesNotShareWorkspaceState(t *testing.T) {
 }
 
 func TestWorkspaceCommandInputValidation(t *testing.T) {
-	inputSource := func(field string) WidgetValueSource {
-		return WidgetValueSource{Runtime: &WidgetRuntimeValue{Scope: WidgetRuntimeValueSourceInput, Field: field}}
+	inputSource := func(field string) ValueSource {
+		return ValueSource{Runtime: &RuntimeValue{Scope: RuntimeValueSourceInput, Field: field}}
 	}
 	base := WorkspaceCommand{
 		ID:    "create-entry",
 		Label: "workspace.command.create_entry",
 		Input: &WorkspaceCommandInput{Fields: []string{"text"}},
-		WorkspaceResource: WorkspaceResource{ActionResource: ActionResource{Module: "entries", Action: "add"}, Bindings: []WidgetRequestBinding{{
-			Target: WidgetRequestBindingBody,
+		Resource: Resource{ActionResource: ActionResource{Module: "entries", Action: "add"}, Bindings: []RequestBinding{{
+			Target: RequestBindingBody,
 			Field:  "text",
 			Source: inputSource("text"),
 		}}},
@@ -200,7 +200,7 @@ func TestWorkspaceCommandInputValidation(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			command := base
 			command.Input = &WorkspaceCommandInput{Fields: cloneSlice(base.Input.Fields)}
-			command.Bindings = cloneWidgetRequestBindings(base.Bindings)
+			command.Bindings = cloneRequestBindings(base.Bindings)
 			test.edit(&command)
 			require.EqualError(t, command.Validate(), test.err)
 		})
@@ -256,11 +256,11 @@ func TestWorkspaceCommandWithoutSelectionRejectsSelectionBinding(t *testing.T) {
 		ID:               "mark-all",
 		Label:            "workspace.command.mark_all",
 		RequireSelection: &requireSelection,
-		WorkspaceResource: WorkspaceResource{ActionResource: ActionResource{
+		Resource: Resource{ActionResource: ActionResource{
 			Module: "entries",
 			Action: "update",
-		}, Bindings: []WidgetRequestBinding{{
-			Target: WidgetRequestBindingPathValue,
+		}, Bindings: []RequestBinding{{
+			Target: RequestBindingPathValue,
 			Source: widgetSelectionSource("id"),
 		}}},
 		Refresh: []WorkspaceRefreshTarget{WorkspaceRefreshMaster},
@@ -275,7 +275,7 @@ func TestWorkspaceCommandRejectsSelectionTriggerWithoutSelection(t *testing.T) {
 		Label:            "workspace.command.mark_all",
 		Trigger:          WorkspaceCommandTriggerSelectionOpen,
 		RequireSelection: &requireSelection,
-		WorkspaceResource: WorkspaceResource{ActionResource: ActionResource{
+		Resource: Resource{ActionResource: ActionResource{
 			Module: "entries",
 			Action: "update",
 		}},
@@ -361,7 +361,7 @@ func TestWorkspaceAllowsDistinctEventConditionsForOneAction(t *testing.T) {
 func TestWidgetLoadCloneDoesNotShareCommandInputState(t *testing.T) {
 	load := WidgetLoad{Commands: []WorkspaceCommandLoad{{
 		ID: "create-entry",
-		Input: &WorkspaceCommandInputLoad{Definition: WidgetResourceLoad{
+		Input: &WorkspaceCommandInputLoad{Definition: ResourceLoad{
 			Request: APIAction{Method: "GET", Endpoint: "/api/entries/defrec/"},
 		}},
 		AfterSuccess: &ActionResult{Widget: &WidgetTarget{ID: "other", State: WidgetTargetOpen}},
@@ -383,8 +383,8 @@ func TestWorkspaceCommandAllowsTypedAfterSuccess(t *testing.T) {
 			ID:    "chat-workspace",
 			State: WidgetTargetOpen,
 		}},
-		WorkspaceResource: WorkspaceResource{ActionResource: ActionResource{Module: "entries", Action: "update"}},
-		Refresh:           []WorkspaceRefreshTarget{WorkspaceRefreshMaster},
+		Resource: Resource{ActionResource: ActionResource{Module: "entries", Action: "update"}},
+		Refresh:  []WorkspaceRefreshTarget{WorkspaceRefreshMaster},
 	}
 	require.NoError(t, command.Validate())
 

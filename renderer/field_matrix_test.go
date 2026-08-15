@@ -122,6 +122,31 @@ func TestFormSectionColumnsJSONAndClone(t *testing.T) {
 	require.Equal(t, FieldMatrixColumnsOne, cloned.Form.Sections[0].Columns)
 }
 
+func TestFormSectionResourceIsServerOnlyAndCloneSafe(t *testing.T) {
+	source := Universal{Form: &FormPage{Sections: []FormSection{{
+		ID:       "notifications",
+		Renderer: RendererUniversalSection,
+		Resource: &Resource{
+			ActionResource: ActionResource{Module: "preferences", Action: "view"},
+			Bindings: []RequestBinding{{
+				Target: RequestBindingPathByKey,
+				Source: ValueSource{Literal: &TypedValue{Type: TypedValueString, String: "user_id"}},
+			}},
+		},
+		Load: &ResourceLoad{Request: APIAction{Method: "GET", Endpoint: "/api/preferences/view/:bykey/:value"}},
+	}}}}
+
+	encoded, err := json.Marshal(source.Form.Sections[0])
+	require.NoError(t, err)
+	require.JSONEq(t, `{"id":"notifications","renderer":"universal.section","load":{"request":{"method":"GET","endpoint":"/api/preferences/view/:bykey/:value"}}}`, string(encoded))
+
+	cloned := source.Clone()
+	cloned.Form.Sections[0].Resource.Bindings[0].Source.Literal.String = "changed"
+	cloned.Form.Sections[0].Load.Request.Endpoint = "/changed"
+	require.Equal(t, "user_id", source.Form.Sections[0].Resource.Bindings[0].Source.Literal.String)
+	require.Equal(t, "/api/preferences/view/:bykey/:value", source.Form.Sections[0].Load.Request.Endpoint)
+}
+
 func TestFieldMatrixClone(t *testing.T) {
 	original := Universal{Form: &FormPage{Sections: []FormSection{{
 		ID: "rates",

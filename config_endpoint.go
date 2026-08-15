@@ -443,7 +443,7 @@ func filterWorkspaceCommands(widget *renderer.GlobalWidget, loads []renderer.Wor
 
 func (generator *Generator) buildWidgetLoad(c *gin.Context, owner *BaseModule, action actions.ModuleAction, widget actions.WidgetConfig, role string) (renderer.WidgetLoad, bool, error) {
 	if widget.Renderer.Workspace == nil {
-		resource, available, err := generator.buildWidgetResourceLoad(c, owner, action, widget.Bindings, nil)
+		resource, available, err := generator.buildResourceLoad(c, owner, action, widget.Bindings, nil)
 		if err != nil || !available {
 			return renderer.WidgetLoad{}, available, err
 		}
@@ -455,19 +455,19 @@ func (generator *Generator) buildWidgetLoad(c *gin.Context, owner *BaseModule, a
 	if err != nil {
 		return renderer.WidgetLoad{}, false, err
 	}
-	var summary *renderer.WidgetResourceLoad
+	var summary *renderer.ResourceLoad
 	if workspace.Summary != nil {
-		resource, available, err := generator.buildReferencedWidgetResourceLoad(c, *workspace.Summary, role, &selection)
+		resource, available, err := generator.buildReferencedResourceLoad(c, *workspace.Summary, role, &selection)
 		if err != nil || !available {
 			return renderer.WidgetLoad{}, available, err
 		}
 		summary = &resource
 	}
-	master, available, err := generator.buildReferencedWidgetResourceLoad(c, workspace.Master, role, nil)
+	master, available, err := generator.buildReferencedResourceLoad(c, workspace.Master, role, nil)
 	if err != nil || !available {
 		return renderer.WidgetLoad{}, available, err
 	}
-	detail, available, err := generator.buildReferencedWidgetResourceLoad(c, workspace.Detail, role, &selection)
+	detail, available, err := generator.buildReferencedResourceLoad(c, workspace.Detail, role, &selection)
 	if err != nil || !available {
 		return renderer.WidgetLoad{}, available, err
 	}
@@ -493,21 +493,21 @@ func (generator *Generator) buildWorkspaceCommandLoads(c *gin.Context, commands 
 	return loads, nil
 }
 
-func (generator *Generator) buildReferencedWidgetResourceLoad(c *gin.Context, resource renderer.WorkspaceResource, role string, selection *widgetSelectionScope) (renderer.WidgetResourceLoad, bool, error) {
+func (generator *Generator) buildReferencedResourceLoad(c *gin.Context, resource renderer.Resource, role string, selection *widgetSelectionScope) (renderer.ResourceLoad, bool, error) {
 	module, ok := generator.moduleByName(resource.Module)
 	if !ok {
-		return renderer.WidgetResourceLoad{}, false, fmt.Errorf("widget resource references unknown module %q", resource.Module)
+		return renderer.ResourceLoad{}, false, fmt.Errorf("widget resource references unknown module %q", resource.Module)
 	}
 	action, ok := findModuleAction(module, resource.Action)
 	if !ok {
-		return renderer.WidgetResourceLoad{}, false, fmt.Errorf("widget resource %q references unknown action %q", resource.Module, resource.Action)
+		return renderer.ResourceLoad{}, false, fmt.Errorf("widget resource %q references unknown action %q", resource.Module, resource.Action)
 	}
 	if !hasPermission(action, role) {
-		return renderer.WidgetResourceLoad{}, false, nil
+		return renderer.ResourceLoad{}, false, nil
 	}
-	load, available, err := generator.buildWidgetResourceLoad(c, module, action, resource.Bindings, selection)
+	load, available, err := generator.buildResourceLoad(c, module, action, resource.Bindings, selection)
 	if err != nil || !available {
-		return renderer.WidgetResourceLoad{}, available, err
+		return renderer.ResourceLoad{}, available, err
 	}
 	return load, true, nil
 }
@@ -561,36 +561,80 @@ func cloneWorkspaceCommandActionResult(value *renderer.ActionResult) *renderer.A
 	return &cloned
 }
 
-func (generator *Generator) buildWidgetResourceLoad(c *gin.Context, module *BaseModule, action actions.ModuleAction, bindings []renderer.WidgetRequestBinding, selection *widgetSelectionScope) (renderer.WidgetResourceLoad, bool, error) {
-	available, err := generator.validateWidgetRequestBindingAvailability(c, module, action, bindings, selection, nil)
+func (generator *Generator) buildResourceLoad(c *gin.Context, module *BaseModule, action actions.ModuleAction, bindings []renderer.RequestBinding, selection *widgetSelectionScope) (renderer.ResourceLoad, bool, error) {
+	available, err := generator.validateRequestBindingAvailability(c, module, action, bindings, selection, nil)
 	if err != nil || !available {
-		return renderer.WidgetResourceLoad{}, available, err
+		return renderer.ResourceLoad{}, available, err
 	}
 	if _, err := module.RenderFor(c); err != nil {
-		return renderer.WidgetResourceLoad{}, false, err
+		return renderer.ResourceLoad{}, false, err
 	}
 	contract, ok := resolveStandardActionContract(module, action)
 	if !ok {
-		return renderer.WidgetResourceLoad{}, false, fmt.Errorf("widget resource %q action %q has no request", module.Name, action.Action())
+		return renderer.ResourceLoad{}, false, fmt.Errorf("resource %q action %q has no request", module.Name, action.Action())
 	}
-	return renderer.WidgetResourceLoad{
+	return renderer.ResourceLoad{
 		Request:  contract.Request,
-		Bindings: append([]renderer.WidgetRequestBinding(nil), bindings...),
+		Bindings: append([]renderer.RequestBinding(nil), bindings...),
 	}, true, nil
 }
 
-func (generator *Generator) buildWorkspaceCommandResourceLoad(c *gin.Context, module *BaseModule, action actions.ModuleAction, bindings []renderer.WidgetRequestBinding, selection *widgetSelectionScope, input *workspaceCommandInputScope) (renderer.WidgetResourceLoad, bool, error) {
-	available, err := generator.validateWidgetRequestBindingAvailability(c, module, action, bindings, selection, input)
+// resolveFormSectionResources turns server-only section resource references
+// into executable standard-action requests for the current principal. A form
+// section never publishes a producer-defined endpoint or request body.
+func (generator *Generator) resolveFormSectionResources(c *gin.Context, render *renderer.Universal, role actions.Role) error {
+	if render == nil || render.Form == nil {
+		return nil
+	}
+
+	sections := make([]renderer.FormSection, 0, len(render.Form.Sections))
+	for _, section := range render.Form.Sections {
+		if section.Resource == nil {
+			sections = append(sections, section)
+			continue
+		}
+		if section.Resource.Action != string(actions.ModuleActionNameView) {
+			return fmt.Errorf("form section %q resource action must be view", section.ID)
+		}
+
+		targetModule, ok := generator.moduleByName(section.Resource.Module)
+		if !ok {
+			return fmt.Errorf("form section %q resource references unknown module %q", section.ID, section.Resource.Module)
+		}
+		targetRender, err := targetModule.RenderFor(c)
+		if err != nil {
+			return fmt.Errorf("form section %q resource render: %w", section.ID, err)
+		}
+		if targetRender.Form == nil {
+			return fmt.Errorf("form section %q resource %q must render a form", section.ID, section.Resource.Module)
+		}
+
+		load, available, err := generator.buildReferencedResourceLoad(c, *section.Resource, string(role), nil)
+		if err != nil {
+			return fmt.Errorf("form section %q resource: %w", section.ID, err)
+		}
+		if !available {
+			continue
+		}
+		section.Load = &load
+		sections = append(sections, section)
+	}
+	render.Form.Sections = sections
+	return nil
+}
+
+func (generator *Generator) buildWorkspaceCommandResourceLoad(c *gin.Context, module *BaseModule, action actions.ModuleAction, bindings []renderer.RequestBinding, selection *widgetSelectionScope, input *workspaceCommandInputScope) (renderer.ResourceLoad, bool, error) {
+	available, err := generator.validateRequestBindingAvailability(c, module, action, bindings, selection, input)
 	if err != nil || !available {
-		return renderer.WidgetResourceLoad{}, available, err
+		return renderer.ResourceLoad{}, available, err
 	}
 	contract, ok := resolveStandardActionContract(module, action)
 	if !ok {
-		return renderer.WidgetResourceLoad{}, false, fmt.Errorf("workspace command resource %q action %q has no request", module.Name, action.Action())
+		return renderer.ResourceLoad{}, false, fmt.Errorf("workspace command resource %q action %q has no request", module.Name, action.Action())
 	}
-	return renderer.WidgetResourceLoad{
+	return renderer.ResourceLoad{
 		Request:  contract.Request,
-		Bindings: append([]renderer.WidgetRequestBinding(nil), bindings...),
+		Bindings: append([]renderer.RequestBinding(nil), bindings...),
 	}, true, nil
 }
 

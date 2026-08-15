@@ -16,16 +16,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func widgetSelectionSource(field string) renderer.WidgetValueSource {
-	return renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{
-		Scope: renderer.WidgetRuntimeValueSourceSelection,
+func widgetSelectionSource(field string) renderer.ValueSource {
+	return renderer.ValueSource{Runtime: &renderer.RuntimeValue{
+		Scope: renderer.RuntimeValueSourceSelection,
 		Field: field,
 	}}
 }
 
-func widgetInputSource(field string) renderer.WidgetValueSource {
-	return renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{
-		Scope: renderer.WidgetRuntimeValueSourceInput,
+func widgetInputSource(field string) renderer.ValueSource {
+	return renderer.ValueSource{Runtime: &renderer.RuntimeValue{
+		Scope: renderer.RuntimeValueSourceInput,
 		Field: field,
 	}}
 }
@@ -138,12 +138,12 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 						},
 						Workspace: &renderer.WorkspaceWidget{
 							Selection: renderer.WorkspaceSelection{Field: "id"},
-							Summary:   &renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "summary_records", Action: "list"}},
-							Master:    renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "master_records", Action: "list"}},
-							Detail: renderer.WorkspaceResource{
+							Summary:   &renderer.Resource{ActionResource: renderer.ActionResource{Module: "summary_records", Action: "list"}},
+							Master:    renderer.Resource{ActionResource: renderer.ActionResource{Module: "master_records", Action: "list"}},
+							Detail: renderer.Resource{
 								ActionResource: renderer.ActionResource{Module: "detail_records", Action: "list"},
-								Bindings: []renderer.WidgetRequestBinding{{
-									Target: renderer.WidgetRequestBindingFilter,
+								Bindings: []renderer.RequestBinding{{
+									Target: renderer.RequestBindingFilter,
 									Field:  "parent_id",
 									Source: widgetSelectionSource("id"),
 								}},
@@ -155,10 +155,10 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 									Icon:      "ref-status",
 									VisibleIf: &renderer.Condition{Path: "enabled", Equals: "yes"},
 								},
-								WorkspaceResource: renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "state_records", Action: "update"}, Bindings: []renderer.WidgetRequestBinding{
-									{Target: renderer.WidgetRequestBindingPathByKey, Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "id"}}},
-									{Target: renderer.WidgetRequestBindingPathValue, Source: widgetSelectionSource("participant_id")},
-									{Target: renderer.WidgetRequestBindingBody, Field: "status", Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "active"}}},
+								Resource: renderer.Resource{ActionResource: renderer.ActionResource{Module: "state_records", Action: "update"}, Bindings: []renderer.RequestBinding{
+									{Target: renderer.RequestBindingPathByKey, Source: renderer.ValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "id"}}},
+									{Target: renderer.RequestBindingPathValue, Source: widgetSelectionSource("participant_id")},
+									{Target: renderer.RequestBindingBody, Field: "status", Source: renderer.ValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "active"}}},
 								}},
 								Refresh: []renderer.WorkspaceRefreshTarget{renderer.WorkspaceRefreshMaster, renderer.WorkspaceRefreshDetail},
 							}, {
@@ -173,17 +173,17 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 									}},
 								}},
 								Input: &renderer.WorkspaceCommandInput{Fields: []string{"text"}},
-								WorkspaceResource: renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "detail_records", Action: "add"}, Bindings: []renderer.WidgetRequestBinding{
-									{Target: renderer.WidgetRequestBindingBody, Field: "parent_id", Source: widgetSelectionSource("id")},
-									{Target: renderer.WidgetRequestBindingBody, Field: "text", Source: widgetInputSource("text")},
+								Resource: renderer.Resource{ActionResource: renderer.ActionResource{Module: "detail_records", Action: "add"}, Bindings: []renderer.RequestBinding{
+									{Target: renderer.RequestBindingBody, Field: "parent_id", Source: widgetSelectionSource("id")},
+									{Target: renderer.RequestBindingBody, Field: "text", Source: widgetInputSource("text")},
 								}},
 								Refresh: []renderer.WorkspaceRefreshTarget{renderer.WorkspaceRefreshMaster, renderer.WorkspaceRefreshDetail},
 							}, {
 								ID:    "delete_status",
 								Label: "workspace.command.delete_status",
-								WorkspaceResource: renderer.WorkspaceResource{ActionResource: renderer.ActionResource{Module: "state_records", Action: "delete"}, Bindings: []renderer.WidgetRequestBinding{
-									{Target: renderer.WidgetRequestBindingPathByKey, Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "id"}}},
-									{Target: renderer.WidgetRequestBindingPathValue, Source: widgetSelectionSource("participant_id")},
+								Resource: renderer.Resource{ActionResource: renderer.ActionResource{Module: "state_records", Action: "delete"}, Bindings: []renderer.RequestBinding{
+									{Target: renderer.RequestBindingPathByKey, Source: renderer.ValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "id"}}},
+									{Target: renderer.RequestBindingPathValue, Source: widgetSelectionSource("participant_id")},
 								}},
 								Refresh: []renderer.WorkspaceRefreshTarget{renderer.WorkspaceRefreshMaster},
 							}},
@@ -217,9 +217,9 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 					Placement:  renderer.WidgetPlacementShellEnd,
 					LoadPolicy: renderer.WidgetLoadOnOpen,
 				}},
-				Bindings: []renderer.WidgetRequestBinding{
-					{Target: renderer.WidgetRequestBindingPathByKey, Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "id"}}},
-					{Target: renderer.WidgetRequestBindingPathValue, Source: renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{Scope: renderer.WidgetRuntimeValueSourceCurrentUser, Field: "id"}}},
+				Bindings: []renderer.RequestBinding{
+					{Target: renderer.RequestBindingPathByKey, Source: renderer.ValueSource{Literal: &renderer.TypedValue{Type: renderer.TypedValueString, String: "id"}}},
+					{Target: renderer.RequestBindingPathValue, Source: renderer.ValueSource{Runtime: &renderer.RuntimeValue{Scope: renderer.RuntimeValueSourceCurrentUser, Field: "id"}}},
 				},
 			},
 		}},
@@ -270,7 +270,7 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 	require.Equal(t, "/api/workspace/summary_records", workArea.Load.Summary.Request.Endpoint)
 	require.Equal(t, "/api/workspace/master_records", workArea.Load.Master.Request.Endpoint)
 	require.Equal(t, "/api/workspace/detail_records", workArea.Load.Detail.Request.Endpoint)
-	require.Equal(t, renderer.WidgetRequestBindingFilter, workArea.Load.Detail.Bindings[0].Target)
+	require.Equal(t, renderer.RequestBindingFilter, workArea.Load.Detail.Bindings[0].Target)
 	require.Equal(t, "parent_id", workArea.Load.Detail.Bindings[0].Field)
 	require.Equal(t, "id", workArea.Load.Detail.Bindings[0].Source.Runtime.Field)
 	require.Len(t, workArea.Widget.Workspace.Commands, 2)
@@ -281,9 +281,9 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 	require.Equal(t, "set_status", workArea.Load.Commands[0].ID)
 	require.Equal(t, http.MethodPost, workArea.Load.Commands[0].Request.Method)
 	require.Equal(t, "/api/workspace/state_records/:bykey/:value", workArea.Load.Commands[0].Request.Endpoint)
-	require.Equal(t, renderer.WidgetRequestBindingPathValue, workArea.Load.Commands[0].Bindings[1].Target)
+	require.Equal(t, renderer.RequestBindingPathValue, workArea.Load.Commands[0].Bindings[1].Target)
 	require.Equal(t, "participant_id", workArea.Load.Commands[0].Bindings[1].Source.Runtime.Field)
-	require.Equal(t, renderer.WidgetRequestBindingBody, workArea.Load.Commands[0].Bindings[2].Target)
+	require.Equal(t, renderer.RequestBindingBody, workArea.Load.Commands[0].Bindings[2].Target)
 	require.Equal(t, "status", workArea.Load.Commands[0].Bindings[2].Field)
 	require.Equal(t, "create_detail", workArea.Load.Commands[1].ID)
 	require.Equal(t, http.MethodPut, workArea.Load.Commands[1].Request.Method)
@@ -299,8 +299,8 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 	require.Nil(t, resourceMenu.Widget.Workspace)
 	require.NotNil(t, resourceMenu.Load.Resource)
 	require.Equal(t, "/api/shell/resource_entry/view/:bykey/:value", resourceMenu.Load.Resource.Request.Endpoint)
-	require.Equal(t, renderer.WidgetRequestBindingPathValue, resourceMenu.Load.Resource.Bindings[1].Target)
-	require.Equal(t, renderer.WidgetRuntimeValueSourceCurrentUser, resourceMenu.Load.Resource.Bindings[1].Source.Runtime.Scope)
+	require.Equal(t, renderer.RequestBindingPathValue, resourceMenu.Load.Resource.Bindings[1].Target)
+	require.Equal(t, renderer.RuntimeValueSourceCurrentUser, resourceMenu.Load.Resource.Bindings[1].Source.Runtime.Scope)
 	require.NotContains(t, response.Body.String(), `"config"`)
 	require.NotContains(t, response.Body.String(), `"params"`)
 }

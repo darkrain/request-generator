@@ -202,6 +202,76 @@ renderer.FormSection{
 }
 ```
 
+### Внешняя форма в секции
+
+`FormSection.Resource` позволяет встроить форму другого стандартного модуля в
+навигацию текущей form page. Это не отдельный frontend route и не новый
+проектный transport: producer указывает только существующий `view` action и
+typed bindings. Generator проверяет доступ текущей роли, сохраняет описание
+`resource` только на сервере и выдаёт consumer-у уже собранный `load`.
+
+```go
+renderer.FormSection{
+    ID:           "delivery",
+    Title:        "settings.delivery",
+    Renderer:     renderer.RendererUniversalSection,
+    Columns:      renderer.FieldMatrixColumnsOne,
+    LoadingLabel: "ui.loading",
+    Resource: &renderer.Resource{
+        ActionResource: renderer.ActionResource{
+            Module: "delivery_preferences",
+            Action: "view",
+        },
+        Bindings: []renderer.RequestBinding{
+            {
+                Target: renderer.RequestBindingPathByKey,
+                Source: renderer.ValueSource{Literal: &renderer.TypedValue{
+                    Type: renderer.TypedValueString,
+                    String: "user_id",
+                }},
+            },
+            {
+                Target: renderer.RequestBindingPathValue,
+                Source: renderer.ValueSource{Runtime: &renderer.RuntimeValue{
+                    Scope: renderer.RuntimeValueSourceCurrentUser,
+                    Field: "id",
+                }},
+            },
+        },
+    },
+}
+```
+
+В response section получает только исполняемый descriptor. `resource` и имя
+целевого module/action в JSON не попадают:
+
+```json
+{
+  "id": "delivery",
+  "renderer": "universal.section",
+  "load": {
+    "request": {
+      "method": "GET",
+      "endpoint": "/api/delivery_preferences/view/:bykey/:value"
+    },
+    "bindings": [
+      {
+        "target": "path_by_key",
+        "source": {"literal": {"type": "string", "string": "user_id"}}
+      },
+      {
+        "target": "path_value",
+        "source": {"runtime": {"scope": "current_user", "field": "id"}}
+      }
+    ]
+  }
+}
+```
+
+Consumer выполняет `load.request` с bindings, использует полученные
+`form_page`, `fields`, `item` и `form_page.actions` без domain-specific
+веток. Секция с недоступным target action не попадает в response.
+
 ### Field Matrix
 
 `field.matrix` задает раскладку уже описанных typed полей формы. Matrix не
@@ -895,28 +965,28 @@ Widget: &actions.WidgetConfig{
         },
         Workspace: &renderer.WorkspaceWidget{
             Selection: renderer.WorkspaceSelection{Field: "id"},
-            Summary: &renderer.WorkspaceResource{
+            Summary: &renderer.Resource{
                 ActionResource: renderer.ActionResource{
                     Module: "summary_records",
                     Action: "list",
                 },
             },
-            Master: renderer.WorkspaceResource{
+            Master: renderer.Resource{
                 ActionResource: renderer.ActionResource{
                     Module: "master_records",
                     Action: "list",
                 },
             },
-            Detail: renderer.WorkspaceResource{
+            Detail: renderer.Resource{
                 ActionResource: renderer.ActionResource{
                     Module: "detail_records",
                     Action: "list",
                 },
-                Bindings: []renderer.WidgetRequestBinding{{
-                    Target: renderer.WidgetRequestBindingFilter,
+                Bindings: []renderer.RequestBinding{{
+                    Target: renderer.RequestBindingFilter,
                     Field:  "parent_id",
-                    Source: renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{
-                        Scope: renderer.WidgetRuntimeValueSourceSelection,
+                    Source: renderer.ValueSource{Runtime: &renderer.RuntimeValue{
+                        Scope: renderer.RuntimeValueSourceSelection,
                         Field: "id",
                     }},
                 }},
@@ -930,29 +1000,29 @@ Widget: &actions.WidgetConfig{
                     Appearance: renderer.ActionAppearanceOutline,
                     VisibleIf:  &renderer.Condition{Path: "enabled", Equals: false},
                 },
-                WorkspaceResource: renderer.WorkspaceResource{
+                Resource: renderer.Resource{
                     ActionResource: renderer.ActionResource{
                         Module: "state_records",
                         Action: "update",
                     },
-                    Bindings: []renderer.WidgetRequestBinding{
+                    Bindings: []renderer.RequestBinding{
                         {
-                            Target: renderer.WidgetRequestBindingPathByKey,
-                            Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{
+                            Target: renderer.RequestBindingPathByKey,
+                            Source: renderer.ValueSource{Literal: &renderer.TypedValue{
                                 Type: renderer.TypedValueString, String: "id",
                             }},
                         },
                         {
-                            Target: renderer.WidgetRequestBindingPathValue,
-                            Source: renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{
-                                Scope: renderer.WidgetRuntimeValueSourceSelection,
+                            Target: renderer.RequestBindingPathValue,
+                            Source: renderer.ValueSource{Runtime: &renderer.RuntimeValue{
+                                Scope: renderer.RuntimeValueSourceSelection,
                                 Field: "participant_id",
                             }},
                         },
                         {
-                            Target: renderer.WidgetRequestBindingBody,
+                            Target: renderer.RequestBindingBody,
                             Field:  "status",
-                            Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{
+                            Source: renderer.ValueSource{Literal: &renderer.TypedValue{
                                 Type: renderer.TypedValueString, String: "active",
                             }},
                         },
@@ -969,7 +1039,7 @@ Widget: &actions.WidgetConfig{
 ```
 
 `ActionResource` является единственной ссылкой на существующий module action.
-`WorkspaceResource` добавляет к ней только request bindings. Generator сам
+`Resource` добавляет к ней только request bindings. Generator сам
 выдаёт URL и HTTP method в `load`; response action уже содержит существующие
 `list_page`, `record_page` или `form_page`. Widget не повторяет pagination,
 sort, field schema или presentation.
@@ -1065,22 +1135,22 @@ renderer.WorkspaceCommand{
     ID:    "create-entry",
     Label: "workspace.command.create_entry",
     Input: &renderer.WorkspaceCommandInput{Fields: []string{"text"}},
-    WorkspaceResource: renderer.WorkspaceResource{
+    Resource: renderer.Resource{
         ActionResource: renderer.ActionResource{Module: "entries", Action: "add"},
-        Bindings: []renderer.WidgetRequestBinding{
+        Bindings: []renderer.RequestBinding{
             {
-                Target: renderer.WidgetRequestBindingBody,
+                Target: renderer.RequestBindingBody,
                 Field:  "parent_id",
-                Source: renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{
-                    Scope: renderer.WidgetRuntimeValueSourceSelection,
+                Source: renderer.ValueSource{Runtime: &renderer.RuntimeValue{
+                    Scope: renderer.RuntimeValueSourceSelection,
                     Field: "id",
                 }},
             },
             {
-                Target: renderer.WidgetRequestBindingBody,
+                Target: renderer.RequestBindingBody,
                 Field:  "text",
-                Source: renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{
-                    Scope: renderer.WidgetRuntimeValueSourceInput,
+                Source: renderer.ValueSource{Runtime: &renderer.RuntimeValue{
+                    Scope: renderer.RuntimeValueSourceInput,
                     Field: "text",
                 }},
             },
