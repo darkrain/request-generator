@@ -27,7 +27,7 @@ type OpenAPIInfo struct {
 }
 
 type OpenAPIComponents struct {
-	Schemas         map[string]OpenAPISchema        `json:"schemas,omitempty"`
+	Schemas         map[string]OpenAPISchema         `json:"schemas,omitempty"`
 	SecuritySchemes map[string]OpenAPISecurityScheme `json:"securitySchemes,omitempty"`
 }
 
@@ -544,6 +544,8 @@ func fieldToSchema(field fields.ModuleField) OpenAPISchema {
 	case fields.ModuleFieldTypeFloat:
 		s.Type = "number"
 		s.Format = "double"
+	case fields.ModuleFieldTypeBool:
+		s.Type = "boolean"
 	case fields.ModuleFieldTypeArray:
 		s.Type = "array"
 		s.Items = &OpenAPISchema{Type: "string"}

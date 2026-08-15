@@ -45,7 +45,18 @@ func resolveStandardActionContract(module *BaseModule, action actions.ModuleActi
 	case actions.ModuleActionNameView:
 		return standardActionContract{Request: renderer.APIAction{Method: "GET", Endpoint: base + "/view/:bykey/:value"}}, true
 	case actions.ModuleActionNameUpdate:
-		return standardActionContract{Request: renderer.APIAction{Method: "POST", Endpoint: base + "/:bykey/:value"}}, true
+		contract := standardActionContract{Request: renderer.APIAction{Method: "POST", Endpoint: base + "/:bykey/:value"}}
+		switch value := action.(type) {
+		case actions.UpdateModuleAction:
+			if value.Mode == actions.UpdateModeAtomic {
+				contract.ResultFields = atomicUpdateActionResultFields()
+			}
+		case *actions.UpdateModuleAction:
+			if value != nil && value.Mode == actions.UpdateModeAtomic {
+				contract.ResultFields = atomicUpdateActionResultFields()
+			}
+		}
+		return contract, true
 	case actions.ModuleActionNameDelete:
 		return standardActionContract{
 			Request:      renderer.APIAction{Method: "DELETE", Endpoint: base + "/delete/:bykey/:value"},
@@ -53,6 +64,13 @@ func resolveStandardActionContract(module *BaseModule, action actions.ModuleActi
 		}, true
 	default:
 		return standardActionContract{}, false
+	}
+}
+
+func atomicUpdateActionResultFields() []standardActionResultField {
+	return []standardActionResultField{
+		{Field: renderer.ActionResultFieldValue, Type: renderer.TypedValueNumber},
+		{Field: renderer.ActionResultFieldPrimaryKey, Type: renderer.TypedValueString},
 	}
 }
 

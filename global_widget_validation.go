@@ -873,6 +873,8 @@ func runtimeModuleFieldType(fieldType fields.ModuleFieldType) (renderer.TypedVal
 		return renderer.TypedValueString, true
 	case fields.ModuleFieldTypeInt, fields.ModuleFieldTypeFloat:
 		return renderer.TypedValueNumber, true
+	case fields.ModuleFieldTypeBool:
+		return renderer.TypedValueBool, true
 	default:
 		return "", false
 	}
