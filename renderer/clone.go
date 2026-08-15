@@ -40,10 +40,28 @@ func cloneFormPage(v *FormPage) *FormPage {
 		return nil
 	}
 	cp := *v
+	cp.Workflow = cloneFormWorkflow(v.Workflow)
 	cp.Actions = cloneActions(v.Actions)
 	cp.Sections = cloneFormSections(v.Sections)
 	cp.Fields = cloneSlice(v.Fields)
 	cp.Context = cloneMap(v.Context)
+	return &cp
+}
+
+func cloneFormWorkflow(v *FormWorkflow) *FormWorkflow {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	if v.Summary != nil {
+		summary := *v.Summary
+		summary.Fields = cloneSlice(v.Summary.Fields)
+		if v.Summary.Badge != nil {
+			badges := cloneBadges([]Badge{*v.Summary.Badge})
+			summary.Badge = &badges[0]
+		}
+		cp.Summary = &summary
+	}
 	return &cp
 }
 

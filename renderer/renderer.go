@@ -79,6 +79,9 @@ func (r Universal) Validate() error {
 		if err := validateActions("form page", r.Form.Actions); err != nil {
 			return err
 		}
+		if err := validateFormWorkflow(r.Form); err != nil {
+			return err
+		}
 		for _, section := range r.Form.Sections {
 			if err := validateFormSectionColumns(section); err != nil {
 				return err
@@ -959,10 +962,62 @@ type FormPage struct {
 	Title    string                 `json:"title,omitempty"`
 	Subtitle string                 `json:"subtitle,omitempty"`
 	Layout   LayoutType             `json:"layout,omitempty"`
+	Workflow *FormWorkflow          `json:"workflow,omitempty"`
 	Actions  []Action               `json:"actions,omitempty"`
 	Sections []FormSection          `json:"sections,omitempty"`
 	Fields   []string               `json:"fields,omitempty"`
 	Context  map[string]interface{} `json:"context,omitempty"`
+}
+
+// FormWorkflow selects the generic step-based form presentation. Steps are
+// derived from FormPage.Sections, so labels and field ownership stay declared
+// once in the ordinary form contract.
+type FormWorkflow struct {
+	PreviousLabel string               `json:"previous_label,omitempty"`
+	NextLabel     string               `json:"next_label,omitempty"`
+	Summary       *FormWorkflowSummary `json:"summary,omitempty"`
+}
+
+// FormWorkflowSummary binds a live summary to existing form fields and an
+// existing submit action. It adds no transport or module-specific data.
+type FormWorkflowSummary struct {
+	Eyebrow      string   `json:"eyebrow,omitempty"`
+	Title        string   `json:"title,omitempty"`
+	Badge        *Badge   `json:"badge,omitempty"`
+	Fields       []string `json:"fields,omitempty"`
+	SubmitAction string   `json:"submit_action,omitempty"`
+	ShowProgress bool     `json:"show_progress,omitempty"`
+}
+
+func validateFormWorkflow(page *FormPage) error {
+	if page == nil || page.Workflow == nil || page.Workflow.Summary == nil {
+		return nil
+	}
+
+	declaredFields := make(map[string]struct{}, len(page.Fields))
+	for _, field := range page.Fields {
+		declaredFields[field] = struct{}{}
+	}
+	seenFields := make(map[string]struct{}, len(page.Workflow.Summary.Fields))
+	for _, field := range page.Workflow.Summary.Fields {
+		if _, exists := declaredFields[field]; !exists {
+			return fmt.Errorf("renderer.FormWorkflow: summary field %q is not declared by the form", field)
+		}
+		if _, exists := seenFields[field]; exists {
+			return fmt.Errorf("renderer.FormWorkflow: summary field %q is duplicated", field)
+		}
+		seenFields[field] = struct{}{}
+	}
+
+	if page.Workflow.Summary.SubmitAction == "" {
+		return nil
+	}
+	for _, action := range page.Actions {
+		if action.ID == page.Workflow.Summary.SubmitAction && action.Behavior == ActionBehaviorSubmit {
+			return nil
+		}
+	}
+	return fmt.Errorf("renderer.FormWorkflow: summary submit action %q must reference a form submit action", page.Workflow.Summary.SubmitAction)
 }
 
 type FormSection struct {

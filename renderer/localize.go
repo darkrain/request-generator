@@ -172,6 +172,13 @@ func (localizer textLocalizer) localizeBadge(badge *Badge) {
 
 func (localizer textLocalizer) localizeFormPage(page *FormPage) {
 	localizer.localizeTextFields(&page.Title, &page.Subtitle)
+	if page.Workflow != nil {
+		localizer.localizeTextFields(&page.Workflow.PreviousLabel, &page.Workflow.NextLabel)
+		if page.Workflow.Summary != nil {
+			localizer.localizeTextFields(&page.Workflow.Summary.Eyebrow, &page.Workflow.Summary.Title)
+			localizer.localizeBadge(page.Workflow.Summary.Badge)
+		}
+	}
 	for i := range page.Actions {
 		localizer.localizeRendererAction(&page.Actions[i])
 	}
