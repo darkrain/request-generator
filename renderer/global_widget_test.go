@@ -55,7 +55,7 @@ func validGlobalWorkspace() GlobalWidget {
 			Subscriptions: []WorkspaceSubscription{{
 				Module:      "detail_records",
 				Actions:     []string{"add", "update"},
-				Correlation: WorkspaceCorrelationBinding{EventField: "parent_id"},
+				Correlation: &WorkspaceCorrelationBinding{EventField: "parent_id"},
 				Refresh:     []WorkspaceRefreshTarget{WorkspaceRefreshMaster, WorkspaceRefreshDetail},
 			}},
 		},
@@ -225,6 +225,33 @@ func TestGlobalWorkspaceCommandValidation(t *testing.T) {
 	widget = validGlobalWorkspace()
 	widget.Workspace.Commands[0].Refresh = nil
 	require.EqualError(t, widget.Validate(), `renderer.GlobalWidget: workspace: command 0: refresh targets are required`)
+}
+
+func TestWorkspaceCommandWithoutSelectionRejectsSelectionBinding(t *testing.T) {
+	requireSelection := false
+	command := WorkspaceCommand{
+		ID:               "mark-all",
+		Label:            "workspace.command.mark_all",
+		RequireSelection: &requireSelection,
+		WorkspaceResource: WorkspaceResource{ActionResource: ActionResource{
+			Module: "entries",
+			Action: "update",
+		}, Bindings: []WidgetRequestBinding{{
+			Target: WidgetRequestBindingPathValue,
+			Source: widgetSelectionSource("id"),
+		}}},
+		Refresh: []WorkspaceRefreshTarget{WorkspaceRefreshMaster},
+	}
+	require.EqualError(t, command.Validate(), "does not require selection but binding reads selection")
+}
+
+func TestWorkspaceSubscriptionWithoutCorrelationIsValid(t *testing.T) {
+	subscription := WorkspaceSubscription{
+		Module:  "entries",
+		Actions: []string{"add"},
+		Refresh: []WorkspaceRefreshTarget{WorkspaceRefreshSummary, WorkspaceRefreshMaster},
+	}
+	require.NoError(t, subscription.Validate())
 }
 
 func TestWidgetLoadCloneDoesNotShareCommandInputState(t *testing.T) {

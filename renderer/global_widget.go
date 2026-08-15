@@ -142,7 +142,11 @@ func (workspace WorkspaceWidget) Validate() error {
 		if err := subscription.Validate(); err != nil {
 			return fmt.Errorf("subscription %d: %w", index, err)
 		}
-		key := subscription.Module + "\x00" + strings.Join(subscription.Actions, "\x00") + "\x00" + subscription.Correlation.EventField
+		correlationField := ""
+		if subscription.Correlation != nil {
+			correlationField = subscription.Correlation.EventField
+		}
+		key := subscription.Module + "\x00" + strings.Join(subscription.Actions, "\x00") + "\x00" + correlationField
 		if _, exists := seenSubscriptions[key]; exists {
 			return fmt.Errorf("subscription %d is duplicated", index)
 		}
@@ -199,6 +203,10 @@ type WorkspaceCommand struct {
 	// shell, for example by opening another registered global widget. The
 	// command request remains generated from WorkspaceResource.
 	AfterSuccess *ActionResult `json:"after_success,omitempty"`
+	// RequireSelection controls whether the command needs a selected master
+	// row. It defaults to true. A false value is valid only for commands whose
+	// bindings do not read the selection runtime scope.
+	RequireSelection *bool `json:"require_selection,omitempty"`
 	WorkspaceResource
 	Refresh []WorkspaceRefreshTarget `json:"refresh"`
 }
@@ -219,6 +227,13 @@ func (command WorkspaceCommand) Validate() error {
 	if command.AfterSuccess != nil {
 		if err := command.AfterSuccess.Validate(); err != nil {
 			return fmt.Errorf("after success: %w", err)
+		}
+	}
+	if command.RequireSelection != nil && !*command.RequireSelection {
+		for _, binding := range command.Bindings {
+			if binding.Source.Runtime != nil && binding.Source.Runtime.Scope == WidgetRuntimeValueSourceSelection {
+				return fmt.Errorf("does not require selection but binding reads selection")
+			}
 		}
 	}
 	if len(command.Refresh) == 0 {
@@ -420,10 +435,12 @@ func ValidateWorkspaceRefreshTargets(targets []WorkspaceRefreshTarget) error {
 }
 
 type WorkspaceSubscription struct {
-	Module      string                      `json:"module"`
-	Actions     []string                    `json:"actions"`
-	Correlation WorkspaceCorrelationBinding `json:"correlation"`
-	Refresh     []WorkspaceRefreshTarget    `json:"refresh"`
+	Module  string   `json:"module"`
+	Actions []string `json:"actions"`
+	// Correlation narrows refreshes to the selected master row. When absent,
+	// every authorized matching realtime event refreshes the declared targets.
+	Correlation *WorkspaceCorrelationBinding `json:"correlation,omitempty"`
+	Refresh     []WorkspaceRefreshTarget     `json:"refresh"`
 }
 
 // WorkspaceCorrelationBinding identifies a declared realtime event field. The
@@ -449,8 +466,8 @@ func (subscription WorkspaceSubscription) Validate() error {
 		}
 		seenActions[action] = struct{}{}
 	}
-	if subscription.Correlation.EventField == "" {
-		return fmt.Errorf("correlation event field is required")
+	if subscription.Correlation != nil && subscription.Correlation.EventField == "" {
+		return fmt.Errorf("correlation event field is required when correlation is set")
 	}
 	if len(subscription.Refresh) == 0 {
 		return fmt.Errorf("refresh targets are required")
@@ -660,6 +677,11 @@ func cloneWorkspaceCommands(values []WorkspaceCommand) []WorkspaceCommand {
 		}
 		cloned[index].Bindings = cloneWidgetRequestBindings(value.Bindings)
 		cloned[index].Refresh = cloneSlice(value.Refresh)
+		cloned[index].AfterSuccess = cloneActionResult(value.AfterSuccess)
+		if value.RequireSelection != nil {
+			requireSelection := *value.RequireSelection
+			cloned[index].RequireSelection = &requireSelection
+		}
 	}
 	return cloned
 }
@@ -702,6 +724,10 @@ func cloneWorkspaceSubscriptions(values []WorkspaceSubscription) []WorkspaceSubs
 		cloned[index] = value
 		cloned[index].Actions = cloneSlice(value.Actions)
 		cloned[index].Refresh = cloneSlice(value.Refresh)
+		if value.Correlation != nil {
+			correlation := *value.Correlation
+			cloned[index].Correlation = &correlation
+		}
 	}
 	return cloned
 }
