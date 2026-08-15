@@ -316,6 +316,48 @@ func TestWorkspaceSubscriptionToastIsValidatedAndCloned(t *testing.T) {
 	require.EqualError(t, subscription.Validate(), "toast: title or message is required")
 }
 
+func TestWorkspaceSubscriptionEventConditionIsValidatedAndCloned(t *testing.T) {
+	truthy := true
+	subscription := WorkspaceSubscription{
+		Module:         "entries",
+		Actions:        []string{"add"},
+		EventCondition: &Condition{Path: "payload.refresh", Truthy: &truthy},
+		Refresh:        []WorkspaceRefreshTarget{WorkspaceRefreshMaster},
+	}
+	require.NoError(t, subscription.Validate())
+	cloned := cloneWorkspaceSubscriptions([]WorkspaceSubscription{subscription})
+	require.NotNil(t, cloned[0].EventCondition)
+	require.NotSame(t, subscription.EventCondition, cloned[0].EventCondition)
+	subscription.EventCondition.Path = "changed"
+	require.Equal(t, "payload.refresh", cloned[0].EventCondition.Path)
+}
+
+func TestWorkspaceSubscriptionToastCanRunWithoutRefresh(t *testing.T) {
+	subscription := WorkspaceSubscription{
+		Module:  "entries",
+		Actions: []string{"add"},
+		Toast:   &WorkspaceSubscriptionToast{Title: &TextBinding{Field: "title"}},
+	}
+	require.NoError(t, subscription.Validate())
+}
+
+func TestWidgetSurfaceSizeIsValidated(t *testing.T) {
+	surface := WidgetSurface{Kind: WidgetSurfacePopup, Placement: WidgetPlacementShellEnd, LoadPolicy: WidgetLoadEager, Size: SizeSM}
+	require.NoError(t, surface.Validate())
+	surface.Size = "huge"
+	require.EqualError(t, surface.Validate(), `unsupported size "huge"`)
+}
+
+func TestWorkspaceAllowsDistinctEventConditionsForOneAction(t *testing.T) {
+	truthy := true
+	widget := validGlobalWorkspace()
+	widget.Workspace.Subscriptions = []WorkspaceSubscription{
+		{Module: "records", Actions: []string{"add"}, EventCondition: &Condition{Path: "payload.refresh", Truthy: &truthy}, Refresh: []WorkspaceRefreshTarget{WorkspaceRefreshMaster}},
+		{Module: "records", Actions: []string{"add"}, EventCondition: &Condition{Path: "payload.toast", Truthy: &truthy}, Toast: &WorkspaceSubscriptionToast{Title: &TextBinding{Field: "title"}}},
+	}
+	require.NoError(t, widget.Validate())
+}
+
 func TestWidgetLoadCloneDoesNotShareCommandInputState(t *testing.T) {
 	load := WidgetLoad{Commands: []WorkspaceCommandLoad{{
 		ID: "create-entry",

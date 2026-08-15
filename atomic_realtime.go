@@ -2,6 +2,7 @@ package module
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/darkrain/request-generator/actions"
 	"github.com/darkrain/request-generator/fields"
@@ -85,6 +86,25 @@ func validateAtomicResultConfig(module *BaseModule, realtime *actions.RealtimeEv
 		actual, ok := atomicKindTypedValueType(kind)
 		if !ok || actual != expected {
 			return fmt.Errorf("atomic realtime publish %d correlation field %q type does not match declared field", index, publish.Correlation.Field)
+		}
+		payloadKeys := make(map[string]struct{}, len(publish.Payload))
+		for payloadIndex, payload := range publish.Payload {
+			if payload.Key == "" {
+				return fmt.Errorf("atomic realtime publish %d payload %d key is required", index, payloadIndex)
+			}
+			if _, exists := payloadKeys[payload.Key]; exists {
+				return fmt.Errorf("atomic realtime publish %d payload key %q is duplicated", index, payload.Key)
+			}
+			payloadKeys[payload.Key] = struct{}{}
+			if err := payload.Source.Validate(); err != nil {
+				return fmt.Errorf("atomic realtime publish %d payload %q: %w", index, payload.Key, err)
+			}
+			if payload.Source.Scope != actions.AtomicValueSourceResult {
+				return fmt.Errorf("atomic realtime publish %d payload %q must use a result field", index, payload.Key)
+			}
+			if _, ok := resultFields[payload.Source.Field]; !ok {
+				return fmt.Errorf("atomic realtime publish %d payload %q references undeclared result field %q", index, payload.Key, payload.Source.Field)
+			}
 		}
 	}
 	return nil
@@ -233,6 +253,9 @@ func atomicRealtimePublishesFor(configuredPublishes []actions.AtomicRealtimePubl
 			}
 		}
 		if len(topics) == 0 {
+			if configured.SkipEmptyRecipients {
+				continue
+			}
 			return nil, fmt.Errorf("atomic realtime publish %d has no recipients", index)
 		}
 		correlationValue, err := resolveAtomicValueSource(input, result, configured.Correlation.Source)
@@ -243,15 +266,37 @@ func atomicRealtimePublishesFor(configuredPublishes []actions.AtomicRealtimePubl
 		if err != nil {
 			return nil, fmt.Errorf("atomic realtime publish %d correlation: %w", index, err)
 		}
+		payload := make(map[string]interface{}, len(configured.Payload))
+		for payloadIndex, configuredField := range configured.Payload {
+			value, err := resolveAtomicValueSource(input, result, configuredField.Source)
+			if err != nil {
+				return nil, fmt.Errorf("atomic realtime publish %d payload %d: %w", index, payloadIndex, err)
+			}
+			payload[configuredField.Key] = atomicRealtimePayloadValue(value)
+		}
 		publishes = append(publishes, RealtimePublish{
 			Topics: topics,
 			Correlation: &RealtimeCorrelation{
 				Field: configured.Correlation.Field,
 				Value: typedValue,
 			},
+			Payload: payload,
 		})
 	}
 	return publishes, nil
+}
+
+func atomicRealtimePayloadValue(value actions.AtomicValue) interface{} {
+	switch {
+	case value.Time != nil:
+		return value.Time.UTC().Format(time.RFC3339Nano)
+	case value.Strings != nil:
+		return append([]string(nil), value.Strings...)
+	case value.Ints != nil:
+		return append([]int64(nil), value.Ints...)
+	default:
+		return value.Interface()
+	}
 }
 
 func resolveAtomicValueSource(input actions.AtomicInput, result map[string]actions.AtomicValue, source actions.AtomicValueSource) (actions.AtomicValue, error) {

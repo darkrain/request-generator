@@ -891,6 +891,7 @@ Widget: &actions.WidgetConfig{
             Kind:       renderer.WidgetSurfaceDrawer,
             Placement:  renderer.WidgetPlacementShellEnd,
             LoadPolicy: renderer.WidgetLoadOnOpen,
+            Size:       renderer.SizeMD,
         },
         Workspace: &renderer.WorkspaceWidget{
             Selection: renderer.WorkspaceSelection{Field: "id"},
@@ -1168,10 +1169,56 @@ Realtime event может нести typed correlation отдельно от `re
 
 `WorkspaceSubscription.correlation.event_field` должен совпадать с declared
 producer field, а его type - с selection workspace. Runtime сравнивает этот
-field с typed correlation, а не с `payload`. Данные event payload остаются
-транспортными данными и не являются UI contract-ом. Socket, auth, reconnect,
-replay и UI lifecycle не входят в request-generator: их реализует
-integration/runtime.
+field с typed correlation, а не с `payload`.
+
+Для effects, которые не должны угадываться consumer-ом, atomic write может
+явно спроецировать проверенные result fields в `event.payload`. Каждое поле
+`AtomicRealtimePayloadField` обязано ссылаться на declared `result` field:
+значения из HTTP input в payload не допускаются. `WorkspaceSubscription`
+может ограничить реакцию через `event_condition`, который вычисляется над
+`{ event }`. Это позволяет одному standard action отправить, например,
+отдельный refresh и отдельный toast без module-specific ветки в UI:
+
+```go
+Publish: []actions.AtomicRealtimePublishConfig{
+    {
+        Recipients: []actions.AtomicRealtimeRecipient{{
+            UserID: actions.AtomicValueSource{Scope: actions.AtomicValueSourceResult, Field: "recipient_ids"},
+        }},
+        Correlation: &actions.AtomicRealtimeCorrelation{
+            Field: "parent_id",
+            Source: actions.AtomicValueSource{Scope: actions.AtomicValueSourceResult, Field: "parent_id"},
+        },
+        Payload: []actions.AtomicRealtimePayloadField{{
+            Key: "refresh",
+            Source: actions.AtomicValueSource{Scope: actions.AtomicValueSourceResult, Field: "refresh"},
+        }},
+    },
+}
+
+truthy := true
+Subscriptions: []renderer.WorkspaceSubscription{{
+    Module: "detail_records",
+    Actions: []string{"add"},
+    EventCondition: &renderer.Condition{
+        Path: "event.payload.refresh",
+        Truthy: &truthy,
+    },
+    Refresh: []renderer.WorkspaceRefreshTarget{renderer.WorkspaceRefreshMaster},
+}},
+```
+
+Подписка с `toast` может не иметь `refresh`: integration отрисовывает
+локализованные `TextBinding` из event payload. `skip_empty_recipients` у
+atomic publish допускает отсутствие второго, optional effect для всех
+получателей, но не маскирует отсутствие получателей у обязательной публикации.
+
+`WidgetSurface.size` использует общий `SizeToken`. Это семантический размер
+surface (`xs` ... `xl`), а не CSS-значение: consumer сам выбирает адаптивную
+геометрию popup или drawer.
+
+Socket, auth, reconnect, replay и UI lifecycle не входят в
+request-generator: их реализует integration/runtime.
 
 ### Design Tokens
 
