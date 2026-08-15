@@ -1213,18 +1213,57 @@ type FieldMatrixList struct {
 }
 
 type FieldMatrixTable struct {
-	Heads []string         `json:"heads,omitempty"`
-	Rows  []FieldMatrixRow `json:"rows,omitempty"`
+	Heads        []string                     `json:"heads,omitempty"`
+	Rows         []FieldMatrixRow             `json:"rows,omitempty"`
+	Presentation FieldMatrixTablePresentation `json:"presentation,omitempty"`
+	Source       *FieldMatrixDataSource       `json:"source,omitempty"`
 }
 
+// FieldMatrixTablePresentation selects a reusable visual arrangement for the
+// same typed rows and cells. It never changes the data or action contract.
+type FieldMatrixTablePresentation string
+
+const (
+	FieldMatrixTablePresentationGrid      FieldMatrixTablePresentation = "grid"
+	FieldMatrixTablePresentationChips     FieldMatrixTablePresentation = "chips"
+	FieldMatrixTablePresentationAccordion FieldMatrixTablePresentation = "accordion"
+)
+
 type FieldMatrixRow struct {
-	Label string            `json:"label,omitempty"`
-	Cells []FieldMatrixCell `json:"cells,omitempty"`
+	ID          string            `json:"id,omitempty"`
+	Label       string            `json:"label,omitempty"`
+	Description string            `json:"description,omitempty"`
+	Icon        string            `json:"icon,omitempty"`
+	Tone        string            `json:"tone,omitempty"`
+	Cells       []FieldMatrixCell `json:"cells,omitempty"`
 }
 
 type FieldMatrixCell struct {
-	Field string `json:"field,omitempty"`
-	Text  string `json:"text,omitempty"`
+	Field          string `json:"field,omitempty"`
+	Label          string `json:"label,omitempty"`
+	Text           string `json:"text,omitempty"`
+	Icon           string `json:"icon,omitempty"`
+	AvailableField string `json:"available_field,omitempty"`
+}
+
+// FieldMatrixDataSource connects a table layout to a standard list/update
+// pair. The matrix owns only presentation and editable boolean field names;
+// the generator resolves executable requests for the referenced actions.
+// This keeps matrix consumers free of producer endpoint conventions.
+type FieldMatrixDataSource struct {
+	IDField  string `json:"id_field,omitempty"`
+	KeyField string `json:"key_field,omitempty"`
+
+	// List and Update are producer-only standard action references. Load is
+	// the public executable contract built for the current principal.
+	List   ActionResource             `json:"-"`
+	Update ActionResource             `json:"-"`
+	Load   *FieldMatrixDataSourceLoad `json:"load,omitempty"`
+}
+
+type FieldMatrixDataSourceLoad struct {
+	List   ResourceLoad `json:"list"`
+	Update ResourceLoad `json:"update"`
 }
 
 func validateFormSectionColumns(section FormSection) error {
@@ -1248,7 +1287,27 @@ func (matrix *FieldMatrix) Validate(sectionID string) error {
 		if len(matrix.Table.Heads) == 0 || len(matrix.Table.Rows) == 0 {
 			return fmt.Errorf("renderer.Universal: matrix section %q table must define heads and rows", sectionID)
 		}
+		switch matrix.Table.Presentation {
+		case "", FieldMatrixTablePresentationGrid, FieldMatrixTablePresentationChips, FieldMatrixTablePresentationAccordion:
+		default:
+			return fmt.Errorf("renderer.Universal: matrix section %q table has unsupported presentation %q", sectionID, matrix.Table.Presentation)
+		}
+		if matrix.Table.Source != nil {
+			source := matrix.Table.Source
+			if source.IDField == "" || source.KeyField == "" {
+				return fmt.Errorf("renderer.Universal: matrix section %q table source must define id and key fields", sectionID)
+			}
+			if err := source.List.Validate("field matrix source list"); err != nil {
+				return fmt.Errorf("renderer.Universal: matrix section %q: %w", sectionID, err)
+			}
+			if err := source.Update.Validate("field matrix source update"); err != nil {
+				return fmt.Errorf("renderer.Universal: matrix section %q: %w", sectionID, err)
+			}
+		}
 		for rowIndex, row := range matrix.Table.Rows {
+			if matrix.Table.Source != nil && row.ID == "" {
+				return fmt.Errorf("renderer.Universal: matrix section %q source row %d must define id", sectionID, rowIndex)
+			}
 			expectedCells := len(matrix.Table.Heads)
 			if row.Label != "" {
 				expectedCells--
@@ -1259,6 +1318,9 @@ func (matrix *FieldMatrix) Validate(sectionID string) error {
 			for cellIndex, cell := range row.Cells {
 				if (cell.Field == "") == (cell.Text == "") {
 					return fmt.Errorf("renderer.Universal: matrix section %q row %d cell %d must define exactly one of field or text", sectionID, rowIndex, cellIndex)
+				}
+				if cell.AvailableField != "" && cell.Field == "" {
+					return fmt.Errorf("renderer.Universal: matrix section %q row %d cell %d availability requires field", sectionID, rowIndex, cellIndex)
 				}
 			}
 		}

@@ -2,7 +2,7 @@
 
 Имя: `UniversalRenderer`
 
-Версия: `2.1.0`
+Версия: `2.2.0`
 
 Статус: `draft`
 
@@ -53,7 +53,7 @@ UniversalRenderer читает metadata только из typed response fields.
 {
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "2.1.0"
+    "version": "2.2.0"
   }
 }
 ```
@@ -108,7 +108,7 @@ Closed enums должны использовать typed constants из package 
   "page": 0,
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "2.1.0"
+    "version": "2.2.0"
   },
   "list_page": {},
   "rows": [],
@@ -150,7 +150,7 @@ Closed enums должны использовать typed constants из package 
 {
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "2.1.0"
+    "version": "2.2.0"
   },
   "form_page": {},
   "fields": {
@@ -318,6 +318,12 @@ renderer.FormSection{
 количество `cells` на единицу меньше числа заголовков. Без `row.label` оно
 должно совпадать с числом заголовков.
 
+`table.presentation` задает arrangement тех же typed rows: пустое значение
+или `grid` рисует таблицу, `chips` — компактные переключатели одной строки,
+`accordion` — раскрывающиеся строки. `rows[].icon`, `rows[].tone` и
+`cells[].icon` являются presentation tokens: consumer сопоставляет их со
+своим icon catalog и palette, generator не знает их реализации.
+
 `list` содержит только упорядоченные `fields` и typed `columns` от одного до
 четырех. Каждый field выводится как самостоятельный item без описания строк,
 ячеек или колонок в producer metadata.
@@ -337,7 +343,8 @@ renderer.FormSection{
 }
 ```
 
-`heads[]`, `rows[].label` и `cells[].text` producer задает translation
+`heads[]`, `rows[].label`, `rows[].description`, `cells[].label` и
+`cells[].text` producer задает translation
 keys. Перед ответом request-generator локализует их для выбранного `lang`; UI
 kit не получает ключи и не выполняет перевод. `underline` является opaque
 application-defined visual identifier: generator не знает его палитру и не
@@ -347,13 +354,72 @@ Generator проверяет closed `type`, применимость `list`/`tab
 число колонок list, структуру table и существование каждого referenced field
 в модуле.
 
+### Матрица с самостоятельными строками
+
+Когда строки матрицы хранятся в другом стандартном module, `table.source`
+связывает presentation с его обычными `list` и `update` actions. Producer не
+передает endpoint в JSON: request-generator проверяет actions, permissions,
+selector и editable boolean fields, а затем публикует `source.load` для
+текущего principal. `id_field` является selector update action, `key_field`
+связывает response list с `rows[].id`, а `available_field` отключает channel,
+который недоступен для данной строки.
+
+```go
+renderer.FormSection{
+    ID:       "delivery-rules",
+    Renderer: renderer.RendererFieldMatrix,
+    Matrix: &renderer.FieldMatrix{
+        Type: renderer.FieldMatrixTypeTable,
+        Table: &renderer.FieldMatrixTable{
+            Heads: []string{"preferences.type", "preferences.email", "preferences.push"},
+            Rows: []renderer.FieldMatrixRow{{
+                ID:          "chat_messages",
+                Label:       "preferences.chat_messages",
+                Description: "preferences.chat_messages_hint",
+                Icon:        "chat",
+                Tone:        "cyan",
+                Cells: []renderer.FieldMatrixCell{
+                    {Field: "email_enabled", Label: "preferences.email", Icon: "mail", AvailableField: "email_available"},
+                    {Field: "push_enabled", Label: "preferences.push", Icon: "push", AvailableField: "push_available"},
+                },
+            }},
+            Source: &renderer.FieldMatrixDataSource{
+                IDField:  "id",
+                KeyField: "group_code",
+                List:     renderer.ActionResource{Module: "delivery_preferences", Action: "list"},
+                Update:   renderer.ActionResource{Module: "delivery_preferences", Action: "update"},
+            },
+        },
+    },
+}
+```
+
+После разрешения contract consumer получает только executable metadata:
+
+```json
+{
+  "source": {
+    "id_field": "id",
+    "key_field": "group_code",
+    "load": {
+      "list": {"request": {"method": "GET", "endpoint": "/api/delivery_preferences"}},
+      "update": {"request": {"method": "POST", "endpoint": "/api/delivery_preferences/:bykey/:value"}}
+    }
+  }
+}
+```
+
+`rows[].icon`, `rows[].tone` и `rows[].description` относятся только к
+presentation. Значения переключателей, availability и update selector всегда
+остаются в ответе исходного standard module action.
+
 ### View/Record Response
 
 ```json
 {
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "2.1.0"
+    "version": "2.2.0"
   },
   "record_page": {},
   "item": {
@@ -399,7 +465,7 @@ Generator проверяет closed `type`, применимость `list`/`tab
         "type": "page",
         "renderer": {
           "name": "UniversalRenderer",
-          "version": "2.1.0"
+          "version": "2.2.0"
         },
         "page_type": "list",
         "query": {
@@ -430,7 +496,7 @@ Generator проверяет closed `type`, применимость `list`/`tab
       "order": 10,
       "renderer": {
         "name": "UniversalRenderer",
-        "version": "2.1.0"
+        "version": "2.2.0"
       },
       "widget": {
         "surface": {
@@ -853,7 +919,7 @@ Media: &renderer.FieldMediaConfig{
 {
   "id": "work-area",
   "order": 10,
-  "renderer": {"name": "UniversalRenderer", "version": "2.1.0"},
+  "renderer": {"name": "UniversalRenderer", "version": "2.2.0"},
   "widget": {
     "surface": {
       "kind": "drawer",
@@ -1977,7 +2043,7 @@ Media metadata should reference fields, not hardcoded rendering branches.
   "page": 0,
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "2.1.0"
+    "version": "2.2.0"
   },
   "rows": [
     {"id": 1, "name": "Example", "status": "active"}

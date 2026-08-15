@@ -219,9 +219,9 @@ func (localizer textLocalizer) localizeFieldMatrix(matrix *FieldMatrix) {
 	}
 	for i := range matrix.Table.Rows {
 		row := &matrix.Table.Rows[i]
-		localizer.localizeTextFields(&row.Label)
+		localizer.localizeTextFields(&row.Label, &row.Description)
 		for j := range row.Cells {
-			localizer.localizeTextFields(&row.Cells[j].Text)
+			localizer.localizeTextFields(&row.Cells[j].Label, &row.Cells[j].Text)
 		}
 	}
 }

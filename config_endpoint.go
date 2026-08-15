@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/darkrain/request-generator/actions"
+	"github.com/darkrain/request-generator/fields"
 	"github.com/darkrain/request-generator/icontext"
 	"github.com/darkrain/request-generator/locale"
 	"github.com/darkrain/request-generator/renderer"
@@ -589,38 +590,139 @@ func (generator *Generator) resolveFormSectionResources(c *gin.Context, render *
 
 	sections := make([]renderer.FormSection, 0, len(render.Form.Sections))
 	for _, section := range render.Form.Sections {
-		if section.Resource == nil {
-			sections = append(sections, section)
-			continue
-		}
-		if section.Resource.Action != string(actions.ModuleActionNameView) {
-			return fmt.Errorf("form section %q resource action must be view", section.ID)
+		if section.Resource != nil {
+			if section.Resource.Action != string(actions.ModuleActionNameView) {
+				return fmt.Errorf("form section %q resource action must be view", section.ID)
+			}
+
+			targetModule, ok := generator.moduleByName(section.Resource.Module)
+			if !ok {
+				return fmt.Errorf("form section %q resource references unknown module %q", section.ID, section.Resource.Module)
+			}
+			targetRender, err := targetModule.RenderFor(c)
+			if err != nil {
+				return fmt.Errorf("form section %q resource render: %w", section.ID, err)
+			}
+			if targetRender.Form == nil {
+				return fmt.Errorf("form section %q resource %q must render a form", section.ID, section.Resource.Module)
+			}
+
+			load, available, err := generator.buildReferencedResourceLoad(c, *section.Resource, string(role), nil)
+			if err != nil {
+				return fmt.Errorf("form section %q resource: %w", section.ID, err)
+			}
+			if !available {
+				continue
+			}
+			section.Load = &load
 		}
 
-		targetModule, ok := generator.moduleByName(section.Resource.Module)
-		if !ok {
-			return fmt.Errorf("form section %q resource references unknown module %q", section.ID, section.Resource.Module)
+		if err := generator.resolveFieldMatrixSource(c, &section, role); err != nil {
+			return err
 		}
-		targetRender, err := targetModule.RenderFor(c)
-		if err != nil {
-			return fmt.Errorf("form section %q resource render: %w", section.ID, err)
-		}
-		if targetRender.Form == nil {
-			return fmt.Errorf("form section %q resource %q must render a form", section.ID, section.Resource.Module)
-		}
-
-		load, available, err := generator.buildReferencedResourceLoad(c, *section.Resource, string(role), nil)
-		if err != nil {
-			return fmt.Errorf("form section %q resource: %w", section.ID, err)
-		}
-		if !available {
-			continue
-		}
-		section.Load = &load
 		sections = append(sections, section)
 	}
 	render.Form.Sections = sections
 	return nil
+}
+
+func (generator *Generator) resolveFieldMatrixSource(c *gin.Context, section *renderer.FormSection, role actions.Role) error {
+	if section == nil || section.Matrix == nil || section.Matrix.Table == nil || section.Matrix.Table.Source == nil {
+		return nil
+	}
+	source := section.Matrix.Table.Source
+	if source.List.Action != string(actions.ModuleActionNameList) {
+		return fmt.Errorf("form section %q matrix source list action must be list", section.ID)
+	}
+	if source.Update.Action != string(actions.ModuleActionNameUpdate) {
+		return fmt.Errorf("form section %q matrix source update action must be update", section.ID)
+	}
+
+	listLoad, listModule, listAction, available, err := generator.resolveFieldMatrixAction(c, source.List, role)
+	if err != nil {
+		return fmt.Errorf("form section %q matrix source list: %w", section.ID, err)
+	}
+	if !available {
+		return fmt.Errorf("form section %q matrix source list is unavailable", section.ID)
+	}
+	if listAction.Action() != actions.ModuleActionNameList {
+		return fmt.Errorf("form section %q matrix source list must reference list", section.ID)
+	}
+
+	updateLoad, updateModule, updateAction, available, err := generator.resolveFieldMatrixAction(c, source.Update, role)
+	if err != nil {
+		return fmt.Errorf("form section %q matrix source update: %w", section.ID, err)
+	}
+	if !available {
+		return fmt.Errorf("form section %q matrix source update is unavailable", section.ID)
+	}
+	update, ok := updateAction.(actions.UpdateModuleAction)
+	if !ok {
+		return fmt.Errorf("form section %q matrix source update must reference update", section.ID)
+	}
+	if listModule.Name != updateModule.Name {
+		return fmt.Errorf("form section %q matrix source list and update must reference one module", section.ID)
+	}
+	if listModule.GetField(source.IDField) == nil {
+		return fmt.Errorf("form section %q matrix source id field %q is unknown", section.ID, source.IDField)
+	}
+	if !containsColumn(update.By, listModule.GetField(source.IDField).Column) {
+		return fmt.Errorf("form section %q matrix source id field %q is not an update selector", section.ID, source.IDField)
+	}
+	if listModule.GetField(source.KeyField) == nil {
+		return fmt.Errorf("form section %q matrix source key field %q is unknown", section.ID, source.KeyField)
+	}
+	for _, row := range section.Matrix.Table.Rows {
+		for _, cell := range row.Cells {
+			if cell.Field == "" {
+				continue
+			}
+			field := listModule.GetField(cell.Field)
+			if field == nil {
+				return fmt.Errorf("form section %q matrix source field %q is unknown", section.ID, cell.Field)
+			}
+			if field.Type != fields.ModuleFieldTypeBool || !containsColumn(update.Columns, field.Column) {
+				return fmt.Errorf("form section %q matrix source field %q must be an editable bool", section.ID, cell.Field)
+			}
+			if cell.AvailableField != "" && listModule.GetField(cell.AvailableField) == nil {
+				return fmt.Errorf("form section %q matrix source availability field %q is unknown", section.ID, cell.AvailableField)
+			}
+		}
+	}
+	source.Load = &renderer.FieldMatrixDataSourceLoad{List: listLoad, Update: updateLoad}
+	return nil
+}
+
+func (generator *Generator) resolveFieldMatrixAction(c *gin.Context, resource renderer.ActionResource, role actions.Role) (renderer.ResourceLoad, *BaseModule, actions.ModuleAction, bool, error) {
+	targetModule, ok := generator.moduleByName(resource.Module)
+	if !ok {
+		return renderer.ResourceLoad{}, nil, nil, false, fmt.Errorf("references unknown module %q", resource.Module)
+	}
+	action, ok := findModuleAction(targetModule, resource.Action)
+	if !ok {
+		return renderer.ResourceLoad{}, nil, nil, false, fmt.Errorf("references unknown action %q", resource.Action)
+	}
+	if !hasPermission(action, string(role)) {
+		return renderer.ResourceLoad{}, targetModule, action, false, nil
+	}
+	// A field matrix supplies the selector from source.id_field and exactly one
+	// editable boolean cell at interaction time. It cannot use the static body
+	// bindings required by a general widget update resource.
+	if action.Action() == actions.ModuleActionNameUpdate {
+		if _, err := targetModule.RenderFor(c); err != nil {
+			return renderer.ResourceLoad{}, targetModule, action, false, err
+		}
+		contract, ok := resolveStandardActionContract(targetModule, action)
+		if !ok {
+			return renderer.ResourceLoad{}, targetModule, action, false, fmt.Errorf("update action has no standard request")
+		}
+		return renderer.ResourceLoad{Request: contract.Request}, targetModule, action, true, nil
+	}
+	load, available, err := generator.buildResourceLoad(c, targetModule, action, nil, nil)
+	if err != nil || !available {
+		return renderer.ResourceLoad{}, targetModule, action, available, err
+	}
+	return load, targetModule, action, true, nil
 }
 
 func (generator *Generator) buildWorkspaceCommandResourceLoad(c *gin.Context, module *BaseModule, action actions.ModuleAction, bindings []renderer.RequestBinding, selection *widgetSelectionScope, input *workspaceCommandInputScope) (renderer.ResourceLoad, bool, error) {

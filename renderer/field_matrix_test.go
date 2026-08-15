@@ -34,6 +34,60 @@ func TestFieldMatrixValidate(t *testing.T) {
 			valid: true,
 		},
 		{
+			name: "table source",
+			matrix: &FieldMatrix{
+				Type: FieldMatrixTypeTable,
+				Table: &FieldMatrixTable{
+					Heads: []string{"Notification", "Toast"},
+					Rows: []FieldMatrixRow{{
+						ID:          "chat_messages",
+						Label:       "Chat messages",
+						Description: "Incoming chat alerts",
+						Icon:        "chat",
+						Tone:        "cyan",
+						Cells:       []FieldMatrixCell{{Field: "toast_enabled", Label: "Toast", AvailableField: "toast_available"}},
+					}},
+					Source: &FieldMatrixDataSource{
+						IDField:  "id",
+						KeyField: "group_code",
+						List:     ActionResource{Module: "notification_group_preferences", Action: "list"},
+						Update:   ActionResource{Module: "notification_group_preferences", Action: "update"},
+					},
+				},
+			},
+			valid: true,
+		},
+		{
+			name: "table source rows require ids",
+			matrix: &FieldMatrix{
+				Type: FieldMatrixTypeTable,
+				Table: &FieldMatrixTable{
+					Heads: []string{"Notification", "Toast"},
+					Rows:  []FieldMatrixRow{{Label: "Chat messages", Cells: []FieldMatrixCell{{Field: "toast_enabled"}}}},
+					Source: &FieldMatrixDataSource{
+						IDField: "id", KeyField: "group_code",
+						List:   ActionResource{Module: "notification_group_preferences", Action: "list"},
+						Update: ActionResource{Module: "notification_group_preferences", Action: "update"},
+					},
+				},
+			},
+		},
+		{
+			name: "accordion presentation",
+			matrix: &FieldMatrix{
+				Type: FieldMatrixTypeTable,
+				Table: &FieldMatrixTable{
+					Presentation: FieldMatrixTablePresentationAccordion,
+					Heads:        []string{"Notification", "Toast"},
+					Rows: []FieldMatrixRow{{
+						Label: "Chat messages", Icon: "chat", Tone: "cyan",
+						Cells: []FieldMatrixCell{{Field: "toast_enabled", Icon: "toast"}},
+					}},
+				},
+			},
+			valid: true,
+		},
+		{
 			name: "table cell must select one value source",
 			matrix: &FieldMatrix{
 				Type: FieldMatrixTypeTable,
@@ -159,4 +213,29 @@ func TestFieldMatrixClone(t *testing.T) {
 
 	form.Sections[0].Matrix.Table.Heads[0] = "changed"
 	assert.Equal(t, "matrix.duration", original.Form.Sections[0].Matrix.Table.Heads[0])
+}
+
+func TestFieldMatrixSourceCloneAndJSON(t *testing.T) {
+	source := Universal{Form: &FormPage{Sections: []FormSection{{
+		ID: "notifications",
+		Matrix: &FieldMatrix{Type: FieldMatrixTypeTable, Table: &FieldMatrixTable{
+			Heads: []string{"Type", "Toast"},
+			Rows:  []FieldMatrixRow{{ID: "chat", Label: "Chat", Description: "Messages", Icon: "chat", Tone: "cyan", Cells: []FieldMatrixCell{{Field: "toast_enabled", Label: "Toast", AvailableField: "toast_available"}}}},
+			Source: &FieldMatrixDataSource{
+				IDField: "id", KeyField: "group_code",
+				List: ActionResource{Module: "groups", Action: "list"}, Update: ActionResource{Module: "groups", Action: "update"},
+				Load: &FieldMatrixDataSourceLoad{List: ResourceLoad{Request: APIAction{Method: "GET", Endpoint: "/api/groups"}}, Update: ResourceLoad{Request: APIAction{Method: "POST", Endpoint: "/api/groups/:bykey/:value"}}},
+			},
+		}},
+	}}}}
+
+	encoded, err := json.Marshal(source.Form.Sections[0].Matrix)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"type":"table","table":{"heads":["Type","Toast"],"rows":[{"id":"chat","label":"Chat","description":"Messages","icon":"chat","tone":"cyan","cells":[{"field":"toast_enabled","label":"Toast","available_field":"toast_available"}]}],"source":{"id_field":"id","key_field":"group_code","load":{"list":{"request":{"method":"GET","endpoint":"/api/groups"}},"update":{"request":{"method":"POST","endpoint":"/api/groups/:bykey/:value"}}}}}}`, string(encoded))
+
+	cloned := source.Clone()
+	cloned.Form.Sections[0].Matrix.Table.Source.Load.Update.Request.Endpoint = "/changed"
+	cloned.Form.Sections[0].Matrix.Table.Rows[0].Description = "changed"
+	require.Equal(t, "/api/groups/:bykey/:value", source.Form.Sections[0].Matrix.Table.Source.Load.Update.Request.Endpoint)
+	require.Equal(t, "Messages", source.Form.Sections[0].Matrix.Table.Rows[0].Description)
 }

@@ -412,10 +412,23 @@ func cloneFieldMatrix(v *FieldMatrix) *FieldMatrix {
 		cp.List = &FieldMatrixList{Fields: cloneSlice(v.List.Fields), Columns: v.List.Columns}
 	}
 	if v.Table != nil {
-		cp.Table = &FieldMatrixTable{Heads: cloneSlice(v.Table.Heads), Rows: make([]FieldMatrixRow, len(v.Table.Rows))}
+		cp.Table = &FieldMatrixTable{Heads: cloneSlice(v.Table.Heads), Rows: make([]FieldMatrixRow, len(v.Table.Rows)), Presentation: v.Table.Presentation, Source: cloneFieldMatrixDataSource(v.Table.Source)}
 		for i, row := range v.Table.Rows {
-			cp.Table.Rows[i] = FieldMatrixRow{Label: row.Label, Cells: cloneSlice(row.Cells)}
+			cp.Table.Rows[i] = FieldMatrixRow{ID: row.ID, Label: row.Label, Description: row.Description, Icon: row.Icon, Tone: row.Tone, Cells: cloneSlice(row.Cells)}
 		}
+	}
+	return &cp
+}
+
+func cloneFieldMatrixDataSource(v *FieldMatrixDataSource) *FieldMatrixDataSource {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.List = ActionResource{Module: v.List.Module, Action: v.List.Action}
+	cp.Update = ActionResource{Module: v.Update.Module, Action: v.Update.Action}
+	if v.Load != nil {
+		cp.Load = &FieldMatrixDataSourceLoad{List: *cloneResourceLoad(&v.Load.List), Update: *cloneResourceLoad(&v.Load.Update)}
 	}
 	return &cp
 }
