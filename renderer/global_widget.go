@@ -27,7 +27,13 @@ func (widget GlobalWidget) Clone() GlobalWidget {
 // the widget request contract detached from its producer value.
 func LocalizeGlobalWidget(widget GlobalWidget, resolve TextResolver) GlobalWidget {
 	localized := widget.Clone()
-	if localized.Workspace == nil || resolve == nil {
+	if resolve == nil {
+		return localized
+	}
+	localized.Surface.CloseLabel = resolve(localized.Surface.CloseLabel, "")
+	localized.Surface.BackLabel = resolve(localized.Surface.BackLabel, "")
+	localized.Surface.MoreLabel = resolve(localized.Surface.MoreLabel, "")
+	if localized.Workspace == nil {
 		return localized
 	}
 	for index := range localized.Workspace.Commands {
@@ -74,6 +80,9 @@ type WidgetSurface struct {
 	Kind       WidgetSurfaceKind `json:"kind"`
 	Placement  WidgetPlacement   `json:"placement"`
 	LoadPolicy WidgetLoadPolicy  `json:"load_policy"`
+	CloseLabel string            `json:"close_label,omitempty"`
+	BackLabel  string            `json:"back_label,omitempty"`
+	MoreLabel  string            `json:"more_label,omitempty"`
 }
 
 func (surface WidgetSurface) Validate() error {

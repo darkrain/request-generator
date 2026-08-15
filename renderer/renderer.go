@@ -335,6 +335,9 @@ func validateListPage(scope string, page *ListPage) error {
 	if err := validateFilterGroups(scope, page.Filters); err != nil {
 		return err
 	}
+	if page.GroupBy != nil && page.GroupBy.Field == "" {
+		return fmt.Errorf("renderer.ListPage: group_by.field is required")
+	}
 	return nil
 }
 
@@ -689,6 +692,8 @@ type FilterText struct {
 	ApplyLabel        string `json:"apply_label,omitempty"`
 	LoadingLabel      string `json:"loading_label,omitempty"`
 	EmptyLabel        string `json:"empty_label,omitempty"`
+	EmptyDescription  string `json:"empty_description,omitempty"`
+	EmptyIcon         string `json:"empty_icon,omitempty"`
 	NoResultsLabel    string `json:"no_results_label,omitempty"`
 	CancelLabel       string `json:"cancel_label,omitempty"`
 	CloseLabel        string `json:"close_label,omitempty"`
@@ -729,9 +734,18 @@ type ListPage struct {
 	Summary    *Summary               `json:"summary,omitempty"`
 	Grid       *Grid                  `json:"grid,omitempty"`
 	Pagination *Pagination            `json:"pagination,omitempty"`
+	GroupBy    *ListGrouping          `json:"group_by,omitempty"`
 	CardSchema *CardSchema            `json:"card_schema,omitempty"`
 	Context    map[string]interface{} `json:"context,omitempty"`
 	Actions    []Action               `json:"actions,omitempty"`
+}
+
+// ListGrouping describes ordered groups in a flat list response. Field must
+// reference a value returned with each row; the renderer groups equal values
+// together and renders that value as the group label. The API owns formatting
+// and localization of the field value.
+type ListGrouping struct {
+	Field string `json:"field"`
 }
 
 type Summary struct {

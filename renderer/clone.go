@@ -20,9 +20,18 @@ func cloneListPage(v *ListPage) *ListPage {
 	cp.Summary = cloneSummary(v.Summary)
 	cp.Grid = cloneGrid(v.Grid)
 	cp.Pagination = clonePagination(v.Pagination)
+	cp.GroupBy = cloneListGrouping(v.GroupBy)
 	cp.CardSchema = cloneCardSchema(v.CardSchema)
 	cp.Context = cloneMap(v.Context)
 	cp.Actions = cloneActions(v.Actions)
+	return &cp
+}
+
+func cloneListGrouping(v *ListGrouping) *ListGrouping {
+	if v == nil {
+		return nil
+	}
+	cp := *v
 	return &cp
 }
 
