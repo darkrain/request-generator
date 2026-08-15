@@ -535,11 +535,29 @@ func (generator *Generator) buildWorkspaceCommandLoad(c *gin.Context, command re
 		return renderer.WorkspaceCommandLoad{}, available, err
 	}
 	return renderer.WorkspaceCommandLoad{
-		ID:       command.ID,
-		Request:  resource.Request,
-		Bindings: resource.Bindings,
-		Input:    inputLoad,
+		ID:           command.ID,
+		Request:      resource.Request,
+		Bindings:     resource.Bindings,
+		Input:        inputLoad,
+		AfterSuccess: cloneWorkspaceCommandActionResult(command.AfterSuccess),
 	}, true, nil
+}
+
+func cloneWorkspaceCommandActionResult(value *renderer.ActionResult) *renderer.ActionResult {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	if value.Widget != nil {
+		widget := *value.Widget
+		if value.Widget.Selection != nil {
+			selection := *value.Widget.Selection
+			widget.Selection = &selection
+		}
+		widget.Refresh = append([]renderer.WorkspaceRefreshTarget(nil), value.Widget.Refresh...)
+		cloned.Widget = &widget
+	}
+	return &cloned
 }
 
 func (generator *Generator) buildWidgetResourceLoad(c *gin.Context, module *BaseModule, action actions.ModuleAction, bindings []renderer.WidgetRequestBinding, selection *widgetSelectionScope) (renderer.WidgetResourceLoad, bool, error) {

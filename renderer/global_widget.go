@@ -195,6 +195,10 @@ type WorkspaceCommand struct {
 	// Input permits an add command to bind values entered in the workspace.
 	// Field definitions remain owned by the target module defrec response.
 	Input *WorkspaceCommandInput `json:"input,omitempty"`
+	// AfterSuccess applies the typed result of this standard command to the
+	// shell, for example by opening another registered global widget. The
+	// command request remains generated from WorkspaceResource.
+	AfterSuccess *ActionResult `json:"after_success,omitempty"`
 	WorkspaceResource
 	Refresh []WorkspaceRefreshTarget `json:"refresh"`
 }
@@ -211,6 +215,11 @@ func (command WorkspaceCommand) Validate() error {
 	}
 	if err := command.WorkspaceResource.Validate("resource"); err != nil {
 		return err
+	}
+	if command.AfterSuccess != nil {
+		if err := command.AfterSuccess.Validate(); err != nil {
+			return fmt.Errorf("after success: %w", err)
+		}
 	}
 	if len(command.Refresh) == 0 {
 		return fmt.Errorf("refresh targets are required")
@@ -595,10 +604,11 @@ type WidgetResourceLoad struct {
 // WorkspaceCommandLoad is the generated request contract for one workspace
 // command. The UI executes it by applying the typed bindings to Request.
 type WorkspaceCommandLoad struct {
-	ID       string                     `json:"id"`
-	Request  APIAction                  `json:"request"`
-	Bindings []WidgetRequestBinding     `json:"bindings,omitempty"`
-	Input    *WorkspaceCommandInputLoad `json:"input,omitempty"`
+	ID           string                     `json:"id"`
+	Request      APIAction                  `json:"request"`
+	Bindings     []WidgetRequestBinding     `json:"bindings,omitempty"`
+	Input        *WorkspaceCommandInputLoad `json:"input,omitempty"`
+	AfterSuccess *ActionResult              `json:"after_success,omitempty"`
 }
 
 // WorkspaceCommandInputLoad contains the generated definition request for a
@@ -733,6 +743,7 @@ func cloneWorkspaceCommandLoads(values []WorkspaceCommandLoad) []WorkspaceComman
 			input.Definition = *cloneWidgetResourceLoad(&value.Input.Definition)
 			cloned[index].Input = &input
 		}
+		cloned[index].AfterSuccess = cloneActionResult(value.AfterSuccess)
 	}
 	return cloned
 }

@@ -50,6 +50,16 @@ func (generator *Generator) validateGlobalWidgets() error {
 			}
 		}
 	}
+	for _, widget := range widgets {
+		if widget.Renderer.Workspace == nil {
+			continue
+		}
+		for _, command := range widget.Renderer.Workspace.Commands {
+			if err := generator.validateWorkspaceCommandActionResult(widget.ID, command, widgets); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
@@ -144,6 +154,56 @@ func (generator *Generator) validateWorkspaceCommand(widgetID string, command re
 	}
 	if err := validateWorkspaceCommandPresentation(command, selection); err != nil {
 		return fmt.Errorf("widget %q command %q presentation: %w", widgetID, command.ID, err)
+	}
+	return nil
+}
+
+func (generator *Generator) validateWorkspaceCommandActionResult(widgetID string, command renderer.WorkspaceCommand, widgets map[string]actions.WidgetConfig) error {
+	result := command.AfterSuccess
+	if result == nil || result.Widget == nil {
+		return nil
+	}
+	target := *result.Widget
+	widget, exists := widgets[target.ID]
+	if !exists {
+		return fmt.Errorf("widget %q command %q references unknown widget %q", widgetID, command.ID, target.ID)
+	}
+	if target.Selection == nil {
+		if len(target.Refresh) > 0 && widget.Renderer.Workspace == nil {
+			return fmt.Errorf("widget %q command %q refreshes a non-workspace widget %q", widgetID, command.ID, target.ID)
+		}
+		return nil
+	}
+	if widget.Renderer.Workspace == nil {
+		return fmt.Errorf("widget %q command %q sets selection on a non-workspace widget %q", widgetID, command.ID, target.ID)
+	}
+
+	source := target.Selection.Source
+	if source.Resource.Module != command.Module || source.Resource.Action != command.Action {
+		return fmt.Errorf("widget %q command %q selection source must reference its command action", widgetID, command.ID)
+	}
+	sourceModule, ok := generator.moduleByName(command.Module)
+	if !ok {
+		return fmt.Errorf("widget %q command %q source module %q is unavailable", widgetID, command.ID, command.Module)
+	}
+	sourceAction, ok := findModuleAction(sourceModule, command.Action)
+	if !ok {
+		return fmt.Errorf("widget %q command %q source action %q is unavailable", widgetID, command.ID, command.Action)
+	}
+	contract, ok := resolveStandardActionContract(sourceModule, sourceAction)
+	if !ok {
+		return fmt.Errorf("widget %q command %q action has no standard request", widgetID, command.ID)
+	}
+	sourceType, exists := contract.resultFieldType(source.Field)
+	if !exists {
+		return fmt.Errorf("widget %q command %q selection source field %q is not declared", widgetID, command.ID, source.Field)
+	}
+	selection, err := generator.workspaceSelectionScope(target.ID, *widget.Renderer.Workspace)
+	if err != nil {
+		return err
+	}
+	if sourceType != selection.Type {
+		return fmt.Errorf("widget %q command %q selection source field %q type %q does not match target field %q type %q", widgetID, command.ID, source.Field, sourceType, selection.Field, selection.Type)
 	}
 	return nil
 }
