@@ -697,11 +697,12 @@ type FilterText struct {
 }
 
 type FilterPill struct {
-	Label    string `json:"label,omitempty"`
-	LabelKey string `json:"label_key,omitempty"`
-	Key      string `json:"key,omitempty"`
-	Val      string `json:"val,omitempty"`
-	Dot      bool   `json:"dot,omitempty"`
+	Label      string `json:"label,omitempty"`
+	LabelKey   string `json:"label_key,omitempty"`
+	CountField string `json:"count_field,omitempty"`
+	Key        string `json:"key,omitempty"`
+	Val        string `json:"val,omitempty"`
+	Dot        bool   `json:"dot,omitempty"`
 }
 
 type FilterReset struct {
