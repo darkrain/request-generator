@@ -110,6 +110,8 @@ func atomicSourceKind(module *BaseModule, resultFields map[string]actions.Atomic
 			return actions.AtomicValueKindInt, nil
 		case fields.ModuleFieldTypeFloat:
 			return actions.AtomicValueKindFloat, nil
+		case fields.ModuleFieldTypeBool:
+			return actions.AtomicValueKindBool, nil
 		default:
 			return "", fmt.Errorf("input field %q type %q cannot be used by atomic realtime", source.Field, field.Type)
 		}
