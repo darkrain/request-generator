@@ -500,6 +500,30 @@ type WorkspaceSubscription struct {
 	// every authorized matching realtime event refreshes the declared targets.
 	Correlation *WorkspaceCorrelationBinding `json:"correlation,omitempty"`
 	Refresh     []WorkspaceRefreshTarget     `json:"refresh"`
+	Toast       *WorkspaceSubscriptionToast  `json:"toast,omitempty"`
+}
+
+// WorkspaceSubscriptionToast asks a generic workspace surface to show a
+// short-lived client toast after it refreshes its master resource. Bindings are
+// resolved against the first current master row; a missing row suppresses the
+// effect. The producer supplies only field bindings, never client text.
+type WorkspaceSubscriptionToast struct {
+	Title   *TextBinding `json:"title,omitempty"`
+	Message *TextBinding `json:"message,omitempty"`
+	Tone    string       `json:"tone,omitempty"`
+}
+
+func (toast WorkspaceSubscriptionToast) Validate() error {
+	if toast.Title == nil && toast.Message == nil {
+		return fmt.Errorf("title or message is required")
+	}
+	if toast.Title != nil && toast.Title.Field == "" && toast.Title.Template == "" {
+		return fmt.Errorf("title binding is required")
+	}
+	if toast.Message != nil && toast.Message.Field == "" && toast.Message.Template == "" {
+		return fmt.Errorf("message binding is required")
+	}
+	return nil
 }
 
 // WorkspaceCorrelationBinding identifies a declared realtime event field. The
@@ -530,6 +554,11 @@ func (subscription WorkspaceSubscription) Validate() error {
 	}
 	if len(subscription.Refresh) == 0 {
 		return fmt.Errorf("refresh targets are required")
+	}
+	if subscription.Toast != nil {
+		if err := subscription.Toast.Validate(); err != nil {
+			return fmt.Errorf("toast: %w", err)
+		}
 	}
 	return ValidateWorkspaceRefreshTargets(subscription.Refresh)
 }
@@ -788,8 +817,19 @@ func cloneWorkspaceSubscriptions(values []WorkspaceSubscription) []WorkspaceSubs
 			correlation := *value.Correlation
 			cloned[index].Correlation = &correlation
 		}
+		cloned[index].Toast = cloneWorkspaceSubscriptionToast(value.Toast)
 	}
 	return cloned
+}
+
+func cloneWorkspaceSubscriptionToast(value *WorkspaceSubscriptionToast) *WorkspaceSubscriptionToast {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	cloned.Title = cloneTextBinding(value.Title)
+	cloned.Message = cloneTextBinding(value.Message)
+	return &cloned
 }
 
 func cloneWidgetTarget(value *WidgetTarget) *WidgetTarget {
