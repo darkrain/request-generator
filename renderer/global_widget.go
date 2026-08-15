@@ -19,6 +19,7 @@ func (widget GlobalWidget) Identity() Identity {
 
 func (widget GlobalWidget) Clone() GlobalWidget {
 	cloned := widget
+	cloned.Surface = cloneWidgetSurface(widget.Surface)
 	cloned.Workspace = cloneWorkspaceWidget(widget.Workspace)
 	return cloned
 }
@@ -27,7 +28,16 @@ func (widget GlobalWidget) Clone() GlobalWidget {
 // the widget request contract detached from its producer value.
 func LocalizeGlobalWidget(widget GlobalWidget, resolve TextResolver) GlobalWidget {
 	localized := widget.Clone()
-	if localized.Workspace == nil || resolve == nil {
+	if resolve == nil {
+		return localized
+	}
+	if localized.Surface.Trigger != nil {
+		localized.Surface.Trigger.Label = resolve(localized.Surface.Trigger.Label, "")
+		if localized.Surface.Trigger.Badge != nil && localized.Surface.Trigger.Badge.LabelKey != "" {
+			localized.Surface.Trigger.Badge.Label = resolve("", localized.Surface.Trigger.Badge.LabelKey)
+		}
+	}
+	if localized.Workspace == nil {
 		return localized
 	}
 	for index := range localized.Workspace.Commands {
@@ -74,6 +84,32 @@ type WidgetSurface struct {
 	Kind       WidgetSurfaceKind `json:"kind"`
 	Placement  WidgetPlacement   `json:"placement"`
 	LoadPolicy WidgetLoadPolicy  `json:"load_policy"`
+	// Trigger declares an optional shell control that opens this widget. Its
+	// Badge binds to the widget summary record, so the consumer never has to
+	// infer a domain-specific counter.
+	Trigger *WidgetTrigger `json:"trigger,omitempty"`
+}
+
+// WidgetTrigger is a compact, typed shell control for a global widget. Label
+// is localized by the generator; Badge reuses the shared renderer badge
+// contract and reads the workspace summary record.
+type WidgetTrigger struct {
+	Label string `json:"label"`
+	Icon  string `json:"icon"`
+	Badge *Badge `json:"badge,omitempty"`
+}
+
+func (trigger WidgetTrigger) Validate() error {
+	if strings.TrimSpace(trigger.Label) == "" {
+		return fmt.Errorf("label is required")
+	}
+	if strings.TrimSpace(trigger.Icon) == "" {
+		return fmt.Errorf("icon is required")
+	}
+	if trigger.Badge != nil && strings.TrimSpace(trigger.Badge.Field) == "" && trigger.Badge.Value == nil {
+		return fmt.Errorf("badge field or value is required")
+	}
+	return nil
 }
 
 func (surface WidgetSurface) Validate() error {
@@ -94,6 +130,11 @@ func (surface WidgetSurface) Validate() error {
 	case WidgetLoadOnOpen, WidgetLoadEager:
 	default:
 		return fmt.Errorf("unsupported load policy %q", surface.LoadPolicy)
+	}
+	if surface.Trigger != nil {
+		if err := surface.Trigger.Validate(); err != nil {
+			return fmt.Errorf("trigger: %w", err)
+		}
 	}
 	return nil
 }
@@ -704,6 +745,25 @@ func cloneWorkspaceWidget(value *WorkspaceWidget) *WorkspaceWidget {
 	cloned.Commands = cloneWorkspaceCommands(value.Commands)
 	cloned.Subscriptions = cloneWorkspaceSubscriptions(value.Subscriptions)
 	return &cloned
+}
+
+func cloneWidgetSurface(value WidgetSurface) WidgetSurface {
+	cloned := value
+	if value.Trigger == nil {
+		return cloned
+	}
+	trigger := *value.Trigger
+	if value.Trigger.Badge != nil {
+		badge := *value.Trigger.Badge
+		badge.Value = cloneTextBinding(value.Trigger.Badge.Value)
+		badge.Marker = clonePtr(value.Trigger.Badge.Marker)
+		badge.ToneMap = cloneMap(value.Trigger.Badge.ToneMap)
+		badge.Then = cloneBadgeState(value.Trigger.Badge.Then)
+		badge.Else = cloneBadgeState(value.Trigger.Badge.Else)
+		trigger.Badge = &badge
+	}
+	cloned.Trigger = &trigger
+	return cloned
 }
 
 func cloneWorkspaceCommands(values []WorkspaceCommand) []WorkspaceCommand {
