@@ -39,6 +39,10 @@ func LocalizeGlobalWidget(widget GlobalWidget, resolve TextResolver) GlobalWidge
 	for index := range localized.Workspace.Commands {
 		localized.Workspace.Commands[index].Label = resolve(localized.Workspace.Commands[index].Label, "")
 	}
+	localizer := textLocalizer{resolve: resolve}
+	for index := range localized.Workspace.ComposerActions {
+		localizer.localizeRendererAction(&localized.Workspace.ComposerActions[index])
+	}
 	return localized
 }
 
@@ -110,12 +114,13 @@ func (surface WidgetSurface) Validate() error {
 // WorkspaceWidget composes server resources into a generic master-detail
 // shell surface. Resources remain normal module actions.
 type WorkspaceWidget struct {
-	Selection     WorkspaceSelection      `json:"selection"`
-	Summary       *WorkspaceResource      `json:"summary,omitempty"`
-	Master        WorkspaceResource       `json:"master"`
-	Detail        WorkspaceResource       `json:"detail"`
-	Commands      []WorkspaceCommand      `json:"commands,omitempty"`
-	Subscriptions []WorkspaceSubscription `json:"subscriptions,omitempty"`
+	Selection       WorkspaceSelection      `json:"selection"`
+	Summary         *WorkspaceResource      `json:"summary,omitempty"`
+	Master          WorkspaceResource       `json:"master"`
+	Detail          WorkspaceResource       `json:"detail"`
+	ComposerActions []Action                `json:"composer_actions,omitempty"`
+	Commands        []WorkspaceCommand      `json:"commands,omitempty"`
+	Subscriptions   []WorkspaceSubscription `json:"subscriptions,omitempty"`
 }
 
 func (workspace WorkspaceWidget) Validate() error {
@@ -135,6 +140,20 @@ func (workspace WorkspaceWidget) Validate() error {
 	}
 	if !workspace.Detail.hasSelectionBinding(workspace.Selection.Field) {
 		return fmt.Errorf("detail must bind selection field %q", workspace.Selection.Field)
+	}
+	seenComposerActions := make(map[string]struct{}, len(workspace.ComposerActions))
+	for index := range workspace.ComposerActions {
+		action := workspace.ComposerActions[index]
+		if action.ID == "" {
+			return fmt.Errorf("composer action %d: id is required", index)
+		}
+		if err := action.Validate(); err != nil {
+			return fmt.Errorf("composer action %d: %w", index, err)
+		}
+		if _, exists := seenComposerActions[action.ID]; exists {
+			return fmt.Errorf("composer action %q is duplicated", action.ID)
+		}
+		seenComposerActions[action.ID] = struct{}{}
 	}
 	seenCommands := make(map[string]struct{}, len(workspace.Commands))
 	for index, command := range workspace.Commands {
@@ -666,6 +685,7 @@ func cloneWorkspaceWidget(value *WorkspaceWidget) *WorkspaceWidget {
 	}
 	cloned.Master.Bindings = cloneWidgetRequestBindings(value.Master.Bindings)
 	cloned.Detail.Bindings = cloneWidgetRequestBindings(value.Detail.Bindings)
+	cloned.ComposerActions = cloneActions(value.ComposerActions)
 	cloned.Commands = cloneWorkspaceCommands(value.Commands)
 	cloned.Subscriptions = cloneWorkspaceSubscriptions(value.Subscriptions)
 	return &cloned

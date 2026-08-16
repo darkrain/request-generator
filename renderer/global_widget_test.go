@@ -34,6 +34,11 @@ func validGlobalWorkspace() GlobalWidget {
 					Source: widgetSelectionSource("id"),
 				}},
 			},
+			ComposerActions: []Action{{
+				ID: "open_related", Type: ActionRoute, LabelKey: "workspace.action.open_related",
+				ActionPresentation: ActionPresentation{Icon: "ref-order", IconOnly: &iconOnly, Variant: ActionVariantPrimary, Appearance: ActionAppearanceOutline},
+				Route:              RouteAction{Path: "/related", Query: map[string]interface{}{"id": "record.id"}},
+			}},
 			Commands: []WorkspaceCommand{{
 				ID:    "set_status",
 				Label: "workspace.command.set_status",
@@ -76,6 +81,7 @@ func TestGlobalWidgetValidateAndSerialize(t *testing.T) {
     "summary":{"module":"summary_records","action":"list"},
     "master":{"module":"master_records","action":"list"},
     "detail":{"module":"detail_records","action":"list","bindings":[{"target":"filter","field":"parent_id","source":{"runtime":{"scope":"selection","field":"id"}}}]},
+    "composer_actions":[{"icon":"ref-order","icon_only":true,"variant":"primary","appearance":"outline","id":"open_related","type":"route","label_key":"workspace.action.open_related","route":{"path":"/related","query":{"id":"record.id"}}}],
     "commands":[{"id":"set_status","label":"workspace.command.set_status","presentation":{"icon":"ref-status","icon_only":true,"variant":"success","appearance":"outline","active":"is_active","visible_if":{"path":"enabled","equals":true}},"module":"state_records","action":"update","bindings":[{"target":"path_by_key","source":{"literal":{"type":"string","string":"id"}}},{"target":"path_value","source":{"runtime":{"scope":"selection","field":"participant_id"}}},{"target":"body","field":"status","source":{"literal":{"type":"string","string":"active"}}}],"refresh":["master","detail"]}],
     "subscriptions":[{"module":"detail_records","actions":["add","update"],"correlation":{"event_field":"parent_id"},"refresh":["master","detail"]}]
   }
@@ -132,6 +138,7 @@ func TestGlobalWidgetCloneDoesNotShareWorkspaceState(t *testing.T) {
 	cloned.Workspace.Detail.Bindings[0].Source.Runtime.Field = "changed"
 	cloned.Workspace.Summary.Action = "view"
 	cloned.Workspace.Commands[0].Label = "changed"
+	cloned.Workspace.ComposerActions[0].Route.(RouteAction).Query["id"] = "changed"
 	cloned.Workspace.Commands[0].Presentation.VisibleIf.Path = "changed"
 	cloned.Workspace.Commands[0].Bindings[2].Source.Literal.String = "disabled"
 	cloned.Workspace.Commands[0].Refresh[0] = WorkspaceRefreshDetail
@@ -141,6 +148,7 @@ func TestGlobalWidgetCloneDoesNotShareWorkspaceState(t *testing.T) {
 	require.Equal(t, "id", source.Workspace.Detail.Bindings[0].Source.Runtime.Field)
 	require.Equal(t, "list", source.Workspace.Summary.Action)
 	require.Equal(t, "workspace.command.set_status", source.Workspace.Commands[0].Label)
+	require.Equal(t, "record.id", source.Workspace.ComposerActions[0].Route.(RouteAction).Query["id"])
 	require.Equal(t, "enabled", source.Workspace.Commands[0].Presentation.VisibleIf.Path)
 	require.Equal(t, "active", source.Workspace.Commands[0].Bindings[2].Source.Literal.String)
 	require.Equal(t, WorkspaceRefreshMaster, source.Workspace.Commands[0].Refresh[0])
@@ -223,14 +231,25 @@ func TestWorkspaceCommandTriggerValidation(t *testing.T) {
 	require.EqualError(t, command.Validate(), `trigger: unsupported value "on_open"`)
 }
 
-func TestLocalizeGlobalWidgetLocalizesCommandLabels(t *testing.T) {
+func TestLocalizeGlobalWidgetLocalizesCommandAndComposerActionLabels(t *testing.T) {
 	source := validGlobalWorkspace()
-	localized := LocalizeGlobalWidget(source, func(value string, _ string) string {
+	localized := LocalizeGlobalWidget(source, func(value string, key string) string {
+		if key != "" {
+			return "translated:" + key
+		}
 		return "translated:" + value
 	})
 
 	require.Equal(t, "translated:workspace.command.set_status", localized.Workspace.Commands[0].Label)
+	require.Equal(t, "translated:workspace.action.open_related", localized.Workspace.ComposerActions[0].Label)
+	require.Empty(t, localized.Workspace.ComposerActions[0].LabelKey)
 	require.Equal(t, "workspace.command.set_status", source.Workspace.Commands[0].Label)
+}
+
+func TestWorkspaceRejectsDuplicateComposerActions(t *testing.T) {
+	widget := validGlobalWorkspace()
+	widget.Workspace.ComposerActions = append(widget.Workspace.ComposerActions, widget.Workspace.ComposerActions[0])
+	require.EqualError(t, widget.Validate(), `renderer.GlobalWidget: workspace: composer action "open_related" is duplicated`)
 }
 
 func TestGlobalWorkspaceCommandValidation(t *testing.T) {

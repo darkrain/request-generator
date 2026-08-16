@@ -2,7 +2,7 @@ package renderer
 
 const (
 	Name    = "UniversalRenderer"
-	Version = "2.3.0"
+	Version = "2.4.0"
 )
 
 type Identity struct {
