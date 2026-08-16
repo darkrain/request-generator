@@ -99,6 +99,11 @@ func (localizer textLocalizer) localizeListPage(page *ListPage) {
 	if page.CardSchema != nil {
 		localizer.localizeCardSchema(page.CardSchema)
 	}
+	if page.Selection != nil {
+		localizer.localizeTextFields(&page.Selection.SelectedLabel)
+		localizer.localizeRendererAction(page.Selection.Clear)
+		localizer.localizeRendererAction(page.Selection.Proceed)
+	}
 }
 
 func (localizer textLocalizer) localizeFilterGroups(groups []FilterGroup) {

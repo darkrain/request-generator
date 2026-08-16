@@ -332,6 +332,9 @@ func validateListPage(scope string, page *ListPage) error {
 			return err
 		}
 	}
+	if err := validateListSelection(scope, page.Selection, page.CardSchema); err != nil {
+		return err
+	}
 	if err := validateFilterRangePresets(scope, page.Filters); err != nil {
 		return err
 	}
@@ -340,6 +343,53 @@ func validateListPage(scope string, page *ListPage) error {
 	}
 	if page.GroupBy != nil && page.GroupBy.Field == "" {
 		return fmt.Errorf("renderer.ListPage: group_by.field is required")
+	}
+	return nil
+}
+
+func validateListSelection(scope string, selection *ListSelection, card *CardSchema) error {
+	if selection == nil {
+		return nil
+	}
+	if selection.KeyField == "" {
+		return fmt.Errorf("renderer.ListPage: selection.key_field is required")
+	}
+	if selection.ToggleAction == "" {
+		return fmt.Errorf("renderer.ListPage: selection.toggle_action is required")
+	}
+	if selection.ValuesField == "" {
+		return fmt.Errorf("renderer.ListPage: selection.values_field is required")
+	}
+	if selection.Limit < 1 {
+		return fmt.Errorf("renderer.ListPage: selection.limit must be greater than zero")
+	}
+	if selection.Source == nil || selection.Source.Method == "" || selection.Source.Endpoint == "" {
+		return fmt.Errorf("renderer.ListPage: selection.source method and endpoint are required")
+	}
+	if card == nil {
+		return fmt.Errorf("renderer.ListPage: selection requires card_schema")
+	}
+	foundToggle := false
+	for i := range card.Actions {
+		if card.Actions[i].ID == selection.ToggleAction {
+			foundToggle = true
+			break
+		}
+	}
+	if !foundToggle {
+		return fmt.Errorf("renderer.ListPage: selection.toggle_action %q is not declared in card_schema.actions", selection.ToggleAction)
+	}
+	if err := validateAction(scope+" selection clear", selection.Clear); err != nil {
+		return err
+	}
+	if err := validateAction(scope+" selection proceed", selection.Proceed); err != nil {
+		return err
+	}
+	if selection.Clear == nil || selection.Clear.Type != ActionAPI || selection.Clear.API == nil {
+		return fmt.Errorf("renderer.ListPage: selection.clear must be an api action")
+	}
+	if selection.Proceed == nil || (selection.Proceed.Type != ActionRoute && selection.Proceed.Type != ActionModal) {
+		return fmt.Errorf("renderer.ListPage: selection.proceed must be a route or modal action")
 	}
 	return nil
 }
@@ -739,8 +789,23 @@ type ListPage struct {
 	Pagination *Pagination            `json:"pagination,omitempty"`
 	GroupBy    *ListGrouping          `json:"group_by,omitempty"`
 	CardSchema *CardSchema            `json:"card_schema,omitempty"`
+	Selection  *ListSelection         `json:"selection,omitempty"`
 	Context    map[string]interface{} `json:"context,omitempty"`
 	Actions    []Action               `json:"actions,omitempty"`
+}
+
+// ListSelection declares server-owned selection for a list of cards. The
+// renderer loads selected keys from Source and never treats client state as
+// authoritative. ToggleAction references an action from CardSchema.Actions.
+type ListSelection struct {
+	KeyField      string     `json:"key_field"`
+	ToggleAction  string     `json:"toggle_action"`
+	ValuesField   string     `json:"values_field"`
+	Limit         int        `json:"limit"`
+	SelectedLabel string     `json:"selected_label,omitempty"`
+	Source        *APIAction `json:"source"`
+	Clear         *Action    `json:"clear"`
+	Proceed       *Action    `json:"proceed"`
 }
 
 // ListGrouping describes ordered groups in a flat list response. Field must

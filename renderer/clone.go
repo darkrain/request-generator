@@ -22,8 +22,20 @@ func cloneListPage(v *ListPage) *ListPage {
 	cp.Pagination = clonePagination(v.Pagination)
 	cp.GroupBy = cloneListGrouping(v.GroupBy)
 	cp.CardSchema = cloneCardSchema(v.CardSchema)
+	cp.Selection = cloneListSelection(v.Selection)
 	cp.Context = cloneMap(v.Context)
 	cp.Actions = cloneActions(v.Actions)
+	return &cp
+}
+
+func cloneListSelection(v *ListSelection) *ListSelection {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.Source = cloneAPIAction(v.Source)
+	cp.Clear = cloneAction(v.Clear)
+	cp.Proceed = cloneAction(v.Proceed)
 	return &cp
 }
 
