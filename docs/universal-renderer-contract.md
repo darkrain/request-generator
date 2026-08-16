@@ -409,6 +409,45 @@ renderer.FormSection{
 }
 ```
 
+### Матрица с динамическими строками
+
+Если набор строк определяет сам list resource, вместо статического `Rows`
+задаётся `source.row`. Consumer строит одну строку на каждую запись list;
+`label_field` и `description_field` могут содержать ключи локализации.
+
+```go
+Source: &renderer.FieldMatrixDataSource{
+    IDField:  "id",
+    KeyField: "group_code",
+    Row: &renderer.FieldMatrixDataRow{
+        LabelField:       "label_key",
+        DescriptionField: "description_key",
+        IconField:        "icon",
+        ToneField:        "tone",
+        Cells: []renderer.FieldMatrixCell{
+            {Field: "email_enabled", Label: "preferences.email", AvailableField: "email_available"},
+            {Field: "push_enabled", Label: "preferences.push", AvailableField: "push_available"},
+        },
+    },
+    List:   renderer.ActionResource{Module: "delivery_preferences", Action: "list"},
+    Update: renderer.ActionResource{Module: "delivery_preferences", Action: "update"},
+},
+```
+
+### Иконка из данных
+
+Для карточек, чьи иконка и тон приходят из каталога, `IconBinding` использует
+`icon_field` и `tone_field`. Они имеют приоритет над `icon_map` и `tone_map`,
+которые предназначены для закрытых enum-наборов.
+
+```go
+Icon: &renderer.IconBinding{
+    IconField: "event_icon",
+    ToneField: "event_tone",
+    Fallback:  "bell",
+},
+```
+
 `rows[].icon`, `rows[].tone` и `rows[].description` относятся только к
 presentation. Значения переключателей, availability и update selector всегда
 остаются в ответе исходного standard module action.

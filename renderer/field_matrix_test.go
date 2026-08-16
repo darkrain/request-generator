@@ -73,6 +73,21 @@ func TestFieldMatrixValidate(t *testing.T) {
 			},
 		},
 		{
+			name: "table source dynamic row",
+			matrix: &FieldMatrix{
+				Type: FieldMatrixTypeTable,
+				Table: &FieldMatrixTable{
+					Heads: []string{"Notification", "Toast"},
+					Source: &FieldMatrixDataSource{
+						IDField: "id", KeyField: "group_code",
+						Row:  &FieldMatrixDataRow{LabelField: "label_key", DescriptionField: "description_key", IconField: "icon", ToneField: "tone", Cells: []FieldMatrixCell{{Field: "toast_enabled", Label: "Toast", AvailableField: "toast_available"}}},
+						List: ActionResource{Module: "notification_group_preferences", Action: "list"}, Update: ActionResource{Module: "notification_group_preferences", Action: "update"},
+					},
+				},
+			},
+			valid: true,
+		},
+		{
 			name: "accordion presentation",
 			matrix: &FieldMatrix{
 				Type: FieldMatrixTypeTable,

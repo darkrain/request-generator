@@ -444,6 +444,15 @@ func cloneFieldMatrixDataSource(v *FieldMatrixDataSource) *FieldMatrixDataSource
 	if v.Load != nil {
 		cp.Load = &FieldMatrixDataSourceLoad{List: *cloneResourceLoad(&v.Load.List), Update: *cloneResourceLoad(&v.Load.Update)}
 	}
+	if v.Row != nil {
+		cp.Row = &FieldMatrixDataRow{
+			LabelField:       v.Row.LabelField,
+			DescriptionField: v.Row.DescriptionField,
+			IconField:        v.Row.IconField,
+			ToneField:        v.Row.ToneField,
+			Cells:            cloneSlice(v.Row.Cells),
+		}
+	}
 	return &cp
 }
 

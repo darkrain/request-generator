@@ -108,7 +108,7 @@ func TestActivityListPresentationValidation(t *testing.T) {
 		{
 			name:  "icon without field",
 			value: Universal{List: &ListPage{CardSchema: &CardSchema{Icon: &IconBinding{Fallback: "info"}}}},
-			want:  "renderer.CardSchema: icon field is required",
+			want:  "renderer.CardSchema: icon field or icon_field is required",
 		},
 		{
 			name:  "unsupported text format",

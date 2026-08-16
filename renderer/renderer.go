@@ -1003,20 +1003,23 @@ func (schema *CardSchema) Validate() error {
 			return err
 		}
 	}
-	if schema.Icon != nil && schema.Icon.Field == "" {
-		return fmt.Errorf("renderer.CardSchema: icon field is required")
+	if schema.Icon != nil && schema.Icon.Field == "" && schema.Icon.IconField == "" {
+		return fmt.Errorf("renderer.CardSchema: icon field or icon_field is required")
 	}
 	return nil
 }
 
-// IconBinding resolves an icon and its visual tone from a row value. Maps are
-// presentation metadata; business values remain in the row itself.
+// IconBinding resolves an icon and its visual tone from a row. IconField and
+// ToneField let a producer supply catalog-owned presentation values directly.
+// Field with IconMap/ToneMap remains available for closed value sets.
 type IconBinding struct {
-	Field    string            `json:"field,omitempty"`
-	IconMap  map[string]string `json:"icon_map,omitempty"`
-	ToneMap  map[string]string `json:"tone_map,omitempty"`
-	Fallback string            `json:"fallback,omitempty"`
-	Marker   *IconMarker       `json:"marker,omitempty"`
+	Field     string            `json:"field,omitempty"`
+	IconMap   map[string]string `json:"icon_map,omitempty"`
+	ToneMap   map[string]string `json:"tone_map,omitempty"`
+	IconField string            `json:"icon_field,omitempty"`
+	ToneField string            `json:"tone_field,omitempty"`
+	Fallback  string            `json:"fallback,omitempty"`
+	Marker    *IconMarker       `json:"marker,omitempty"`
 }
 
 // IconMarker is a small non-textual state indicator displayed on a bound icon.
@@ -1363,12 +1366,26 @@ type FieldMatrixCell struct {
 type FieldMatrixDataSource struct {
 	IDField  string `json:"id_field,omitempty"`
 	KeyField string `json:"key_field,omitempty"`
+	// Row maps a record returned by List to a table row. With it, table rows
+	// are fully data-driven; Rows is only used for static matrix layouts.
+	Row *FieldMatrixDataRow `json:"row,omitempty"`
 
 	// List and Update are producer-only standard action references. Load is
 	// the public executable contract built for the current principal.
 	List   ActionResource             `json:"-"`
 	Update ActionResource             `json:"-"`
 	Load   *FieldMatrixDataSourceLoad `json:"load,omitempty"`
+}
+
+// FieldMatrixDataRow declares how a list record is presented as one matrix
+// row. Text values can be translation keys resolved by the UI's standard
+// localization function.
+type FieldMatrixDataRow struct {
+	LabelField       string            `json:"label_field,omitempty"`
+	DescriptionField string            `json:"description_field,omitempty"`
+	IconField        string            `json:"icon_field,omitempty"`
+	ToneField        string            `json:"tone_field,omitempty"`
+	Cells            []FieldMatrixCell `json:"cells,omitempty"`
 }
 
 type FieldMatrixDataSourceLoad struct {
@@ -1394,8 +1411,8 @@ func (matrix *FieldMatrix) Validate(sectionID string) error {
 		if matrix.Table == nil || matrix.List != nil {
 			return fmt.Errorf("renderer.Universal: matrix section %q table type must define only table", sectionID)
 		}
-		if len(matrix.Table.Heads) == 0 || len(matrix.Table.Rows) == 0 {
-			return fmt.Errorf("renderer.Universal: matrix section %q table must define heads and rows", sectionID)
+		if len(matrix.Table.Heads) == 0 || (len(matrix.Table.Rows) == 0 && (matrix.Table.Source == nil || matrix.Table.Source.Row == nil)) {
+			return fmt.Errorf("renderer.Universal: matrix section %q table must define heads and rows or a source row", sectionID)
 		}
 		switch matrix.Table.Presentation {
 		case "", FieldMatrixTablePresentationGrid, FieldMatrixTablePresentationChips, FieldMatrixTablePresentationAccordion:
@@ -1413,25 +1430,18 @@ func (matrix *FieldMatrix) Validate(sectionID string) error {
 			if err := source.Update.Validate("field matrix source update"); err != nil {
 				return fmt.Errorf("renderer.Universal: matrix section %q: %w", sectionID, err)
 			}
+			if source.Row != nil {
+				if err := validateFieldMatrixCells(sectionID, -1, len(matrix.Table.Heads), true, source.Row.Cells); err != nil {
+					return err
+				}
+			}
 		}
 		for rowIndex, row := range matrix.Table.Rows {
 			if matrix.Table.Source != nil && row.ID == "" {
 				return fmt.Errorf("renderer.Universal: matrix section %q source row %d must define id", sectionID, rowIndex)
 			}
-			expectedCells := len(matrix.Table.Heads)
-			if row.Label != "" {
-				expectedCells--
-			}
-			if len(row.Cells) != expectedCells {
-				return fmt.Errorf("renderer.Universal: matrix section %q row %d cells must match heads", sectionID, rowIndex)
-			}
-			for cellIndex, cell := range row.Cells {
-				if (cell.Field == "") == (cell.Text == "") {
-					return fmt.Errorf("renderer.Universal: matrix section %q row %d cell %d must define exactly one of field or text", sectionID, rowIndex, cellIndex)
-				}
-				if cell.AvailableField != "" && cell.Field == "" {
-					return fmt.Errorf("renderer.Universal: matrix section %q row %d cell %d availability requires field", sectionID, rowIndex, cellIndex)
-				}
+			if err := validateFieldMatrixCells(sectionID, rowIndex, len(matrix.Table.Heads), row.Label != "", row.Cells); err != nil {
+				return err
 			}
 		}
 	case FieldMatrixTypeList:
@@ -1448,6 +1458,25 @@ func (matrix *FieldMatrix) Validate(sectionID string) error {
 		}
 	default:
 		return fmt.Errorf("renderer.Universal: matrix section %q has unsupported matrix type %q", sectionID, matrix.Type)
+	}
+	return nil
+}
+
+func validateFieldMatrixCells(sectionID string, rowIndex, heads int, hasLabel bool, cells []FieldMatrixCell) error {
+	expectedCells := heads
+	if hasLabel {
+		expectedCells--
+	}
+	if len(cells) != expectedCells {
+		return fmt.Errorf("renderer.Universal: matrix section %q row %d cells must match heads", sectionID, rowIndex)
+	}
+	for cellIndex, cell := range cells {
+		if (cell.Field == "") == (cell.Text == "") {
+			return fmt.Errorf("renderer.Universal: matrix section %q row %d cell %d must define exactly one of field or text", sectionID, rowIndex, cellIndex)
+		}
+		if cell.AvailableField != "" && cell.Field == "" {
+			return fmt.Errorf("renderer.Universal: matrix section %q row %d cell %d availability requires field", sectionID, rowIndex, cellIndex)
+		}
 	}
 	return nil
 }
