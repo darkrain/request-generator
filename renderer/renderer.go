@@ -1053,6 +1053,7 @@ type FieldPresentation struct {
 	Hint        string           `json:"hint,omitempty"`
 	Description string           `json:"description,omitempty"`
 	Rows        uint8            `json:"rows,omitempty"`
+	MaxItems    uint16           `json:"max_items,omitempty"`
 	VisibleIf   *Condition       `json:"visible_if,omitempty"`
 	ToneByValue []FieldValueTone `json:"tone_by_value,omitempty"`
 }

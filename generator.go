@@ -507,6 +507,7 @@ func (generator *Generator) fieldOptions(c *gin.Context, field fields.ModuleFiel
 	}
 	for i := range options {
 		options[i].Label = generator.Translate(lang, options[i].Label)
+		options[i].Description = generator.Translate(lang, options[i].Description)
 	}
 	return options
 }

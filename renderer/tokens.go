@@ -224,6 +224,7 @@ const (
 	RendererBadge               RendererKey = "badge"
 	RendererChipSelect          RendererKey = "chip_select"
 	RendererPrimaryRadio        RendererKey = "primary_radio"
+	RendererRecordSelect        RendererKey = "record_select"
 )
 
 type RecordSectionRenderer = RendererKey

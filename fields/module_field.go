@@ -249,10 +249,11 @@ func (f ModuleFilterField) ColumnName() string {
 }
 
 type ModuleFieldOptions struct {
-	Value  interface{}       `json:"value"`
-	Label  string            `json:"label"`
-	Icon   string            `json:"icon,omitempty"`
-	Labels map[string]string `json:"-"`
+	Value       interface{}       `json:"value"`
+	Label       string            `json:"label"`
+	Description string            `json:"description,omitempty"`
+	Icon        string            `json:"icon,omitempty"`
+	Labels      map[string]string `json:"-"`
 }
 
 type FieldOptionsSourceMode string
