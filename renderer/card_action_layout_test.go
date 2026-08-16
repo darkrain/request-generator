@@ -18,6 +18,10 @@ func TestCardActionLayoutValidationAndJSON(t *testing.T) {
 	if got, want := string(encoded), `{"action_layout":"edge_fill"}`; got != want {
 		t.Fatalf("Marshal() = %s, want %s", got, want)
 	}
+	menu := CardSchema{ActionLayout: CardActionLayoutMenu}
+	if err := menu.Validate(); err != nil {
+		t.Fatalf("menu Validate() error = %v", err)
+	}
 
 	invalid := CardSchema{ActionLayout: CardActionLayout("stacked")}
 	if got, want := invalid.Validate().Error(), `renderer.CardSchema: unsupported action layout "stacked"`; got != want {

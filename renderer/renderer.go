@@ -828,6 +828,7 @@ type CardActionLayout string
 const (
 	CardActionLayoutInline   CardActionLayout = "inline"
 	CardActionLayoutEdgeFill CardActionLayout = "edge_fill"
+	CardActionLayoutMenu     CardActionLayout = "menu"
 )
 
 type CardSchema struct {
@@ -857,7 +858,7 @@ func (schema *CardSchema) Validate() error {
 		return nil
 	}
 	switch schema.ActionLayout {
-	case "", CardActionLayoutInline, CardActionLayoutEdgeFill:
+	case "", CardActionLayoutInline, CardActionLayoutEdgeFill, CardActionLayoutMenu:
 		return nil
 	default:
 		return fmt.Errorf("renderer.CardSchema: unsupported action layout %q", schema.ActionLayout)
