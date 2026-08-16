@@ -2,7 +2,7 @@
 
 Имя: `UniversalRenderer`
 
-Версия: `2.2.0`
+Версия: `2.3.0`
 
 Статус: `draft`
 
@@ -53,7 +53,7 @@ UniversalRenderer читает metadata только из typed response fields.
 {
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "2.2.0"
+    "version": "2.3.0"
   }
 }
 ```
@@ -108,7 +108,7 @@ Closed enums должны использовать typed constants из package 
   "page": 0,
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "2.2.0"
+    "version": "2.3.0"
   },
   "list_page": {},
   "rows": [],
@@ -150,7 +150,7 @@ Closed enums должны использовать typed constants из package 
 {
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "2.2.0"
+    "version": "2.3.0"
   },
   "form_page": {},
   "fields": {
@@ -194,6 +194,8 @@ Closed enums должны использовать typed constants из package 
 renderer default. Generator отклоняет другие значения при `Universal.Validate()`.
 
 ```go
+notConnected := true
+
 renderer.FormSection{
     ID:      "payments",
     Block:   &renderer.Block{Type: renderer.BlockPanel},
@@ -201,6 +203,95 @@ renderer.FormSection{
     Columns: renderer.FieldMatrixColumnsOne,
 }
 ```
+
+### Prompt List Внутри Формы
+
+`form_page.sections[].prompts` описывает короткие статусные строки, которые
+относятся именно к своей секции формы. Это подходит для возможностей среды,
+подключения канала доставки или другого действия, которое не является полем
+записи. Prompt не хранит локальное состояние и не заменяет field validation.
+
+```go
+renderer.FormSection{
+    ID:       "delivery_channels",
+    Renderer: renderer.RendererFieldMatrix,
+    Matrix:   deliveryMatrix(),
+    Prompts: &renderer.PromptList{
+        Variant: "compact",
+        Items: []renderer.Prompt{{
+            ID:   "browser_delivery",
+            Kind: "browser",
+            Tone: "info",
+            Icon: "bell",
+            Text: "delivery.prompts.browser.text",
+            VisibleIf: &renderer.Condition{
+                Path:  "record.browser_connected",
+                Falsy: &notConnected,
+            },
+            Action: &renderer.Action{
+                ID:    "connect_browser",
+                Type:  renderer.ActionEmit,
+                Label: "delivery.prompts.browser.action",
+                API:   &renderer.APIAction{Method: "PUT", Endpoint: "/api/browser_subscriptions"},
+                Client: &renderer.ClientAction{
+                    Name: "browser.delivery.subscribe",
+                    Arguments: []renderer.ClientActionArgument{{
+                        Name:  "application_server_key",
+                        Value: renderer.TypedValue{Type: renderer.TypedValueString, String: "public-key"},
+                    }},
+                },
+                AfterSuccess: &renderer.ActionResult{Reload: "record"},
+            },
+        }},
+    },
+}
+```
+
+На wire это выглядит так:
+
+```json
+{
+  "id": "delivery_channels",
+  "renderer": "field.matrix",
+  "prompts": {
+    "variant": "compact",
+    "items": [{
+      "id": "browser_delivery",
+      "kind": "browser",
+      "tone": "info",
+      "icon": "bell",
+      "text": "Browser delivery is not connected.",
+      "visible_if": {"path": "record.browser_connected", "falsy": true},
+      "action": {
+        "id": "connect_browser",
+        "type": "emit",
+        "label": "Connect browser",
+        "api": {"method": "PUT", "endpoint": "/api/browser_subscriptions"},
+        "client": {
+          "name": "browser.delivery.subscribe",
+          "arguments": [{
+            "name": "application_server_key",
+            "value": {"type": "string", "string": "public-key"}
+          }]
+        },
+        "after_success": {"reload": "record"}
+      }
+    }]
+  }
+}
+```
+
+`PromptList.variant` определяет только общую визуальную плотность списка.
+`Prompt.visible_if` использует общий condition grammar. Producer обязан
+проверять доступ и входные данные в endpoint из `action.api`; скрытый prompt
+не является механизмом авторизации.
+
+`action.client` описывает capability текущего приложения. Generic renderer
+делегирует его зарегистрированному application handler и не знает бизнес-имя
+capability. `arguments` имеют `TypedValue`, поэтому обработчик не угадывает
+строковые типы. Для browser-only capability API может одновременно передать
+`action.api`: application handler получает endpoint и method из typed action,
+но сам выполняет только доступную ему browser operation.
 
 ### Внешняя форма в секции
 
@@ -458,7 +549,7 @@ presentation. Значения переключателей, availability и upd
 {
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "2.2.0"
+    "version": "2.3.0"
   },
   "record_page": {},
   "item": {
@@ -504,7 +595,7 @@ presentation. Значения переключателей, availability и upd
         "type": "page",
         "renderer": {
           "name": "UniversalRenderer",
-          "version": "2.2.0"
+          "version": "2.3.0"
         },
         "page_type": "list",
         "query": {
@@ -535,7 +626,7 @@ presentation. Значения переключателей, availability и upd
       "order": 10,
       "renderer": {
         "name": "UniversalRenderer",
-        "version": "2.2.0"
+        "version": "2.3.0"
       },
       "widget": {
         "surface": {
@@ -958,7 +1049,7 @@ Media: &renderer.FieldMediaConfig{
 {
   "id": "work-area",
   "order": 10,
-  "renderer": {"name": "UniversalRenderer", "version": "2.2.0"},
+  "renderer": {"name": "UniversalRenderer", "version": "2.3.0"},
   "widget": {
     "surface": {
       "kind": "drawer",
@@ -1771,6 +1862,31 @@ Supported `action.type`:
 
 `external: true` является legacy shorthand для action, который текущий webapp обрабатывает вне generic action executor. Для новых producer-сервисов предпочтительно использовать `type`.
 
+#### Client Capability Action
+
+`action.client` optional и используется вместе с `type: "emit"`, когда
+выполнение возможно только в конкретной среде клиента: browser API,
+нативный bridge или другой зарегистрированный capability. Это не transport и
+не позволяет producer-у передать исполняемый JavaScript.
+
+```go
+type ClientAction struct {
+    Name      string
+    Arguments []ClientActionArgument
+}
+
+type ClientActionArgument struct {
+    Name  string
+    Value TypedValue
+}
+```
+
+`Name` является стабильным именем capability, а не именем функции. Renderer
+передает весь typed descriptor application handler. Если handler не
+зарегистрирован, action должен завершиться понятной ошибкой; UI kit не должен
+подменять его локальным состоянием. Все изменения данных после capability
+делаются только через обычный typed `action.api` и серверные permissions.
+
 ## Typed Renderer Tokens
 
 Producer code must build UniversalRenderer metadata with typed renderer structs and token types, not by assembling ad-hoc `map[string]interface{}` trees or stringly typed renderer fields.
@@ -2161,7 +2277,7 @@ Media metadata should reference fields, not hardcoded rendering branches.
   "page": 0,
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "2.2.0"
+    "version": "2.3.0"
   },
   "rows": [
     {"id": 1, "name": "Example", "status": "active"}

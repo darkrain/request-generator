@@ -206,6 +206,7 @@ func (localizer textLocalizer) localizeFormPage(page *FormPage) {
 
 func (localizer textLocalizer) localizeFormSection(section *FormSection) {
 	localizer.localizeTextFields(&section.Title, &section.StepHint, &section.PanelTitle, &section.Subtitle, &section.LoadingLabel, &section.GroupTitle)
+	localizer.localizePromptList(section.Prompts)
 	localizer.localizeFieldMatrix(section.Matrix)
 	if section.ListPage != nil {
 		localizer.localizeListPage(section.ListPage)
@@ -214,6 +215,17 @@ func (localizer textLocalizer) localizeFormSection(section *FormSection) {
 	section.MediaUpload = localizer.localizeMediaUpload(section.MediaUpload)
 	section.MediaLabels = localizer.localizeMediaLabels(section.MediaLabels)
 	localizer.localizeMediaActions(section.MediaActions)
+}
+
+func (localizer textLocalizer) localizePromptList(list *PromptList) {
+	if list == nil {
+		return
+	}
+	for index := range list.Items {
+		prompt := &list.Items[index]
+		localizer.localizeTextFields(&prompt.Title, &prompt.Text)
+		localizer.localizeRendererAction(prompt.Action)
+	}
 }
 
 func (localizer textLocalizer) localizeFieldMatrix(matrix *FieldMatrix) {

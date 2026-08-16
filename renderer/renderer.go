@@ -86,6 +86,9 @@ func (r Universal) Validate() error {
 			if err := validateFormSectionColumns(section); err != nil {
 				return err
 			}
+			if err := section.Prompts.Validate(); err != nil {
+				return fmt.Errorf("renderer.Universal: form section %q prompts: %w", section.ID, err)
+			}
 			if section.Resource != nil {
 				if section.Renderer != RendererUniversalSection {
 					return fmt.Errorf("renderer.Universal: resource section %q requires renderer %q", section.ID, RendererUniversalSection)
@@ -1289,6 +1292,7 @@ type FormSection struct {
 	MediaItems   []MediaGalleryItem     `json:"media_items,omitempty"`
 	MediaLabels  *MediaGalleryLabels    `json:"media_labels,omitempty"`
 	MediaActions *MediaGalleryActions   `json:"media_actions,omitempty"`
+	Prompts      *PromptList            `json:"prompts,omitempty"`
 	// Resource declares another standard module action rendered inside this
 	// section. It stays server-side: Generator resolves it to Load per request.
 	Resource *Resource `json:"-"`
@@ -1878,6 +1882,7 @@ type Action struct {
 	Route          interface{}    `json:"route,omitempty"`
 	API            *APIAction     `json:"api,omitempty"`
 	Modal          *ModalAction   `json:"modal,omitempty"`
+	Client         *ClientAction  `json:"client,omitempty"`
 	Confirm        *Confirm       `json:"confirm,omitempty"`
 	AfterSuccess   *ActionResult  `json:"after_success,omitempty"`
 	AfterError     *ActionResult  `json:"after_error,omitempty"`
@@ -1915,6 +1920,11 @@ func (action Action) Validate() error {
 			return fmt.Errorf("after error: %w", err)
 		}
 	}
+	if action.Client != nil {
+		if err := action.Client.Validate(); err != nil {
+			return fmt.Errorf("client: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -1936,6 +1946,92 @@ type ModalAction struct {
 	Renderer RendererKey            `json:"renderer,omitempty"`
 	Title    string                 `json:"title,omitempty"`
 	Data     map[string]interface{} `json:"data,omitempty"`
+}
+
+// ClientAction describes a client capability selected by the API. The
+// renderer does not implement the capability itself; an application registers
+// the named handler and receives the typed arguments supplied by the producer.
+// This keeps browser-only operations, such as Web Push permission, out of a
+// server action while preserving the API as the source of its configuration.
+type ClientAction struct {
+	Name      string                 `json:"name,omitempty"`
+	Arguments []ClientActionArgument `json:"arguments,omitempty"`
+}
+
+type ClientActionArgument struct {
+	Name  string     `json:"name,omitempty"`
+	Value TypedValue `json:"value,omitempty"`
+}
+
+func (action *ClientAction) Validate() error {
+	if action == nil {
+		return nil
+	}
+	if action.Name == "" {
+		return fmt.Errorf("name is required")
+	}
+	seen := make(map[string]struct{}, len(action.Arguments))
+	for _, argument := range action.Arguments {
+		if argument.Name == "" {
+			return fmt.Errorf("argument name is required")
+		}
+		if _, exists := seen[argument.Name]; exists {
+			return fmt.Errorf("argument %q is duplicated", argument.Name)
+		}
+		seen[argument.Name] = struct{}{}
+		if err := argument.Value.Validate(); err != nil {
+			return fmt.Errorf("argument %q: %w", argument.Name, err)
+		}
+	}
+	return nil
+}
+
+// PromptList declares contextual notices rendered within a form section.
+// Prompts use the same Action contract as other renderer controls, so their
+// visual content and executable target remain producer-owned.
+type PromptList struct {
+	Variant string   `json:"variant,omitempty"`
+	Items   []Prompt `json:"items,omitempty"`
+}
+
+type Prompt struct {
+	ID          string     `json:"id,omitempty"`
+	Kind        string     `json:"kind,omitempty"`
+	Tone        string     `json:"tone,omitempty"`
+	Icon        string     `json:"icon,omitempty"`
+	Title       string     `json:"title,omitempty"`
+	Text        string     `json:"text,omitempty"`
+	Action      *Action    `json:"action,omitempty"`
+	VisibleIf   *Condition `json:"visible_if,omitempty"`
+	Dismissible bool       `json:"dismissible,omitempty"`
+}
+
+func (list *PromptList) Validate() error {
+	if list == nil {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(list.Items))
+	for _, prompt := range list.Items {
+		if prompt.ID == "" {
+			return fmt.Errorf("prompt id is required")
+		}
+		if _, exists := seen[prompt.ID]; exists {
+			return fmt.Errorf("prompt %q is duplicated", prompt.ID)
+		}
+		seen[prompt.ID] = struct{}{}
+		if prompt.Text == "" && prompt.Title == "" {
+			return fmt.Errorf("prompt %q must define title or text", prompt.ID)
+		}
+		if prompt.VisibleIf != nil && !hasCondition(prompt.VisibleIf) {
+			return fmt.Errorf("prompt %q visible_if is invalid", prompt.ID)
+		}
+		if prompt.Action != nil {
+			if err := prompt.Action.Validate(); err != nil {
+				return fmt.Errorf("prompt %q action: %w", prompt.ID, err)
+			}
+		}
+	}
+	return nil
 }
 
 type Confirm struct {

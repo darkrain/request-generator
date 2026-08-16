@@ -411,6 +411,7 @@ func cloneFormSections(values []FormSection) []FormSection {
 		out[i].MediaItems = cloneSlice(v.MediaItems)
 		out[i].MediaLabels = clonePtr(v.MediaLabels)
 		out[i].MediaActions = cloneMediaGalleryActions(v.MediaActions)
+		out[i].Prompts = clonePromptList(v.Prompts)
 		out[i].Resource = cloneResource(v.Resource)
 		out[i].Load = cloneResourceLoad(v.Load)
 	}
@@ -667,10 +668,37 @@ func cloneActionValue(v Action) Action {
 	v.Route = cloneRouteValue(v.Route)
 	v.API = cloneAPIAction(v.API)
 	v.Modal = cloneModalAction(v.Modal)
+	v.Client = cloneClientAction(v.Client)
 	v.Confirm = cloneConfirm(v.Confirm)
 	v.AfterSuccess = cloneActionResult(v.AfterSuccess)
 	v.AfterError = cloneActionResult(v.AfterError)
 	return v
+}
+
+func cloneClientAction(v *ClientAction) *ClientAction {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.Arguments = cloneSlice(v.Arguments)
+	for index := range cp.Arguments {
+		cp.Arguments[index].Value.Bool = clonePtr(v.Arguments[index].Value.Bool)
+	}
+	return &cp
+}
+
+func clonePromptList(v *PromptList) *PromptList {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.Items = make([]Prompt, len(v.Items))
+	for index := range v.Items {
+		cp.Items[index] = v.Items[index]
+		cp.Items[index].Action = cloneAction(v.Items[index].Action)
+		cp.Items[index].VisibleIf = cloneCondition(v.Items[index].VisibleIf)
+	}
+	return &cp
 }
 
 func cloneActionPresentation(value ActionPresentation) ActionPresentation {
