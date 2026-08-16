@@ -1808,6 +1808,12 @@ request-generator:
 Frontend обязан выполнить request только после положительного ответа диалога.
 Отмена не вызывает transport и не меняет workspace state.
 
+`workspace.mode` управляет видимой композицией workspace. Пустое значение и
+`master_detail` показывают master и detail. Значение `detail_only` скрывает
+master и кнопку возврата, когда workspace всегда открывается с внешней typed
+selection. Master resource при этом продолжает загружаться как источник
+selected record; producer не дублирует identity поля в detail response.
+
 Все общие визуальные поля action принадлежат `ActionPresentation`: `icon`,
 `icon_only`, `variant`, `appearance`, `active_appearance`, `active`, `block`,
 `visible_if`, `hidden_if`, `disabled_if`. Обычный `Action` встраивает этот тип

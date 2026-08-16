@@ -171,6 +171,7 @@ func (surface WidgetSurface) Validate() error {
 // shell surface. Resources remain normal module actions.
 type WorkspaceWidget struct {
 	Selection       WorkspaceSelection `json:"selection"`
+	Mode            WorkspaceMode      `json:"mode,omitempty"`
 	Summary         *Resource          `json:"summary,omitempty"`
 	Master          Resource           `json:"master"`
 	Detail          Resource           `json:"detail"`
@@ -184,6 +185,9 @@ type WorkspaceWidget struct {
 }
 
 func (workspace WorkspaceWidget) Validate() error {
+	if err := workspace.Mode.Validate(); err != nil {
+		return fmt.Errorf("mode: %w", err)
+	}
 	if workspace.Selection.Field == "" {
 		return fmt.Errorf("selection field is required")
 	}
@@ -262,6 +266,24 @@ func (workspace WorkspaceWidget) Validate() error {
 		seenSubscriptions[key] = struct{}{}
 	}
 	return nil
+}
+
+// WorkspaceMode controls only the visible master/detail composition. The
+// master resource remains the source of the selected record in both modes.
+type WorkspaceMode string
+
+const (
+	WorkspaceModeMasterDetail WorkspaceMode = "master_detail"
+	WorkspaceModeDetailOnly   WorkspaceMode = "detail_only"
+)
+
+func (mode WorkspaceMode) Validate() error {
+	switch mode {
+	case "", WorkspaceModeMasterDetail, WorkspaceModeDetailOnly:
+		return nil
+	default:
+		return fmt.Errorf("unsupported value %q", mode)
+	}
 }
 
 type WorkspaceSelection struct {

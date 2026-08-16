@@ -408,6 +408,19 @@ func TestWorkspaceAllowsDistinctEventConditionsForOneAction(t *testing.T) {
 	require.NoError(t, widget.Validate())
 }
 
+func TestWorkspaceModeValidationAndSerialization(t *testing.T) {
+	widget := validGlobalWorkspace()
+	widget.Workspace.Mode = WorkspaceModeDetailOnly
+	require.NoError(t, widget.Validate())
+
+	encoded, err := json.Marshal(widget)
+	require.NoError(t, err)
+	require.Contains(t, string(encoded), `"mode":"detail_only"`)
+
+	widget.Workspace.Mode = WorkspaceMode("fullscreen")
+	require.EqualError(t, widget.Validate(), `renderer.GlobalWidget: workspace: mode: unsupported value "fullscreen"`)
+}
+
 func TestWidgetLoadCloneDoesNotShareCommandInputState(t *testing.T) {
 	load := WidgetLoad{Commands: []WorkspaceCommandLoad{{
 		ID: "create-entry",
