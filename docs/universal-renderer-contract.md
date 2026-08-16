@@ -2,7 +2,7 @@
 
 Имя: `UniversalRenderer`
 
-Версия: `2.1.0`
+Версия: `2.3.0`
 
 Статус: `draft`
 
@@ -53,7 +53,7 @@ UniversalRenderer читает metadata только из typed response fields.
 {
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "2.1.0"
+    "version": "2.3.0"
   }
 }
 ```
@@ -108,7 +108,7 @@ Closed enums должны использовать typed constants из package 
   "page": 0,
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "2.1.0"
+    "version": "2.3.0"
   },
   "list_page": {},
   "rows": [],
@@ -150,7 +150,7 @@ Closed enums должны использовать typed constants из package 
 {
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "2.1.0"
+    "version": "2.3.0"
   },
   "form_page": {},
   "fields": {
@@ -194,6 +194,8 @@ Closed enums должны использовать typed constants из package 
 renderer default. Generator отклоняет другие значения при `Universal.Validate()`.
 
 ```go
+notConnected := true
+
 renderer.FormSection{
     ID:      "payments",
     Block:   &renderer.Block{Type: renderer.BlockPanel},
@@ -201,6 +203,172 @@ renderer.FormSection{
     Columns: renderer.FieldMatrixColumnsOne,
 }
 ```
+
+### Prompt List Внутри Формы
+
+`form_page.sections[].prompts` описывает короткие статусные строки, которые
+относятся именно к своей секции формы. Это подходит для возможностей среды,
+подключения канала доставки или другого действия, которое не является полем
+записи. Prompt не хранит локальное состояние и не заменяет field validation.
+
+```go
+renderer.FormSection{
+    ID:       "delivery_channels",
+    Renderer: renderer.RendererFieldMatrix,
+    Matrix:   deliveryMatrix(),
+    Prompts: &renderer.PromptList{
+        Variant: "compact",
+        Items: []renderer.Prompt{{
+            ID:   "browser_delivery",
+            Kind: "browser",
+            Tone: "info",
+            Icon: "bell",
+            Text: "delivery.prompts.browser.text",
+            VisibleIf: &renderer.Condition{
+                Path:  "record.browser_connected",
+                Falsy: &notConnected,
+            },
+            Action: &renderer.Action{
+                ID:    "connect_browser",
+                Type:  renderer.ActionEmit,
+                Label: "delivery.prompts.browser.action",
+                API:   &renderer.APIAction{Method: "PUT", Endpoint: "/api/browser_subscriptions"},
+                Client: &renderer.ClientAction{
+                    Name: "browser.delivery.subscribe",
+                    Arguments: []renderer.ClientActionArgument{{
+                        Name:  "application_server_key",
+                        Value: renderer.TypedValue{Type: renderer.TypedValueString, String: "public-key"},
+                    }},
+                },
+                AfterSuccess: &renderer.ActionResult{Reload: "record"},
+            },
+        }},
+    },
+}
+```
+
+На wire это выглядит так:
+
+```json
+{
+  "id": "delivery_channels",
+  "renderer": "field.matrix",
+  "prompts": {
+    "variant": "compact",
+    "items": [{
+      "id": "browser_delivery",
+      "kind": "browser",
+      "tone": "info",
+      "icon": "bell",
+      "text": "Browser delivery is not connected.",
+      "visible_if": {"path": "record.browser_connected", "falsy": true},
+      "action": {
+        "id": "connect_browser",
+        "type": "emit",
+        "label": "Connect browser",
+        "api": {"method": "PUT", "endpoint": "/api/browser_subscriptions"},
+        "client": {
+          "name": "browser.delivery.subscribe",
+          "arguments": [{
+            "name": "application_server_key",
+            "value": {"type": "string", "string": "public-key"}
+          }]
+        },
+        "after_success": {"reload": "record"}
+      }
+    }]
+  }
+}
+```
+
+`PromptList.variant` определяет только общую визуальную плотность списка.
+`Prompt.visible_if` использует общий condition grammar. Producer обязан
+проверять доступ и входные данные в endpoint из `action.api`; скрытый prompt
+не является механизмом авторизации.
+
+`action.client` описывает capability текущего приложения. Generic renderer
+делегирует его зарегистрированному application handler и не знает бизнес-имя
+capability. `arguments` имеют `TypedValue`, поэтому обработчик не угадывает
+строковые типы. Для browser-only capability API может одновременно передать
+`action.api`: application handler получает endpoint и method из typed action,
+но сам выполняет только доступную ему browser operation.
+
+### Внешняя форма в секции
+
+`FormSection.Resource` позволяет встроить форму другого стандартного модуля в
+навигацию текущей form page. Это не отдельный frontend route и не новый
+проектный transport: producer указывает только существующий `view` action и
+typed bindings. Generator проверяет доступ текущей роли, сохраняет описание
+`resource` только на сервере и выдаёт consumer-у уже собранный `load`.
+
+```go
+renderer.FormSection{
+    ID:           "delivery",
+    Title:        "settings.delivery",
+    Renderer:     renderer.RendererUniversalSection,
+    Columns:      renderer.FieldMatrixColumnsOne,
+    LoadingLabel: "ui.loading",
+    Resource: &renderer.Resource{
+        ActionResource: renderer.ActionResource{
+            Module: "delivery_preferences",
+            Action: "view",
+        },
+        Bindings: []renderer.RequestBinding{
+            {
+                Target: renderer.RequestBindingPathByKey,
+                Source: renderer.ValueSource{Literal: &renderer.TypedValue{
+                    Type: renderer.TypedValueString,
+                    String: "user_id",
+                }},
+            },
+            {
+                Target: renderer.RequestBindingPathValue,
+                Source: renderer.ValueSource{Runtime: &renderer.RuntimeValue{
+                    Scope: renderer.RuntimeValueSourceCurrentUser,
+                    Field: "id",
+                }},
+            },
+        },
+    },
+}
+```
+
+В response section получает только исполняемый descriptor. `resource` и имя
+целевого module/action в JSON не попадают:
+
+```json
+{
+  "id": "delivery",
+  "renderer": "universal.section",
+  "load": {
+    "request": {
+      "method": "GET",
+      "endpoint": "/api/delivery_preferences/view/:bykey/:value"
+    },
+    "bindings": [
+      {
+        "target": "path_by_key",
+        "source": {"literal": {"type": "string", "string": "user_id"}}
+      },
+      {
+        "target": "path_value",
+        "source": {"runtime": {"scope": "current_user", "field": "id"}}
+      }
+    ]
+  }
+}
+```
+
+Consumer выполняет `load.request` с bindings, использует полученные
+`form_page`, `fields`, `item` и `form_page.actions` без domain-specific
+веток. Секция с недоступным target action не попадает в response.
+
+### Поле времени
+
+`form_type: "time"` представляет значение времени суток в формате `HH:MM`.
+Для PostgreSQL `TIME` module использует `fields.TimeOfDayConverter` на записи
+и `fields.TimeOfDayResultValue` на чтении: UI не получает техническую дату,
+которую драйвер использует при сканировании значения `TIME`.
 
 ### Field Matrix
 
@@ -241,6 +409,12 @@ renderer.FormSection{
 количество `cells` на единицу меньше числа заголовков. Без `row.label` оно
 должно совпадать с числом заголовков.
 
+`table.presentation` задает arrangement тех же typed rows: пустое значение
+или `grid` рисует таблицу, `chips` — компактные переключатели одной строки,
+`accordion` — раскрывающиеся строки. `rows[].icon`, `rows[].tone` и
+`cells[].icon` являются presentation tokens: consumer сопоставляет их со
+своим icon catalog и palette, generator не знает их реализации.
+
 `list` содержит только упорядоченные `fields` и typed `columns` от одного до
 четырех. Каждый field выводится как самостоятельный item без описания строк,
 ячеек или колонок в producer metadata.
@@ -260,7 +434,8 @@ renderer.FormSection{
 }
 ```
 
-`heads[]`, `rows[].label` и `cells[].text` producer задает translation
+`heads[]`, `rows[].label`, `rows[].description`, `cells[].label` и
+`cells[].text` producer задает translation
 keys. Перед ответом request-generator локализует их для выбранного `lang`; UI
 kit не получает ключи и не выполняет перевод. `underline` является opaque
 application-defined visual identifier: generator не знает его палитру и не
@@ -270,13 +445,111 @@ Generator проверяет closed `type`, применимость `list`/`tab
 число колонок list, структуру table и существование каждого referenced field
 в модуле.
 
+### Матрица с самостоятельными строками
+
+Когда строки матрицы хранятся в другом стандартном module, `table.source`
+связывает presentation с его обычными `list` и `update` actions. Producer не
+передает endpoint в JSON: request-generator проверяет actions, permissions,
+selector и editable boolean fields, а затем публикует `source.load` для
+текущего principal. `id_field` является selector update action, `key_field`
+связывает response list с `rows[].id`, а `available_field` отключает channel,
+который недоступен для данной строки.
+
+```go
+renderer.FormSection{
+    ID:       "delivery-rules",
+    Renderer: renderer.RendererFieldMatrix,
+    Matrix: &renderer.FieldMatrix{
+        Type: renderer.FieldMatrixTypeTable,
+        Table: &renderer.FieldMatrixTable{
+            Heads: []string{"preferences.type", "preferences.email", "preferences.push"},
+            Rows: []renderer.FieldMatrixRow{{
+                ID:          "chat_messages",
+                Label:       "preferences.chat_messages",
+                Description: "preferences.chat_messages_hint",
+                Icon:        "chat",
+                Tone:        "cyan",
+                Cells: []renderer.FieldMatrixCell{
+                    {Field: "email_enabled", Label: "preferences.email", Icon: "mail", AvailableField: "email_available"},
+                    {Field: "push_enabled", Label: "preferences.push", Icon: "push", AvailableField: "push_available"},
+                },
+            }},
+            Source: &renderer.FieldMatrixDataSource{
+                IDField:  "id",
+                KeyField: "group_code",
+                List:     renderer.ActionResource{Module: "delivery_preferences", Action: "list"},
+                Update:   renderer.ActionResource{Module: "delivery_preferences", Action: "update"},
+            },
+        },
+    },
+}
+```
+
+После разрешения contract consumer получает только executable metadata:
+
+```json
+{
+  "source": {
+    "id_field": "id",
+    "key_field": "group_code",
+    "load": {
+      "list": {"request": {"method": "GET", "endpoint": "/api/delivery_preferences"}},
+      "update": {"request": {"method": "POST", "endpoint": "/api/delivery_preferences/:bykey/:value"}}
+    }
+  }
+}
+```
+
+### Матрица с динамическими строками
+
+Если набор строк определяет сам list resource, вместо статического `Rows`
+задаётся `source.row`. Consumer строит одну строку на каждую запись list;
+`label_field` и `description_field` могут содержать ключи локализации.
+
+```go
+Source: &renderer.FieldMatrixDataSource{
+    IDField:  "id",
+    KeyField: "group_code",
+    Row: &renderer.FieldMatrixDataRow{
+        LabelField:       "label_key",
+        DescriptionField: "description_key",
+        IconField:        "icon",
+        ToneField:        "tone",
+        Cells: []renderer.FieldMatrixCell{
+            {Field: "email_enabled", Label: "preferences.email", AvailableField: "email_available"},
+            {Field: "push_enabled", Label: "preferences.push", AvailableField: "push_available"},
+        },
+    },
+    List:   renderer.ActionResource{Module: "delivery_preferences", Action: "list"},
+    Update: renderer.ActionResource{Module: "delivery_preferences", Action: "update"},
+},
+```
+
+### Иконка из данных
+
+Для карточек, чьи иконка и тон приходят из каталога, `IconBinding` использует
+`icon_field` и `tone_field`. Они имеют приоритет над `icon_map` и `tone_map`,
+которые предназначены для закрытых enum-наборов.
+
+```go
+Icon: &renderer.IconBinding{
+    IconField: "event_icon",
+    ToneField: "event_tone",
+    Fallback:  "bell",
+},
+```
+
+`rows[].icon`, `rows[].tone` и `rows[].description` относятся только к
+presentation. Значения переключателей, availability и update selector всегда
+остаются в ответе исходного standard module action.
+
 ### View/Record Response
 
 ```json
 {
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "2.1.0"
+    "version": "2.3.0"
   },
   "record_page": {},
   "item": {
@@ -322,7 +595,7 @@ Generator проверяет closed `type`, применимость `list`/`tab
         "type": "page",
         "renderer": {
           "name": "UniversalRenderer",
-          "version": "2.1.0"
+          "version": "2.3.0"
         },
         "page_type": "list",
         "query": {
@@ -353,7 +626,7 @@ Generator проверяет closed `type`, применимость `list`/`tab
       "order": 10,
       "renderer": {
         "name": "UniversalRenderer",
-        "version": "2.1.0"
+        "version": "2.3.0"
       },
       "widget": {
         "surface": {
@@ -776,7 +1049,7 @@ Media: &renderer.FieldMediaConfig{
 {
   "id": "work-area",
   "order": 10,
-  "renderer": {"name": "UniversalRenderer", "version": "2.1.0"},
+  "renderer": {"name": "UniversalRenderer", "version": "2.3.0"},
   "widget": {
     "surface": {
       "kind": "drawer",
@@ -829,6 +1102,16 @@ Media: &renderer.FieldMediaConfig{
           "refresh": ["master", "detail"]
         }
       ],
+      "footer_actions": [
+        {
+          "id": "open-all",
+          "type": "route",
+          "label": "Open all",
+          "variant": "primary",
+          "appearance": "solid",
+          "route": {"path": "/records"}
+        }
+      ],
       "subscriptions": [
         {
           "module": "detail_records",
@@ -877,6 +1160,12 @@ Media: &renderer.FieldMediaConfig{
 }
 ```
 
+`workspace.footer_actions` задаёт обычные typed `Action`, которые renderer
+размещает под master-списком. Это подходит для компактного popup-виджета,
+когда нужен переход на полную страницу или открытие modal. Каждое действие
+обязано иметь `id` и `type`; endpoint и client-side callback в этом поле не
+допускаются.
+
 ### Объявление В Producer
 
 `actions.WidgetConfig` содержит только типизированное renderer-описание и
@@ -891,31 +1180,32 @@ Widget: &actions.WidgetConfig{
             Kind:       renderer.WidgetSurfaceDrawer,
             Placement:  renderer.WidgetPlacementShellEnd,
             LoadPolicy: renderer.WidgetLoadOnOpen,
+            Size:       renderer.SizeMD,
         },
         Workspace: &renderer.WorkspaceWidget{
             Selection: renderer.WorkspaceSelection{Field: "id"},
-            Summary: &renderer.WorkspaceResource{
+            Summary: &renderer.Resource{
                 ActionResource: renderer.ActionResource{
                     Module: "summary_records",
                     Action: "list",
                 },
             },
-            Master: renderer.WorkspaceResource{
+            Master: renderer.Resource{
                 ActionResource: renderer.ActionResource{
                     Module: "master_records",
                     Action: "list",
                 },
             },
-            Detail: renderer.WorkspaceResource{
+            Detail: renderer.Resource{
                 ActionResource: renderer.ActionResource{
                     Module: "detail_records",
                     Action: "list",
                 },
-                Bindings: []renderer.WidgetRequestBinding{{
-                    Target: renderer.WidgetRequestBindingFilter,
+                Bindings: []renderer.RequestBinding{{
+                    Target: renderer.RequestBindingFilter,
                     Field:  "parent_id",
-                    Source: renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{
-                        Scope: renderer.WidgetRuntimeValueSourceSelection,
+                    Source: renderer.ValueSource{Runtime: &renderer.RuntimeValue{
+                        Scope: renderer.RuntimeValueSourceSelection,
                         Field: "id",
                     }},
                 }},
@@ -929,29 +1219,29 @@ Widget: &actions.WidgetConfig{
                     Appearance: renderer.ActionAppearanceOutline,
                     VisibleIf:  &renderer.Condition{Path: "enabled", Equals: false},
                 },
-                WorkspaceResource: renderer.WorkspaceResource{
+                Resource: renderer.Resource{
                     ActionResource: renderer.ActionResource{
                         Module: "state_records",
                         Action: "update",
                     },
-                    Bindings: []renderer.WidgetRequestBinding{
+                    Bindings: []renderer.RequestBinding{
                         {
-                            Target: renderer.WidgetRequestBindingPathByKey,
-                            Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{
+                            Target: renderer.RequestBindingPathByKey,
+                            Source: renderer.ValueSource{Literal: &renderer.TypedValue{
                                 Type: renderer.TypedValueString, String: "id",
                             }},
                         },
                         {
-                            Target: renderer.WidgetRequestBindingPathValue,
-                            Source: renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{
-                                Scope: renderer.WidgetRuntimeValueSourceSelection,
+                            Target: renderer.RequestBindingPathValue,
+                            Source: renderer.ValueSource{Runtime: &renderer.RuntimeValue{
+                                Scope: renderer.RuntimeValueSourceSelection,
                                 Field: "participant_id",
                             }},
                         },
                         {
-                            Target: renderer.WidgetRequestBindingBody,
+                            Target: renderer.RequestBindingBody,
                             Field:  "status",
-                            Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{
+                            Source: renderer.ValueSource{Literal: &renderer.TypedValue{
                                 Type: renderer.TypedValueString, String: "active",
                             }},
                         },
@@ -962,13 +1252,23 @@ Widget: &actions.WidgetConfig{
                     renderer.WorkspaceRefreshDetail,
                 },
             }},
+            FooterActions: []renderer.Action{{
+                ID:    "open-all",
+                Type:  renderer.ActionRoute,
+                Label: "workspace.open_all",
+                ActionPresentation: renderer.ActionPresentation{
+                    Variant: renderer.ActionVariantPrimary,
+                    Appearance: renderer.ActionAppearanceSolid,
+                },
+                Route: renderer.RouteAction{Path: "/records"},
+            }},
         },
     },
 }
 ```
 
 `ActionResource` является единственной ссылкой на существующий module action.
-`WorkspaceResource` добавляет к ней только request bindings. Generator сам
+`Resource` добавляет к ней только request bindings. Generator сам
 выдаёт URL и HTTP method в `load`; response action уже содержит существующие
 `list_page`, `record_page` или `form_page`. Widget не повторяет pagination,
 sort, field schema или presentation.
@@ -1064,22 +1364,22 @@ renderer.WorkspaceCommand{
     ID:    "create-entry",
     Label: "workspace.command.create_entry",
     Input: &renderer.WorkspaceCommandInput{Fields: []string{"text"}},
-    WorkspaceResource: renderer.WorkspaceResource{
+    Resource: renderer.Resource{
         ActionResource: renderer.ActionResource{Module: "entries", Action: "add"},
-        Bindings: []renderer.WidgetRequestBinding{
+        Bindings: []renderer.RequestBinding{
             {
-                Target: renderer.WidgetRequestBindingBody,
+                Target: renderer.RequestBindingBody,
                 Field:  "parent_id",
-                Source: renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{
-                    Scope: renderer.WidgetRuntimeValueSourceSelection,
+                Source: renderer.ValueSource{Runtime: &renderer.RuntimeValue{
+                    Scope: renderer.RuntimeValueSourceSelection,
                     Field: "id",
                 }},
             },
             {
-                Target: renderer.WidgetRequestBindingBody,
+                Target: renderer.RequestBindingBody,
                 Field:  "text",
-                Source: renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{
-                    Scope: renderer.WidgetRuntimeValueSourceInput,
+                Source: renderer.ValueSource{Runtime: &renderer.RuntimeValue{
+                    Scope: renderer.RuntimeValueSourceInput,
                     Field: "text",
                 }},
             },
@@ -1168,10 +1468,56 @@ Realtime event может нести typed correlation отдельно от `re
 
 `WorkspaceSubscription.correlation.event_field` должен совпадать с declared
 producer field, а его type - с selection workspace. Runtime сравнивает этот
-field с typed correlation, а не с `payload`. Данные event payload остаются
-транспортными данными и не являются UI contract-ом. Socket, auth, reconnect,
-replay и UI lifecycle не входят в request-generator: их реализует
-integration/runtime.
+field с typed correlation, а не с `payload`.
+
+Для effects, которые не должны угадываться consumer-ом, atomic write может
+явно спроецировать проверенные result fields в `event.payload`. Каждое поле
+`AtomicRealtimePayloadField` обязано ссылаться на declared `result` field:
+значения из HTTP input в payload не допускаются. `WorkspaceSubscription`
+может ограничить реакцию через `event_condition`, который вычисляется над
+`{ event }`. Это позволяет одному standard action отправить, например,
+отдельный refresh и отдельный toast без module-specific ветки в UI:
+
+```go
+Publish: []actions.AtomicRealtimePublishConfig{
+    {
+        Recipients: []actions.AtomicRealtimeRecipient{{
+            UserID: actions.AtomicValueSource{Scope: actions.AtomicValueSourceResult, Field: "recipient_ids"},
+        }},
+        Correlation: &actions.AtomicRealtimeCorrelation{
+            Field: "parent_id",
+            Source: actions.AtomicValueSource{Scope: actions.AtomicValueSourceResult, Field: "parent_id"},
+        },
+        Payload: []actions.AtomicRealtimePayloadField{{
+            Key: "refresh",
+            Source: actions.AtomicValueSource{Scope: actions.AtomicValueSourceResult, Field: "refresh"},
+        }},
+    },
+}
+
+truthy := true
+Subscriptions: []renderer.WorkspaceSubscription{{
+    Module: "detail_records",
+    Actions: []string{"add"},
+    EventCondition: &renderer.Condition{
+        Path: "event.payload.refresh",
+        Truthy: &truthy,
+    },
+    Refresh: []renderer.WorkspaceRefreshTarget{renderer.WorkspaceRefreshMaster},
+}},
+```
+
+Подписка с `toast` может не иметь `refresh`: integration отрисовывает
+локализованные `TextBinding` из event payload. `skip_empty_recipients` у
+atomic publish допускает отсутствие второго, optional effect для всех
+получателей, но не маскирует отсутствие получателей у обязательной публикации.
+
+`WidgetSurface.size` использует общий `SizeToken`. Это семантический размер
+surface (`xs` ... `xl`), а не CSS-значение: consumer сам выбирает адаптивную
+геометрию popup или drawer.
+
+Socket, auth, reconnect, replay и UI lifecycle не входят в
+request-generator: их реализует integration/runtime.
 
 ### Design Tokens
 
@@ -1207,14 +1553,15 @@ request-generator.
 |------|----------|
 | `list_page.layout.type`, `record_page.layout.type` | `one_column`, `two_column`, `three_column` |
 | `list_page.layout.max_width` | `none`, `sm`, `md`, `lg`, `xl`, `full` |
-| `list_page.grid.mode` | `table`, `cards` |
+| `list_page.grid.mode` | `table`, `cards`, `list` |
 | `pagination.mode` | `server`, `client` |
-| `card_schema.variant` | `default`, `media`, `compact` |
+| `card_schema.variant` | `default`, `media`, `compact`, `activity` |
 | `card_schema.surface_variant` | `default`, `primary`, `secondary` |
 | `card_schema.surface_effect` | `none`, `flat`, `elevated` |
 | `card_schema.action_layout` | `inline`, `edge_fill` |
 | `card_schema.media.ratio` | `square`, `portrait`, `landscape`, `wide` |
 | `card_schema.media.size` | `thumb`, `card`, `hero` |
+| `card_schema.meta.format` | `relative_time` |
 | `form_page.layout` | `one_column`, `two_column`, `three_column` |
 | `form_page.sections[].block.type` | `none`, `panel`, `card` |
 | `form_page.sections[].block.variant` | `default`, `compact` |
@@ -1241,6 +1588,50 @@ Filters являются server-driven:
 Sort format: `field:asc` или `field:desc`.
 
 Pagination: `count`, `size`, `page`.
+
+`list_page.filters.presentation` выбирает только общий layout уже описанных
+контролов. Например, `toolbar` использует те же `pill_rows`, search и list
+actions, что и обычная filter bar; producer не передаёт для него отдельную
+схему и не меняет формат query.
+
+У `pill_rows` каждый элемент при необходимости может задать typed
+`presentation`:
+
+- `tabs` — эксклюзивная вкладка в toolbar;
+- `toggle` — переключатель одного filter value;
+- `summary` — интерактивная компактная разбивка для layout, который её
+  поддерживает.
+
+Все варианты продолжают использовать `key` и `val` как единственный источник
+server-side filter query. `count_field` ссылается на поле record, загруженного
+из `list_page.summary.load`.
+
+### Summary
+
+`list_page.summary` описывает заголовок и счётчики страницы. Это не часть
+`filters`: `summary.items` только связывает локализованную подпись с полем
+данных summary resource и не создаёт query parameter.
+
+```json
+{
+  "summary": {
+    "title": "Inbox",
+    "title_fallback": "This inbox",
+    "items": [
+      {"id": "all", "label": "All", "value_field": "all_count"},
+      {"id": "unread", "label": "Unread", "value_field": "unread_count"}
+    ],
+    "load": {
+      "request": {"method": "GET", "endpoint": "/api/state/view/:bykey/:value"},
+      "bindings": []
+    }
+  }
+}
+```
+
+`value_field` читается только из результата `summary.load`. Клиент не
+подсчитывает строки текущей страницы как fallback, поэтому server-side
+pagination и фильтры не искажают значение счётчиков.
 
 Пример named controls:
 
@@ -1304,15 +1695,85 @@ Pagination: `count`, `size`, `page`.
   "action_size": "sm",
   "action_layout": "edge_fill",
   "primary_action": "open",
+  "icon": {
+    "field": "kind",
+    "icon_map": {"message": "chat"},
+    "tone_map": {"message": "success"},
+    "fallback": "info",
+    "marker": {
+      "visible_if": {"path": "record.unread", "truthy": true},
+      "tone": "cyan"
+    }
+  },
   "media": {"field": "avatar", "ratio": "portrait", "size": "card"},
   "title": {"field": "name"},
   "subtitle": {"template": "@{{nick}}"},
+  "meta": {"field": "created_at", "format": "relative_time"},
   "description": {"field": "description"},
   "status": {"id": "status", "field": "status", "type": "status"},
   "badges": [],
   "stats": [],
   "actions": []
 }
+```
+
+`variant: "activity"` предназначен для вертикальных журналов событий и истории
+без привязки к доменному модулю. `icon` выбирает registry icon и tone по значению
+поля строки. `icon.marker` задаёт нетекстовый индикатор и его условие видимости
+относительно текущей строки. `meta` является дополнительным коротким текстом; `relative_time`
+разрешён для date-like значения и форматируется UI kit согласно locale браузера.
+
+`badges[].visible_if` использует тот же `Condition` и позволяет producer-у
+показывать badge только для записей, где он несёт полезный визуальный сигнал.
+`badges[].variant` передаёт нейтральный renderer-token конкретного варианта
+отображения; его интерпретацию определяет UI kit.
+
+Если вкладка list должна показывать серверный счётчик, она объявляет
+`count_field`. Значение берётся из одной summary-записи, описанной producer-ом
+в `list_page.summary.resource`. Generator скрывает исходную ссылку на модуль и
+отдаёт только стандартный `summary.load`; UI выполняет этот ресурс один раз и
+читает `item[count_field].value`. Нельзя считать такие значения по текущей
+странице или выполнять отдельный request для каждой вкладки.
+
+```json
+{
+  "summary": {
+    "title": "Inbox",
+    "load": {
+      "request": {"method": "GET", "endpoint": "/api/activity_summary/view/user_id/:value"},
+      "bindings": [{"target": "path_value", "source": {"runtime": {"scope": "current_user", "field": "id"}}}]
+    }
+  },
+  "filters": {
+    "pill_rows": [[
+      {"label": "All", "count_field": "all_count"},
+      {"label": "Messages", "key": "category", "val": "messages", "count_field": "messages_count"}
+    ]]
+  }
+}
+```
+
+`list_page.group_by` группирует уже полученные, server-sorted rows только для
+визуального вывода. Он не меняет SQL query, filter, sort или pagination:
+
+```json
+{
+  "group_by": {
+    "field": "created_at",
+    "type": "date",
+    "today_label": "Today",
+    "yesterday_label": "Yesterday",
+    "this_week_label": "This week",
+    "earlier_label": "Earlier"
+  }
+}
+```
+
+Для enum badge producer может задать локализованный `label_map`; UI не обязан
+знать значения доменного enum:
+
+```json
+{"field":"priority","label_map":{"high":"High","low":"Low"}}
 ```
 
 `action_layout` определяет раскладку `actions`: пустое значение и `inline` используют обычный ряд. При `edge_fill` действия сохраняют объявленный порядок, а свободное место заполняет только действие без `icon_only`. `block` не меняет поведение этого поля.
@@ -1400,6 +1861,31 @@ Supported `action.type`:
 | `external` | Внешний обработчик текущего приложения. |
 
 `external: true` является legacy shorthand для action, который текущий webapp обрабатывает вне generic action executor. Для новых producer-сервисов предпочтительно использовать `type`.
+
+#### Client Capability Action
+
+`action.client` optional и используется вместе с `type: "emit"`, когда
+выполнение возможно только в конкретной среде клиента: browser API,
+нативный bridge или другой зарегистрированный capability. Это не transport и
+не позволяет producer-у передать исполняемый JavaScript.
+
+```go
+type ClientAction struct {
+    Name      string
+    Arguments []ClientActionArgument
+}
+
+type ClientActionArgument struct {
+    Name  string
+    Value TypedValue
+}
+```
+
+`Name` является стабильным именем capability, а не именем функции. Renderer
+передает весь typed descriptor application handler. Если handler не
+зарегистрирован, action должен завершиться понятной ошибкой; UI kit не должен
+подменять его локальным состоянием. Все изменения данных после capability
+делаются только через обычный typed `action.api` и серверные permissions.
 
 ## Typed Renderer Tokens
 
@@ -1791,7 +2277,7 @@ Media metadata should reference fields, not hardcoded rendering branches.
   "page": 0,
   "renderer": {
     "name": "UniversalRenderer",
-    "version": "2.1.0"
+    "version": "2.3.0"
   },
   "rows": [
     {"id": 1, "name": "Example", "status": "active"}

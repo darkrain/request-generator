@@ -26,6 +26,7 @@ const (
 	ModuleFieldTypeString ModuleFieldType = "string"
 	ModuleFieldTypeInt    ModuleFieldType = "int"
 	ModuleFieldTypeFloat  ModuleFieldType = "float"
+	ModuleFieldTypeBool   ModuleFieldType = "bool"
 	ModuleFieldTypeArray  ModuleFieldType = "array"
 	ModuleFieldTypeObject ModuleFieldType = "object"
 )
@@ -36,12 +37,16 @@ func ModuleFieldTypeOf(value string) (ModuleFieldType, error) {
 		return ModuleFieldTypeString, nil
 	case string(ModuleFieldTypeInt):
 		return ModuleFieldTypeInt, nil
+	case string(ModuleFieldTypeFloat):
+		return ModuleFieldTypeFloat, nil
+	case string(ModuleFieldTypeBool):
+		return ModuleFieldTypeBool, nil
 	case string(ModuleFieldTypeArray):
 		return ModuleFieldTypeArray, nil
 	case string(ModuleFieldTypeObject):
 		return ModuleFieldTypeObject, nil
 	}
-	return ModuleFieldTypeString, errors.New(ErrorUnknownFormType)
+	return ModuleFieldTypeString, errors.New(ErrorUnknownType)
 }
 
 // ModuleFieldArrayStorage controls how a typed array is persisted. It does
@@ -87,6 +92,7 @@ type ModuleFieldFormType string
 
 const (
 	ModuleFieldFormTypeText        ModuleFieldFormType = "text"
+	ModuleFieldFormTypeTime        ModuleFieldFormType = "time"
 	ModuleFieldFormTypeNumber      ModuleFieldFormType = "number"
 	ModuleFieldFormTypeTextArea    ModuleFieldFormType = "textarea"
 	ModuleFieldFormTypeSelect      ModuleFieldFormType = "select"
@@ -101,6 +107,8 @@ func ModuleFieldFormTypeOf(value string) (ModuleFieldFormType, error) {
 	switch value {
 	case string(ModuleFieldFormTypeText):
 		return ModuleFieldFormTypeMap, nil
+	case string(ModuleFieldFormTypeTime):
+		return ModuleFieldFormTypeTime, nil
 	case string(ModuleFieldFormTypeNumber):
 		return ModuleFieldFormTypeNumber, nil
 	case string(ModuleFieldFormTypeTextArea):

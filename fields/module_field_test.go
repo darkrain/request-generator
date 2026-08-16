@@ -13,3 +13,11 @@ func TestModuleFieldDoesNotSerializeInternalOrdering(t *testing.T) {
 	require.NotContains(t, string(payload), "group")
 	require.NotContains(t, string(payload), "order")
 }
+
+func TestModuleFieldTypeOfRecognizesScalarTypes(t *testing.T) {
+	for _, expected := range []ModuleFieldType{ModuleFieldTypeString, ModuleFieldTypeInt, ModuleFieldTypeFloat, ModuleFieldTypeBool} {
+		actual, err := ModuleFieldTypeOf(string(expected))
+		require.NoError(t, err)
+		require.Equal(t, expected, actual)
+	}
+}

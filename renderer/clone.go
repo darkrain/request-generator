@@ -18,9 +18,9 @@ func cloneListPage(v *ListPage) *ListPage {
 	cp.Layout = cloneLayout(v.Layout)
 	cp.Filters = cloneFilters(v.Filters)
 	cp.Summary = cloneSummary(v.Summary)
+	cp.GroupBy = cloneListGroupBy(v.GroupBy)
 	cp.Grid = cloneGrid(v.Grid)
 	cp.Pagination = clonePagination(v.Pagination)
-	cp.GroupBy = cloneListGrouping(v.GroupBy)
 	cp.CardSchema = cloneCardSchema(v.CardSchema)
 	cp.Selection = cloneListSelection(v.Selection)
 	cp.Context = cloneMap(v.Context)
@@ -36,14 +36,6 @@ func cloneListSelection(v *ListSelection) *ListSelection {
 	cp.Source = cloneAPIAction(v.Source)
 	cp.Clear = cloneAction(v.Clear)
 	cp.Proceed = cloneAction(v.Proceed)
-	return &cp
-}
-
-func cloneListGrouping(v *ListGrouping) *ListGrouping {
-	if v == nil {
-		return nil
-	}
-	cp := *v
 	return &cp
 }
 
@@ -286,8 +278,19 @@ func cloneSummary(v *Summary) *Summary {
 		return nil
 	}
 	cp := *v
+	cp.Items = cloneSlice(v.Items)
 	cp.ShowOnline = clonePtr(v.ShowOnline)
 	cp.ShowAction = clonePtr(v.ShowAction)
+	cp.Resource = cloneResource(v.Resource)
+	cp.Load = cloneResourceLoad(v.Load)
+	return &cp
+}
+
+func cloneListGroupBy(v *ListGroupBy) *ListGroupBy {
+	if v == nil {
+		return nil
+	}
+	cp := *v
 	return &cp
 }
 
@@ -297,13 +300,35 @@ func cloneCardSchema(v *CardSchema) *CardSchema {
 	}
 	cp := *v
 	cp.Media = cloneMedia(v.Media)
+	cp.Icon = cloneIconBinding(v.Icon)
 	cp.Title = cloneTextBinding(v.Title)
 	cp.Subtitle = cloneTextBinding(v.Subtitle)
+	cp.Meta = cloneTextBinding(v.Meta)
 	cp.Description = cloneTextBinding(v.Description)
 	cp.Status = cloneStatusBinding(v.Status)
 	cp.Badges = cloneBadges(v.Badges)
 	cp.Stats = cloneBadges(v.Stats)
 	cp.Actions = cloneActions(v.Actions)
+	return &cp
+}
+
+func cloneIconBinding(v *IconBinding) *IconBinding {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.IconMap = cloneMap(v.IconMap)
+	cp.ToneMap = cloneMap(v.ToneMap)
+	cp.Marker = cloneIconMarker(v.Marker)
+	return &cp
+}
+
+func cloneIconMarker(v *IconMarker) *IconMarker {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.VisibleIf = cloneCondition(v.VisibleIf)
 	return &cp
 }
 
@@ -334,6 +359,8 @@ func cloneBadges(values []Badge) []Badge {
 		out[i].Value = cloneTextBinding(v.Value)
 		out[i].Marker = clonePtr(v.Marker)
 		out[i].ToneMap = cloneMap(v.ToneMap)
+		out[i].LabelMap = cloneMap(v.LabelMap)
+		out[i].VisibleIf = cloneCondition(v.VisibleIf)
 		out[i].Then = cloneBadgeState(v.Then)
 		out[i].Else = cloneBadgeState(v.Else)
 	}
@@ -375,6 +402,9 @@ func cloneFormSections(values []FormSection) []FormSection {
 		out[i].MediaItems = cloneSlice(v.MediaItems)
 		out[i].MediaLabels = clonePtr(v.MediaLabels)
 		out[i].MediaActions = cloneMediaGalleryActions(v.MediaActions)
+		out[i].Prompts = clonePromptList(v.Prompts)
+		out[i].Resource = cloneResource(v.Resource)
+		out[i].Load = cloneResourceLoad(v.Load)
 	}
 	return out
 }
@@ -388,9 +418,31 @@ func cloneFieldMatrix(v *FieldMatrix) *FieldMatrix {
 		cp.List = &FieldMatrixList{Fields: cloneSlice(v.List.Fields), Columns: v.List.Columns}
 	}
 	if v.Table != nil {
-		cp.Table = &FieldMatrixTable{Heads: cloneSlice(v.Table.Heads), Rows: make([]FieldMatrixRow, len(v.Table.Rows))}
+		cp.Table = &FieldMatrixTable{Heads: cloneSlice(v.Table.Heads), Rows: make([]FieldMatrixRow, len(v.Table.Rows)), Presentation: v.Table.Presentation, Source: cloneFieldMatrixDataSource(v.Table.Source)}
 		for i, row := range v.Table.Rows {
-			cp.Table.Rows[i] = FieldMatrixRow{Label: row.Label, Cells: cloneSlice(row.Cells)}
+			cp.Table.Rows[i] = FieldMatrixRow{ID: row.ID, Label: row.Label, Description: row.Description, Icon: row.Icon, Tone: row.Tone, Cells: cloneSlice(row.Cells)}
+		}
+	}
+	return &cp
+}
+
+func cloneFieldMatrixDataSource(v *FieldMatrixDataSource) *FieldMatrixDataSource {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.List = ActionResource{Module: v.List.Module, Action: v.List.Action}
+	cp.Update = ActionResource{Module: v.Update.Module, Action: v.Update.Action}
+	if v.Load != nil {
+		cp.Load = &FieldMatrixDataSourceLoad{List: *cloneResourceLoad(&v.Load.List), Update: *cloneResourceLoad(&v.Load.Update)}
+	}
+	if v.Row != nil {
+		cp.Row = &FieldMatrixDataRow{
+			LabelField:       v.Row.LabelField,
+			DescriptionField: v.Row.DescriptionField,
+			IconField:        v.Row.IconField,
+			ToneField:        v.Row.ToneField,
+			Cells:            cloneSlice(v.Row.Cells),
 		}
 	}
 	return &cp
@@ -607,10 +659,37 @@ func cloneActionValue(v Action) Action {
 	v.Route = cloneRouteValue(v.Route)
 	v.API = cloneAPIAction(v.API)
 	v.Modal = cloneModalAction(v.Modal)
+	v.Client = cloneClientAction(v.Client)
 	v.Confirm = cloneConfirm(v.Confirm)
 	v.AfterSuccess = cloneActionResult(v.AfterSuccess)
 	v.AfterError = cloneActionResult(v.AfterError)
 	return v
+}
+
+func cloneClientAction(v *ClientAction) *ClientAction {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.Arguments = cloneSlice(v.Arguments)
+	for index := range cp.Arguments {
+		cp.Arguments[index].Value.Bool = clonePtr(v.Arguments[index].Value.Bool)
+	}
+	return &cp
+}
+
+func clonePromptList(v *PromptList) *PromptList {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.Items = make([]Prompt, len(v.Items))
+	for index := range v.Items {
+		cp.Items[index] = v.Items[index]
+		cp.Items[index].Action = cloneAction(v.Items[index].Action)
+		cp.Items[index].VisibleIf = cloneCondition(v.Items[index].VisibleIf)
+	}
+	return &cp
 }
 
 func cloneActionPresentation(value ActionPresentation) ActionPresentation {
