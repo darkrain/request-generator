@@ -250,11 +250,12 @@ const (
 type ActionAppearance string
 
 const (
-	ActionAppearanceSolid   ActionAppearance = "solid"
-	ActionAppearanceOutline ActionAppearance = "outline"
-	ActionAppearanceGhost   ActionAppearance = "ghost"
-	ActionAppearanceSoft    ActionAppearance = "soft"
-	ActionAppearanceLink    ActionAppearance = "link"
+	ActionAppearanceSolid    ActionAppearance = "solid"
+	ActionAppearanceGradient ActionAppearance = "gradient"
+	ActionAppearanceOutline  ActionAppearance = "outline"
+	ActionAppearanceGhost    ActionAppearance = "ghost"
+	ActionAppearanceSoft     ActionAppearance = "soft"
+	ActionAppearanceLink     ActionAppearance = "link"
 )
 
 type MediaKind string

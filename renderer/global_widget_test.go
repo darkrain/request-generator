@@ -36,7 +36,7 @@ func validGlobalWorkspace() GlobalWidget {
 			},
 			ComposerActions: []Action{{
 				ID: "open_related", Type: ActionRoute, LabelKey: "workspace.action.open_related",
-				ActionPresentation: ActionPresentation{Icon: "ref-order", IconOnly: &iconOnly, Variant: ActionVariantPrimary, Appearance: ActionAppearanceOutline},
+				ActionPresentation: ActionPresentation{Icon: "ref-order", IconOnly: &iconOnly, Variant: ActionVariantPrimary, Appearance: ActionAppearanceGradient},
 				Route:              RouteAction{Path: "/related", Query: map[string]interface{}{"id": "record.id"}},
 			}},
 			Commands: []WorkspaceCommand{{
@@ -81,7 +81,7 @@ func TestGlobalWidgetValidateAndSerialize(t *testing.T) {
     "summary":{"module":"summary_records","action":"list"},
     "master":{"module":"master_records","action":"list"},
     "detail":{"module":"detail_records","action":"list","bindings":[{"target":"filter","field":"parent_id","source":{"runtime":{"scope":"selection","field":"id"}}}]},
-    "composer_actions":[{"icon":"ref-order","icon_only":true,"variant":"primary","appearance":"outline","id":"open_related","type":"route","label_key":"workspace.action.open_related","route":{"path":"/related","query":{"id":"record.id"}}}],
+    "composer_actions":[{"icon":"ref-order","icon_only":true,"variant":"primary","appearance":"gradient","id":"open_related","type":"route","label_key":"workspace.action.open_related","route":{"path":"/related","query":{"id":"record.id"}}}],
     "commands":[{"id":"set_status","label":"workspace.command.set_status","presentation":{"icon":"ref-status","icon_only":true,"variant":"success","appearance":"outline","active":"is_active","visible_if":{"path":"enabled","equals":true}},"module":"state_records","action":"update","bindings":[{"target":"path_by_key","source":{"literal":{"type":"string","string":"id"}}},{"target":"path_value","source":{"runtime":{"scope":"selection","field":"participant_id"}}},{"target":"body","field":"status","source":{"literal":{"type":"string","string":"active"}}}],"refresh":["master","detail"]}],
     "subscriptions":[{"module":"detail_records","actions":["add","update"],"correlation":{"event_field":"parent_id"},"refresh":["master","detail"]}]
   }
