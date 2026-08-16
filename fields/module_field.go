@@ -162,7 +162,11 @@ type ModuleField struct {
 	DefaultFunc          func(c *gin.Context) interface{}                             `json:"-"`
 	Convert              func(c *gin.Context, value interface{}) (interface{}, error) `json:"-"`
 	ResultValueConverter func(value interface{}) interface{}                          `json:"-"`
-	Translatable         bool                                                         `json:"-"`
+	// ResultValueLocalizer converts a parsed result value into the language of
+	// the current request. It runs after the database layer and therefore does
+	// not make DB executors depend on request or locale state.
+	ResultValueLocalizer func(value interface{}, translate func(key string, fallback string) string) interface{} `json:"-"`
+	Translatable         bool                                                                                    `json:"-"`
 	// Group and Order are producer-only inputs used to build typed renderer
 	// composition. They are never serialized as field metadata.
 	Group           string                         `json:"-"`
