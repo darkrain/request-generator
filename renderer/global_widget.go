@@ -46,6 +46,10 @@ func LocalizeGlobalWidget(widget GlobalWidget, resolve TextResolver) GlobalWidge
 	}
 	for index := range localized.Workspace.Commands {
 		localized.Workspace.Commands[index].Label = resolve(localized.Workspace.Commands[index].Label, "")
+		if confirm := localized.Workspace.Commands[index].Confirm; confirm != nil {
+			localizer := textLocalizer{resolve: resolve}
+			localizer.localizeTextFields(&confirm.Title, &confirm.Message, &confirm.CancelLabel, &confirm.ConfirmLabel)
+		}
 	}
 	localizer := textLocalizer{resolve: resolve}
 	for index := range localized.Workspace.ComposerActions {
@@ -317,6 +321,9 @@ type WorkspaceCommand struct {
 	// Input permits an add command to bind values entered in the workspace.
 	// Field definitions remain owned by the target module defrec response.
 	Input *WorkspaceCommandInput `json:"input,omitempty"`
+	// Confirm describes an optional confirmation step before the generated
+	// request is executed. Its text values are producer translation keys.
+	Confirm *Confirm `json:"confirm,omitempty"`
 	// AfterSuccess applies the typed result of this standard command to the
 	// shell, for example by opening another registered global widget. The
 	// command request remains generated from Resource.
@@ -347,6 +354,11 @@ func (command WorkspaceCommand) Validate() error {
 	}
 	if err := command.Input.Validate(command.Bindings); err != nil {
 		return fmt.Errorf("input: %w", err)
+	}
+	if command.Confirm != nil {
+		if err := command.Confirm.Validate(); err != nil {
+			return fmt.Errorf("confirm: %w", err)
+		}
 	}
 	if err := command.Resource.Validate("resource"); err != nil {
 		return err
@@ -878,6 +890,10 @@ func cloneWorkspaceCommands(values []WorkspaceCommand) []WorkspaceCommand {
 			input := *value.Input
 			input.Fields = cloneSlice(value.Input.Fields)
 			cloned[index].Input = &input
+		}
+		if value.Confirm != nil {
+			confirm := *value.Confirm
+			cloned[index].Confirm = &confirm
 		}
 		cloned[index].Bindings = cloneRequestBindings(value.Bindings)
 		cloned[index].Refresh = cloneSlice(value.Refresh)

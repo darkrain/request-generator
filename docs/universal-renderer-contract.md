@@ -1784,6 +1784,30 @@ pagination и фильтры не искажают значение счётчи
 
 Actions используются в `card_schema.actions`, `record_page.actions`, `form_page.actions`, `resource_grid_page` и других page metadata.
 
+Команда `workspace.commands[]` может запросить подтверждение перед выполнением
+сгенерированного write request через тот же typed `confirm`, что и обычное
+action. Все четыре пользовательских текста обязательны и локализуются
+request-generator:
+
+```json
+{
+  "id": "archive",
+  "label": "Archive",
+  "confirm": {
+    "title": "Archive record?",
+    "message": "The record will leave the active list.",
+    "cancel_label": "Cancel",
+    "confirm_label": "Archive"
+  },
+  "module": "records",
+  "action": "update",
+  "refresh": ["master"]
+}
+```
+
+Frontend обязан выполнить request только после положительного ответа диалога.
+Отмена не вызывает transport и не меняет workspace state.
+
 Все общие визуальные поля action принадлежат `ActionPresentation`: `icon`,
 `icon_only`, `variant`, `appearance`, `active_appearance`, `active`, `block`,
 `visible_if`, `hidden_if`, `disabled_if`. Обычный `Action` встраивает этот тип

@@ -134,11 +134,13 @@ func TestGlobalWidgetValidateRejectsInvalidContract(t *testing.T) {
 
 func TestGlobalWidgetCloneDoesNotShareWorkspaceState(t *testing.T) {
 	source := validGlobalWorkspace()
+	source.Workspace.Commands[0].Confirm = &Confirm{Title: "confirm.title", Message: "confirm.message", CancelLabel: "confirm.cancel", ConfirmLabel: "confirm.accept"}
 	cloned := LocalizeGlobalWidget(source, func(value string, key string) string { return value + key })
 	cloned.Workspace.Detail.Bindings[0].Source.Runtime.Field = "changed"
 	cloned.Workspace.Summary.Action = "view"
 	cloned.Workspace.Commands[0].Label = "changed"
 	cloned.Workspace.ComposerActions[0].Route.(RouteAction).Query["id"] = "changed"
+	cloned.Workspace.Commands[0].Confirm.Title = "changed"
 	cloned.Workspace.Commands[0].Presentation.VisibleIf.Path = "changed"
 	cloned.Workspace.Commands[0].Bindings[2].Source.Literal.String = "disabled"
 	cloned.Workspace.Commands[0].Refresh[0] = WorkspaceRefreshDetail
@@ -149,6 +151,7 @@ func TestGlobalWidgetCloneDoesNotShareWorkspaceState(t *testing.T) {
 	require.Equal(t, "list", source.Workspace.Summary.Action)
 	require.Equal(t, "workspace.command.set_status", source.Workspace.Commands[0].Label)
 	require.Equal(t, "record.id", source.Workspace.ComposerActions[0].Route.(RouteAction).Query["id"])
+	require.Equal(t, "confirm.title", source.Workspace.Commands[0].Confirm.Title)
 	require.Equal(t, "enabled", source.Workspace.Commands[0].Presentation.VisibleIf.Path)
 	require.Equal(t, "active", source.Workspace.Commands[0].Bindings[2].Source.Literal.String)
 	require.Equal(t, WorkspaceRefreshMaster, source.Workspace.Commands[0].Refresh[0])
@@ -233,6 +236,7 @@ func TestWorkspaceCommandTriggerValidation(t *testing.T) {
 
 func TestLocalizeGlobalWidgetLocalizesCommandAndComposerActionLabels(t *testing.T) {
 	source := validGlobalWorkspace()
+	source.Workspace.Commands[0].Confirm = &Confirm{Title: "confirm.title", Message: "confirm.message", CancelLabel: "confirm.cancel", ConfirmLabel: "confirm.accept"}
 	localized := LocalizeGlobalWidget(source, func(value string, key string) string {
 		if key != "" {
 			return "translated:" + key
@@ -243,6 +247,8 @@ func TestLocalizeGlobalWidgetLocalizesCommandAndComposerActionLabels(t *testing.
 	require.Equal(t, "translated:workspace.command.set_status", localized.Workspace.Commands[0].Label)
 	require.Equal(t, "translated:workspace.action.open_related", localized.Workspace.ComposerActions[0].Label)
 	require.Empty(t, localized.Workspace.ComposerActions[0].LabelKey)
+	require.Equal(t, "translated:confirm.title", localized.Workspace.Commands[0].Confirm.Title)
+	require.Equal(t, "translated:confirm.message", localized.Workspace.Commands[0].Confirm.Message)
 	require.Equal(t, "workspace.command.set_status", source.Workspace.Commands[0].Label)
 }
 
@@ -273,6 +279,15 @@ func TestWidgetTriggerIsLocalizedValidatedAndCloned(t *testing.T) {
 
 	widget.Surface.Trigger = &WidgetTrigger{Label: "workspace.notifications", Icon: "bell", Badge: &Badge{}}
 	require.EqualError(t, widget.Validate(), "renderer.GlobalWidget: surface: trigger: badge field or value is required")
+}
+
+func TestWorkspaceCommandConfirmValidation(t *testing.T) {
+	command := validGlobalWorkspace().Workspace.Commands[0]
+	command.Confirm = &Confirm{Title: "confirm.title", Message: "confirm.message", CancelLabel: "confirm.cancel", ConfirmLabel: "confirm.accept"}
+	require.NoError(t, command.Validate())
+
+	command.Confirm.ConfirmLabel = ""
+	require.EqualError(t, command.Validate(), "confirm: confirm_label is required")
 }
 
 func TestGlobalWorkspaceCommandValidation(t *testing.T) {
@@ -416,7 +431,7 @@ func TestWorkspaceFooterActionsAreValidatedClonedAndLocalized(t *testing.T) {
 		ID:    "open-all",
 		Type:  ActionRoute,
 		Label: "workspace.open_all",
-		Route:  RouteAction{Path: "/records", Query: map[string]interface{}{"tab": "all"}},
+		Route: RouteAction{Path: "/records", Query: map[string]interface{}{"tab": "all"}},
 	}}
 	require.NoError(t, widget.Validate())
 
