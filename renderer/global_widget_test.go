@@ -37,6 +37,10 @@ func validGlobalWorkspace() GlobalWidget {
 			Commands: []WorkspaceCommand{{
 				ID:    "set_status",
 				Label: "workspace.command.set_status",
+				Confirm: &Confirm{
+					Title: "workspace.confirm.title", Message: "workspace.confirm.message",
+					CancelLabel: "workspace.confirm.cancel", ConfirmLabel: "workspace.confirm.accept",
+				},
 				Presentation: &ActionPresentation{
 					Icon:       "ref-status",
 					IconOnly:   &iconOnly,
@@ -76,7 +80,7 @@ func TestGlobalWidgetValidateAndSerialize(t *testing.T) {
     "summary":{"module":"summary_records","action":"list"},
     "master":{"module":"master_records","action":"list"},
     "detail":{"module":"detail_records","action":"list","bindings":[{"target":"filter","field":"parent_id","source":{"runtime":{"scope":"selection","field":"id"}}}]},
-    "commands":[{"id":"set_status","label":"workspace.command.set_status","presentation":{"icon":"ref-status","icon_only":true,"variant":"success","appearance":"outline","active":"is_active","visible_if":{"path":"enabled","equals":true}},"module":"state_records","action":"update","bindings":[{"target":"path_by_key","source":{"literal":{"type":"string","string":"id"}}},{"target":"path_value","source":{"runtime":{"scope":"selection","field":"participant_id"}}},{"target":"body","field":"status","source":{"literal":{"type":"string","string":"active"}}}],"refresh":["master","detail"]}],
+    "commands":[{"id":"set_status","label":"workspace.command.set_status","confirm":{"title":"workspace.confirm.title","message":"workspace.confirm.message","cancel_label":"workspace.confirm.cancel","confirm_label":"workspace.confirm.accept"},"presentation":{"icon":"ref-status","icon_only":true,"variant":"success","appearance":"outline","active":"is_active","visible_if":{"path":"enabled","equals":true}},"module":"state_records","action":"update","bindings":[{"target":"path_by_key","source":{"literal":{"type":"string","string":"id"}}},{"target":"path_value","source":{"runtime":{"scope":"selection","field":"participant_id"}}},{"target":"body","field":"status","source":{"literal":{"type":"string","string":"active"}}}],"refresh":["master","detail"]}],
     "subscriptions":[{"module":"detail_records","actions":["add","update"],"correlation":{"event_field":"parent_id"},"refresh":["master","detail"]}]
   }
 }`, string(encoded))
@@ -132,6 +136,7 @@ func TestGlobalWidgetCloneDoesNotShareWorkspaceState(t *testing.T) {
 	cloned.Workspace.Detail.Bindings[0].Source.Runtime.Field = "changed"
 	cloned.Workspace.Summary.Action = "view"
 	cloned.Workspace.Commands[0].Label = "changed"
+	cloned.Workspace.Commands[0].Confirm.Title = "changed"
 	cloned.Workspace.Commands[0].Presentation.VisibleIf.Path = "changed"
 	cloned.Workspace.Commands[0].Bindings[2].Source.Literal.String = "disabled"
 	cloned.Workspace.Commands[0].Refresh[0] = WorkspaceRefreshDetail
@@ -141,6 +146,7 @@ func TestGlobalWidgetCloneDoesNotShareWorkspaceState(t *testing.T) {
 	require.Equal(t, "id", source.Workspace.Detail.Bindings[0].Source.Runtime.Field)
 	require.Equal(t, "list", source.Workspace.Summary.Action)
 	require.Equal(t, "workspace.command.set_status", source.Workspace.Commands[0].Label)
+	require.Equal(t, "workspace.confirm.title", source.Workspace.Commands[0].Confirm.Title)
 	require.Equal(t, "enabled", source.Workspace.Commands[0].Presentation.VisibleIf.Path)
 	require.Equal(t, "active", source.Workspace.Commands[0].Bindings[2].Source.Literal.String)
 	require.Equal(t, WorkspaceRefreshMaster, source.Workspace.Commands[0].Refresh[0])
@@ -214,7 +220,17 @@ func TestLocalizeGlobalWidgetLocalizesCommandLabels(t *testing.T) {
 	})
 
 	require.Equal(t, "translated:workspace.command.set_status", localized.Workspace.Commands[0].Label)
+	require.Equal(t, "translated:workspace.confirm.title", localized.Workspace.Commands[0].Confirm.Title)
+	require.Equal(t, "translated:workspace.confirm.message", localized.Workspace.Commands[0].Confirm.Message)
 	require.Equal(t, "workspace.command.set_status", source.Workspace.Commands[0].Label)
+}
+
+func TestWorkspaceCommandConfirmValidation(t *testing.T) {
+	command := validGlobalWorkspace().Workspace.Commands[0]
+	require.NoError(t, command.Validate())
+
+	command.Confirm.ConfirmLabel = ""
+	require.EqualError(t, command.Validate(), "confirm: confirm_label is required")
 }
 
 func TestGlobalWorkspaceCommandValidation(t *testing.T) {

@@ -1533,6 +1533,22 @@ type Confirm struct {
 	ConfirmLabel string `json:"confirm_label,omitempty"`
 }
 
+func (confirm Confirm) Validate() error {
+	if confirm.Title == "" {
+		return fmt.Errorf("title is required")
+	}
+	if confirm.Message == "" {
+		return fmt.Errorf("message is required")
+	}
+	if confirm.CancelLabel == "" {
+		return fmt.Errorf("cancel_label is required")
+	}
+	if confirm.ConfirmLabel == "" {
+		return fmt.Errorf("confirm_label is required")
+	}
+	return nil
+}
+
 type ActionResult struct {
 	Reload string        `json:"reload,omitempty"`
 	Toast  string        `json:"toast,omitempty"`
