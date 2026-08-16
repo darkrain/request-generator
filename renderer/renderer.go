@@ -880,12 +880,9 @@ type ListSelection struct {
 	Proceed       *Action    `json:"proceed"`
 }
 
-// ListGrouping describes ordered groups in a flat list response. Field must
-// reference a value returned with each row; the renderer groups equal values
-// together and renders that value as the group label. The API owns formatting
-// and localization of the field value.
 // ListGroupBy controls presentation-only grouping of already server-sorted list rows.
-// It never changes list filtering, ordering or pagination semantics.
+// Field references a value returned with each row. The API owns its formatting
+// and localization; grouping never changes filtering, ordering or pagination.
 type ListGroupBy struct {
 	Field          string          `json:"field,omitempty"`
 	Type           ListGroupByType `json:"type,omitempty"`
@@ -997,7 +994,6 @@ func (schema *CardSchema) Validate() error {
 	}
 	switch schema.ActionLayout {
 	case "", CardActionLayoutInline, CardActionLayoutEdgeFill, CardActionLayoutMenu:
-		return nil
 	default:
 		return fmt.Errorf("renderer.CardSchema: unsupported action layout %q", schema.ActionLayout)
 	}

@@ -50,6 +50,7 @@ func LocalizeGlobalWidget(widget GlobalWidget, resolve TextResolver) GlobalWidge
 	localizer := textLocalizer{resolve: resolve}
 	for index := range localized.Workspace.ComposerActions {
 		localizer.localizeRendererAction(&localized.Workspace.ComposerActions[index])
+	}
 	for index := range localized.Workspace.FooterActions {
 		localizer.localizeRendererAction(&localized.Workspace.FooterActions[index])
 	}
@@ -165,12 +166,12 @@ func (surface WidgetSurface) Validate() error {
 // WorkspaceWidget composes server resources into a generic master-detail
 // shell surface. Resources remain normal module actions.
 type WorkspaceWidget struct {
-	Selection       WorkspaceSelection      `json:"selection"`
-	Summary         *Resource               `json:"summary,omitempty"`
-	Master          Resource                `json:"master"`
-	Detail          Resource                `json:"detail"`
-	ComposerActions []Action                `json:"composer_actions,omitempty"`
-	Commands        []WorkspaceCommand      `json:"commands,omitempty"`
+	Selection       WorkspaceSelection `json:"selection"`
+	Summary         *Resource          `json:"summary,omitempty"`
+	Master          Resource           `json:"master"`
+	Detail          Resource           `json:"detail"`
+	ComposerActions []Action           `json:"composer_actions,omitempty"`
+	Commands        []WorkspaceCommand `json:"commands,omitempty"`
 	// FooterActions are regular typed actions rendered below the master list.
 	// They give compact popup workspaces a server-declared route or modal
 	// target without requiring a client-side special case.
@@ -387,6 +388,7 @@ func (trigger WorkspaceCommandTrigger) Validate() error {
 		return fmt.Errorf("unsupported value %q", trigger)
 	}
 }
+
 // WorkspaceCommandInput declares values that the workspace may collect for a
 // standard add command. The module defrec endpoint remains the single source
 // of field metadata; Fields is only its allowlist.
