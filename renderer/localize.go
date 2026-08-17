@@ -253,7 +253,7 @@ func (localizer textLocalizer) localizeMediaUpload(upload *MediaUploadConfig) *M
 
 func (localizer textLocalizer) localizeMediaLabels(labels *MediaGalleryLabels) *MediaGalleryLabels {
 	if labels != nil {
-		localizer.localizeTextFields(&labels.Public, &labels.Private, &labels.Empty, &labels.CoverBadge, &labels.Remove, &labels.Reorder, &labels.FirstIsCover, &labels.PrivateHint)
+		localizer.localizeTextFields(&labels.Public, &labels.Private, &labels.Empty, &labels.CoverBadge, &labels.Remove, &labels.Reorder, &labels.FirstIsCover, &labels.PrivateHint, &labels.HideFace, &labels.HideFaceHint)
 	}
 	return labels
 }
@@ -262,6 +262,7 @@ func (localizer textLocalizer) localizeMediaActions(actions *MediaGalleryActions
 	if actions != nil {
 		localizer.localizeRendererAction(actions.Upload)
 		localizer.localizeRendererAction(actions.Link)
+		localizer.localizeRendererAction(actions.Update)
 		localizer.localizeRendererAction(actions.Reorder)
 		localizer.localizeRendererAction(actions.Recenter)
 		localizer.localizeRendererAction(actions.Crop)
