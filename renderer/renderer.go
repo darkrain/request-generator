@@ -86,6 +86,17 @@ func (r Universal) Validate() error {
 			if err := validateFormSectionColumns(section); err != nil {
 				return err
 			}
+			if err := section.Prompts.Validate(); err != nil {
+				return fmt.Errorf("renderer.Universal: form section %q prompts: %w", section.ID, err)
+			}
+			if section.Resource != nil {
+				if section.Renderer != RendererUniversalSection {
+					return fmt.Errorf("renderer.Universal: resource section %q requires renderer %q", section.ID, RendererUniversalSection)
+				}
+				if err := section.Resource.Validate("resource"); err != nil {
+					return fmt.Errorf("renderer.Universal: resource section %q: %w", section.ID, err)
+				}
+			}
 			if section.ListPage != nil {
 				if err := validateListPage("form section list page", section.ListPage); err != nil {
 					return err
@@ -321,8 +332,16 @@ func validateListPage(scope string, page *ListPage) error {
 	if page == nil {
 		return nil
 	}
+	if err := page.GroupBy.Validate(); err != nil {
+		return fmt.Errorf("renderer.Universal: %s: %w", scope, err)
+	}
 	if err := validateActions(scope, page.Actions); err != nil {
 		return err
+	}
+	if page.Summary != nil {
+		if err := page.Summary.Validate(); err != nil {
+			return fmt.Errorf("renderer.Universal: %s: %w", scope, err)
+		}
 	}
 	if page.CardSchema != nil {
 		if err := page.CardSchema.Validate(); err != nil {
@@ -332,14 +351,64 @@ func validateListPage(scope string, page *ListPage) error {
 			return err
 		}
 	}
+	if err := validateListSelection(scope, page.Selection, page.CardSchema); err != nil {
+		return err
+	}
 	if err := validateFilterRangePresets(scope, page.Filters); err != nil {
 		return err
 	}
 	if err := validateFilterGroups(scope, page.Filters); err != nil {
 		return err
 	}
-	if page.GroupBy != nil && page.GroupBy.Field == "" {
-		return fmt.Errorf("renderer.ListPage: group_by.field is required")
+	if err := validateFilterPills(scope, page.Filters); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateListSelection(scope string, selection *ListSelection, card *CardSchema) error {
+	if selection == nil {
+		return nil
+	}
+	if selection.KeyField == "" {
+		return fmt.Errorf("renderer.ListPage: selection.key_field is required")
+	}
+	if selection.ToggleAction == "" {
+		return fmt.Errorf("renderer.ListPage: selection.toggle_action is required")
+	}
+	if selection.ValuesField == "" {
+		return fmt.Errorf("renderer.ListPage: selection.values_field is required")
+	}
+	if selection.Limit < 1 {
+		return fmt.Errorf("renderer.ListPage: selection.limit must be greater than zero")
+	}
+	if selection.Source == nil || selection.Source.Method == "" || selection.Source.Endpoint == "" {
+		return fmt.Errorf("renderer.ListPage: selection.source method and endpoint are required")
+	}
+	if card == nil {
+		return fmt.Errorf("renderer.ListPage: selection requires card_schema")
+	}
+	foundToggle := false
+	for i := range card.Actions {
+		if card.Actions[i].ID == selection.ToggleAction {
+			foundToggle = true
+			break
+		}
+	}
+	if !foundToggle {
+		return fmt.Errorf("renderer.ListPage: selection.toggle_action %q is not declared in card_schema.actions", selection.ToggleAction)
+	}
+	if err := validateAction(scope+" selection clear", selection.Clear); err != nil {
+		return err
+	}
+	if err := validateAction(scope+" selection proceed", selection.Proceed); err != nil {
+		return err
+	}
+	if selection.Clear == nil || selection.Clear.Type != ActionAPI || selection.Clear.API == nil {
+		return fmt.Errorf("renderer.ListPage: selection.clear must be an api action")
+	}
+	if selection.Proceed == nil || (selection.Proceed.Type != ActionRoute && selection.Proceed.Type != ActionModal) {
+		return fmt.Errorf("renderer.ListPage: selection.proceed must be a route or modal action")
 	}
 	return nil
 }
@@ -446,6 +515,23 @@ func validateFilterGroups(scope string, filters *Filters) error {
 		}
 		if err := validateFilterGroupContent(scope, group, fieldOwners); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func validateFilterPills(scope string, filters *Filters) error {
+	if filters == nil {
+		return nil
+	}
+	if !filters.Presentation.Valid() {
+		return fmt.Errorf("renderer.Universal: %s filters have invalid presentation %q", scope, filters.Presentation)
+	}
+	for _, row := range append(append([][]FilterPill{}, filters.PillRows...), filters.SecondaryPillRows...) {
+		for _, pill := range row {
+			if !pill.Presentation.Valid() {
+				return fmt.Errorf("renderer.Universal: %s filter pill %q has invalid presentation %q", scope, pill.Label, pill.Presentation)
+			}
 		}
 	}
 	return nil
@@ -567,7 +653,8 @@ func validateMediaActions(actions *MediaGalleryActions) error {
 		return nil
 	}
 	for scope, action := range map[string]*Action{
-		"media upload": actions.Upload, "media link": actions.Link, "media reorder": actions.Reorder,
+		"media upload": actions.Upload, "media link": actions.Link, "media update": actions.Update,
+		"media reorder":  actions.Reorder,
 		"media recenter": actions.Recenter, "media crop": actions.Crop, "media remove": actions.Remove,
 	} {
 		if err := validateAction(scope, action); err != nil {
@@ -601,6 +688,7 @@ type Layout struct {
 
 type Filters struct {
 	Renderer          RendererKey          `json:"renderer,omitempty"`
+	Presentation      FilterPresentation   `json:"presentation,omitempty"`
 	Enabled           bool                 `json:"enabled"`
 	PrimaryPlacement  string               `json:"primary_placement,omitempty"`
 	SecondaryEnabled  *bool                `json:"secondary_enabled,omitempty"`
@@ -616,6 +704,18 @@ type Filters struct {
 	Reset             *FilterReset         `json:"reset,omitempty"`
 	Text              *FilterText          `json:"text,omitempty"`
 	RangePresets      []FilterRangePresets `json:"range_presets,omitempty"`
+}
+
+// FilterPresentation selects a reusable arrangement of the controls declared
+// by Filters. It does not alter their request semantics.
+type FilterPresentation string
+
+const (
+	FilterPresentationToolbar FilterPresentation = "toolbar"
+)
+
+func (presentation FilterPresentation) Valid() bool {
+	return presentation == "" || presentation == FilterPresentationToolbar
 }
 
 type FilterGroupPlacement string
@@ -705,12 +805,35 @@ type FilterText struct {
 }
 
 type FilterPill struct {
-	Label      string `json:"label,omitempty"`
-	LabelKey   string `json:"label_key,omitempty"`
-	CountField string `json:"count_field,omitempty"`
-	Key        string `json:"key,omitempty"`
-	Val        string `json:"val,omitempty"`
-	Dot        bool   `json:"dot,omitempty"`
+	Label         string                 `json:"label,omitempty"`
+	LabelKey      string                 `json:"label_key,omitempty"`
+	GroupLabel    string                 `json:"group_label,omitempty"`
+	GroupLabelKey string                 `json:"group_label_key,omitempty"`
+	Key           string                 `json:"key,omitempty"`
+	Val           string                 `json:"val,omitempty"`
+	CountField    string                 `json:"count_field,omitempty"`
+	Dot           bool                   `json:"dot,omitempty"`
+	Presentation  FilterPillPresentation `json:"presentation,omitempty"`
+	Tone          string                 `json:"tone,omitempty"`
+}
+
+// FilterPillPresentation describes the visual control for an existing filter
+// pill. The key and val still fully define the generated list query.
+type FilterPillPresentation string
+
+const (
+	FilterPillPresentationTabs    FilterPillPresentation = "tabs"
+	FilterPillPresentationToggle  FilterPillPresentation = "toggle"
+	FilterPillPresentationSummary FilterPillPresentation = "summary"
+)
+
+func (presentation FilterPillPresentation) Valid() bool {
+	switch presentation {
+	case "", FilterPillPresentationTabs, FilterPillPresentationToggle, FilterPillPresentationSummary:
+		return true
+	default:
+		return false
+	}
 }
 
 type FilterReset struct {
@@ -737,25 +860,101 @@ type ListPage struct {
 	Summary    *Summary               `json:"summary,omitempty"`
 	Grid       *Grid                  `json:"grid,omitempty"`
 	Pagination *Pagination            `json:"pagination,omitempty"`
-	GroupBy    *ListGrouping          `json:"group_by,omitempty"`
+	GroupBy    *ListGroupBy           `json:"group_by,omitempty"`
 	CardSchema *CardSchema            `json:"card_schema,omitempty"`
+	Selection  *ListSelection         `json:"selection,omitempty"`
 	Context    map[string]interface{} `json:"context,omitempty"`
 	Actions    []Action               `json:"actions,omitempty"`
 }
 
-// ListGrouping describes ordered groups in a flat list response. Field must
-// reference a value returned with each row; the renderer groups equal values
-// together and renders that value as the group label. The API owns formatting
-// and localization of the field value.
-type ListGrouping struct {
-	Field string `json:"field"`
+// ListSelection declares server-owned selection for a list of cards. The
+// renderer loads selected keys from Source and never treats client state as
+// authoritative. ToggleAction references an action from CardSchema.Actions.
+type ListSelection struct {
+	KeyField      string     `json:"key_field"`
+	ToggleAction  string     `json:"toggle_action"`
+	ValuesField   string     `json:"values_field"`
+	Limit         int        `json:"limit"`
+	SelectedLabel string     `json:"selected_label,omitempty"`
+	Source        *APIAction `json:"source"`
+	Clear         *Action    `json:"clear"`
+	Proceed       *Action    `json:"proceed"`
+}
+
+// ListGroupBy controls presentation-only grouping of already server-sorted list rows.
+// Field references a value returned with each row. The API owns its formatting
+// and localization; grouping never changes filtering, ordering or pagination.
+type ListGroupBy struct {
+	Field          string          `json:"field,omitempty"`
+	Type           ListGroupByType `json:"type,omitempty"`
+	TodayLabel     string          `json:"today_label,omitempty"`
+	YesterdayLabel string          `json:"yesterday_label,omitempty"`
+	ThisWeekLabel  string          `json:"this_week_label,omitempty"`
+	EarlierLabel   string          `json:"earlier_label,omitempty"`
+}
+
+func (group *ListGroupBy) Validate() error {
+	if group == nil {
+		return nil
+	}
+	if group.Field == "" {
+		return fmt.Errorf("renderer.ListGroupBy: field is required")
+	}
+	switch group.Type {
+	case "", ListGroupByDate:
+		return nil
+	default:
+		return fmt.Errorf("renderer.ListGroupBy: unsupported type %q", group.Type)
+	}
 }
 
 type Summary struct {
-	Title         string `json:"title,omitempty"`
-	TitleFallback string `json:"title_fallback,omitempty"`
-	ShowOnline    *bool  `json:"show_online,omitempty"`
-	ShowAction    *bool  `json:"show_action,omitempty"`
+	Title         string        `json:"title,omitempty"`
+	TitleFallback string        `json:"title_fallback,omitempty"`
+	Items         []SummaryItem `json:"items,omitempty"`
+	ShowOnline    *bool         `json:"show_online,omitempty"`
+	ShowAction    *bool         `json:"show_action,omitempty"`
+	// Resource is resolved by the generator into Load for the current
+	// principal. It supplies record data used by summary-bound list controls.
+	Resource *Resource     `json:"-"`
+	Load     *ResourceLoad `json:"load,omitempty"`
+}
+
+// SummaryItem binds one compact summary value to a field loaded by Summary.
+// It is presentation metadata only and does not affect a list query.
+type SummaryItem struct {
+	ID         string `json:"id"`
+	Label      string `json:"label,omitempty"`
+	LabelKey   string `json:"label_key,omitempty"`
+	ValueField string `json:"value_field"`
+}
+
+func (summary *Summary) Validate() error {
+	if summary == nil {
+		return nil
+	}
+	if summary.Resource != nil {
+		if err := summary.Resource.Validate("summary resource"); err != nil {
+			return err
+		}
+	}
+	ids := make(map[string]struct{}, len(summary.Items))
+	for _, item := range summary.Items {
+		if item.ID == "" {
+			return fmt.Errorf("renderer.Summary: item id is required")
+		}
+		if _, exists := ids[item.ID]; exists {
+			return fmt.Errorf("renderer.Summary: item %q is duplicated", item.ID)
+		}
+		ids[item.ID] = struct{}{}
+		if item.Label == "" && item.LabelKey == "" {
+			return fmt.Errorf("renderer.Summary: item %q label is required", item.ID)
+		}
+		if item.ValueField == "" {
+			return fmt.Errorf("renderer.Summary: item %q value field is required", item.ID)
+		}
+	}
+	return nil
 }
 
 type CardActionLayout string
@@ -763,6 +962,7 @@ type CardActionLayout string
 const (
 	CardActionLayoutInline   CardActionLayout = "inline"
 	CardActionLayoutEdgeFill CardActionLayout = "edge_fill"
+	CardActionLayoutMenu     CardActionLayout = "menu"
 )
 
 type CardSchema struct {
@@ -776,9 +976,11 @@ type CardSchema struct {
 	DeleteActionSize SizeToken        `json:"delete_action_size,omitempty"`
 	ActionLayout     CardActionLayout `json:"action_layout,omitempty"`
 	PrimaryAction    string           `json:"primary_action,omitempty"`
+	Icon             *IconBinding     `json:"icon,omitempty"`
 	Media            *Media           `json:"media,omitempty"`
 	Title            *TextBinding     `json:"title,omitempty"`
 	Subtitle         *TextBinding     `json:"subtitle,omitempty"`
+	Meta             *TextBinding     `json:"meta,omitempty"`
 	SubtitleTone     string           `json:"subtitle_tone,omitempty"`
 	Description      *TextBinding     `json:"description,omitempty"`
 	Status           *StatusBinding   `json:"status,omitempty"`
@@ -792,11 +994,39 @@ func (schema *CardSchema) Validate() error {
 		return nil
 	}
 	switch schema.ActionLayout {
-	case "", CardActionLayoutInline, CardActionLayoutEdgeFill:
-		return nil
+	case "", CardActionLayoutInline, CardActionLayoutEdgeFill, CardActionLayoutMenu:
 	default:
 		return fmt.Errorf("renderer.CardSchema: unsupported action layout %q", schema.ActionLayout)
 	}
+	for _, binding := range []*TextBinding{schema.Title, schema.Subtitle, schema.Meta, schema.Description} {
+		if err := binding.Validate(); err != nil {
+			return err
+		}
+	}
+	if schema.Icon != nil && schema.Icon.Field == "" && schema.Icon.IconField == "" {
+		return fmt.Errorf("renderer.CardSchema: icon field or icon_field is required")
+	}
+	return nil
+}
+
+// IconBinding resolves an icon and its visual tone from a row. IconField and
+// ToneField let a producer supply catalog-owned presentation values directly.
+// Field with IconMap/ToneMap remains available for closed value sets.
+type IconBinding struct {
+	Field     string            `json:"field,omitempty"`
+	IconMap   map[string]string `json:"icon_map,omitempty"`
+	ToneMap   map[string]string `json:"tone_map,omitempty"`
+	IconField string            `json:"icon_field,omitempty"`
+	ToneField string            `json:"tone_field,omitempty"`
+	Fallback  string            `json:"fallback,omitempty"`
+	Marker    *IconMarker       `json:"marker,omitempty"`
+}
+
+// IconMarker is a small non-textual state indicator displayed on a bound icon.
+// Its visibility is defined by the producer-owned record condition.
+type IconMarker struct {
+	VisibleIf *Condition `json:"visible_if,omitempty"`
+	Tone      string     `json:"tone,omitempty"`
 }
 
 type Media struct {
@@ -824,6 +1054,7 @@ type FieldPresentation struct {
 	Hint        string           `json:"hint,omitempty"`
 	Description string           `json:"description,omitempty"`
 	Rows        uint8            `json:"rows,omitempty"`
+	MaxItems    uint16           `json:"max_items,omitempty"`
 	VisibleIf   *Condition       `json:"visible_if,omitempty"`
 	ToneByValue []FieldValueTone `json:"tone_by_value,omitempty"`
 }
@@ -915,8 +1146,21 @@ func (cropper *MediaCropperConfig) Validate() error {
 }
 
 type TextBinding struct {
-	Field    string `json:"field,omitempty"`
-	Template string `json:"template,omitempty"`
+	Field    string     `json:"field,omitempty"`
+	Template string     `json:"template,omitempty"`
+	Format   TextFormat `json:"format,omitempty"`
+}
+
+func (binding *TextBinding) Validate() error {
+	if binding == nil {
+		return nil
+	}
+	switch binding.Format {
+	case "", TextFormatRelativeTime:
+		return nil
+	default:
+		return fmt.Errorf("renderer.TextBinding: unsupported format %q", binding.Format)
+	}
 }
 
 type StatusBinding struct {
@@ -933,6 +1177,7 @@ type StatusBinding struct {
 type Badge struct {
 	ID        string            `json:"id,omitempty"`
 	Type      string            `json:"type,omitempty"`
+	Variant   string            `json:"variant,omitempty"`
 	Field     string            `json:"field,omitempty"`
 	IfField   string            `json:"if_field,omitempty"`
 	Value     *TextBinding      `json:"value,omitempty"`
@@ -940,11 +1185,13 @@ type Badge struct {
 	Placement string            `json:"placement,omitempty"`
 	Label     string            `json:"label,omitempty"`
 	LabelKey  string            `json:"label_key,omitempty"`
+	LabelMap  map[string]string `json:"label_map,omitempty"`
 	Icon      string            `json:"icon,omitempty"`
 	Size      SizeToken         `json:"size,omitempty"`
 	Tone      string            `json:"tone,omitempty"`
 	ToneMap   map[string]string `json:"tone_map,omitempty"`
 	Marker    *bool             `json:"marker,omitempty"`
+	VisibleIf *Condition        `json:"visible_if,omitempty"`
 	Then      *BadgeState       `json:"then,omitempty"`
 	Else      *BadgeState       `json:"else,omitempty"`
 }
@@ -1026,6 +1273,7 @@ type FormSection struct {
 	StepHint     string                 `json:"step_hint,omitempty"`
 	PanelTitle   string                 `json:"panel_title,omitempty"`
 	Subtitle     string                 `json:"subtitle,omitempty"`
+	LoadingLabel string                 `json:"loading_label,omitempty"`
 	Renderer     RendererKey            `json:"renderer,omitempty"`
 	Group        string                 `json:"group,omitempty"`
 	GroupTitle   string                 `json:"group_title,omitempty"`
@@ -1042,6 +1290,13 @@ type FormSection struct {
 	MediaItems   []MediaGalleryItem     `json:"media_items,omitempty"`
 	MediaLabels  *MediaGalleryLabels    `json:"media_labels,omitempty"`
 	MediaActions *MediaGalleryActions   `json:"media_actions,omitempty"`
+	Prompts      *PromptList            `json:"prompts,omitempty"`
+	// Resource declares another standard module action rendered inside this
+	// section. It stays server-side: Generator resolves it to Load per request.
+	Resource *Resource `json:"-"`
+	// Load is the generated executable request for Resource. Consumers never
+	// construct endpoints or bindings for a resource section.
+	Load *ResourceLoad `json:"load,omitempty"`
 }
 
 type FieldMatrixType string
@@ -1073,18 +1328,71 @@ type FieldMatrixList struct {
 }
 
 type FieldMatrixTable struct {
-	Heads []string         `json:"heads,omitempty"`
-	Rows  []FieldMatrixRow `json:"rows,omitempty"`
+	Heads        []string                     `json:"heads,omitempty"`
+	Rows         []FieldMatrixRow             `json:"rows,omitempty"`
+	Presentation FieldMatrixTablePresentation `json:"presentation,omitempty"`
+	Source       *FieldMatrixDataSource       `json:"source,omitempty"`
 }
 
+// FieldMatrixTablePresentation selects a reusable visual arrangement for the
+// same typed rows and cells. It never changes the data or action contract.
+type FieldMatrixTablePresentation string
+
+const (
+	FieldMatrixTablePresentationGrid      FieldMatrixTablePresentation = "grid"
+	FieldMatrixTablePresentationChips     FieldMatrixTablePresentation = "chips"
+	FieldMatrixTablePresentationAccordion FieldMatrixTablePresentation = "accordion"
+)
+
 type FieldMatrixRow struct {
-	Label string            `json:"label,omitempty"`
-	Cells []FieldMatrixCell `json:"cells,omitempty"`
+	ID          string            `json:"id,omitempty"`
+	Label       string            `json:"label,omitempty"`
+	Description string            `json:"description,omitempty"`
+	Icon        string            `json:"icon,omitempty"`
+	Tone        string            `json:"tone,omitempty"`
+	Cells       []FieldMatrixCell `json:"cells,omitempty"`
 }
 
 type FieldMatrixCell struct {
-	Field string `json:"field,omitempty"`
-	Text  string `json:"text,omitempty"`
+	Field          string `json:"field,omitempty"`
+	Label          string `json:"label,omitempty"`
+	Text           string `json:"text,omitempty"`
+	Icon           string `json:"icon,omitempty"`
+	AvailableField string `json:"available_field,omitempty"`
+}
+
+// FieldMatrixDataSource connects a table layout to a standard list/update
+// pair. The matrix owns only presentation and editable boolean field names;
+// the generator resolves executable requests for the referenced actions.
+// This keeps matrix consumers free of producer endpoint conventions.
+type FieldMatrixDataSource struct {
+	IDField  string `json:"id_field,omitempty"`
+	KeyField string `json:"key_field,omitempty"`
+	// Row maps a record returned by List to a table row. With it, table rows
+	// are fully data-driven; Rows is only used for static matrix layouts.
+	Row *FieldMatrixDataRow `json:"row,omitempty"`
+
+	// List and Update are producer-only standard action references. Load is
+	// the public executable contract built for the current principal.
+	List   ActionResource             `json:"-"`
+	Update ActionResource             `json:"-"`
+	Load   *FieldMatrixDataSourceLoad `json:"load,omitempty"`
+}
+
+// FieldMatrixDataRow declares how a list record is presented as one matrix
+// row. Text values can be translation keys resolved by the UI's standard
+// localization function.
+type FieldMatrixDataRow struct {
+	LabelField       string            `json:"label_field,omitempty"`
+	DescriptionField string            `json:"description_field,omitempty"`
+	IconField        string            `json:"icon_field,omitempty"`
+	ToneField        string            `json:"tone_field,omitempty"`
+	Cells            []FieldMatrixCell `json:"cells,omitempty"`
+}
+
+type FieldMatrixDataSourceLoad struct {
+	List   ResourceLoad `json:"list"`
+	Update ResourceLoad `json:"update"`
 }
 
 func validateFormSectionColumns(section FormSection) error {
@@ -1105,21 +1413,37 @@ func (matrix *FieldMatrix) Validate(sectionID string) error {
 		if matrix.Table == nil || matrix.List != nil {
 			return fmt.Errorf("renderer.Universal: matrix section %q table type must define only table", sectionID)
 		}
-		if len(matrix.Table.Heads) == 0 || len(matrix.Table.Rows) == 0 {
-			return fmt.Errorf("renderer.Universal: matrix section %q table must define heads and rows", sectionID)
+		if len(matrix.Table.Heads) == 0 || (len(matrix.Table.Rows) == 0 && (matrix.Table.Source == nil || matrix.Table.Source.Row == nil)) {
+			return fmt.Errorf("renderer.Universal: matrix section %q table must define heads and rows or a source row", sectionID)
+		}
+		switch matrix.Table.Presentation {
+		case "", FieldMatrixTablePresentationGrid, FieldMatrixTablePresentationChips, FieldMatrixTablePresentationAccordion:
+		default:
+			return fmt.Errorf("renderer.Universal: matrix section %q table has unsupported presentation %q", sectionID, matrix.Table.Presentation)
+		}
+		if matrix.Table.Source != nil {
+			source := matrix.Table.Source
+			if source.IDField == "" || source.KeyField == "" {
+				return fmt.Errorf("renderer.Universal: matrix section %q table source must define id and key fields", sectionID)
+			}
+			if err := source.List.Validate("field matrix source list"); err != nil {
+				return fmt.Errorf("renderer.Universal: matrix section %q: %w", sectionID, err)
+			}
+			if err := source.Update.Validate("field matrix source update"); err != nil {
+				return fmt.Errorf("renderer.Universal: matrix section %q: %w", sectionID, err)
+			}
+			if source.Row != nil {
+				if err := validateFieldMatrixCells(sectionID, -1, len(matrix.Table.Heads), true, source.Row.Cells); err != nil {
+					return err
+				}
+			}
 		}
 		for rowIndex, row := range matrix.Table.Rows {
-			expectedCells := len(matrix.Table.Heads)
-			if row.Label != "" {
-				expectedCells--
+			if matrix.Table.Source != nil && row.ID == "" {
+				return fmt.Errorf("renderer.Universal: matrix section %q source row %d must define id", sectionID, rowIndex)
 			}
-			if len(row.Cells) != expectedCells {
-				return fmt.Errorf("renderer.Universal: matrix section %q row %d cells must match heads", sectionID, rowIndex)
-			}
-			for cellIndex, cell := range row.Cells {
-				if (cell.Field == "") == (cell.Text == "") {
-					return fmt.Errorf("renderer.Universal: matrix section %q row %d cell %d must define exactly one of field or text", sectionID, rowIndex, cellIndex)
-				}
+			if err := validateFieldMatrixCells(sectionID, rowIndex, len(matrix.Table.Heads), row.Label != "", row.Cells); err != nil {
+				return err
 			}
 		}
 	case FieldMatrixTypeList:
@@ -1140,6 +1464,25 @@ func (matrix *FieldMatrix) Validate(sectionID string) error {
 	return nil
 }
 
+func validateFieldMatrixCells(sectionID string, rowIndex, heads int, hasLabel bool, cells []FieldMatrixCell) error {
+	expectedCells := heads
+	if hasLabel {
+		expectedCells--
+	}
+	if len(cells) != expectedCells {
+		return fmt.Errorf("renderer.Universal: matrix section %q row %d cells must match heads", sectionID, rowIndex)
+	}
+	for cellIndex, cell := range cells {
+		if (cell.Field == "") == (cell.Text == "") {
+			return fmt.Errorf("renderer.Universal: matrix section %q row %d cell %d must define exactly one of field or text", sectionID, rowIndex, cellIndex)
+		}
+		if cell.AvailableField != "" && cell.Field == "" {
+			return fmt.Errorf("renderer.Universal: matrix section %q row %d cell %d availability requires field", sectionID, rowIndex, cellIndex)
+		}
+	}
+	return nil
+}
+
 type MediaUploadConfig struct {
 	Title        string `json:"title,omitempty"`
 	Subtitle     string `json:"subtitle,omitempty"`
@@ -1149,18 +1492,21 @@ type MediaUploadConfig struct {
 }
 
 type MediaGalleryItem struct {
-	ID          string          `json:"id,omitempty"`
-	MediaID     int64           `json:"media_id,omitempty"`
-	LinkID      int64           `json:"link_id,omitempty"`
-	Kind        MediaKind       `json:"kind,omitempty"`
-	Src         string          `json:"src,omitempty"`
-	Poster      string          `json:"poster,omitempty"`
-	Thumbnail   string          `json:"thumbnail,omitempty"`
-	Visibility  MediaVisibility `json:"visibility,omitempty"`
-	Usage       MediaUsage      `json:"usage,omitempty"`
-	SortOrder   int             `json:"sort_order"`
-	Title       string          `json:"title,omitempty"`
-	Description string          `json:"description,omitempty"`
+	ID              string          `json:"id,omitempty"`
+	MediaID         int64           `json:"media_id,omitempty"`
+	LinkID          int64           `json:"link_id,omitempty"`
+	Kind            MediaKind       `json:"kind,omitempty"`
+	Src             string          `json:"src,omitempty"`
+	Poster          string          `json:"poster,omitempty"`
+	Thumbnail       string          `json:"thumbnail,omitempty"`
+	Visibility      MediaVisibility `json:"visibility,omitempty"`
+	HideFace        bool            `json:"hide_face,omitempty"`
+	PrivacyEditable bool            `json:"privacy_editable,omitempty"`
+	AccessGranted   *bool           `json:"access_granted,omitempty"`
+	Usage           MediaUsage      `json:"usage,omitempty"`
+	SortOrder       int             `json:"sort_order"`
+	Title           string          `json:"title,omitempty"`
+	Description     string          `json:"description,omitempty"`
 }
 
 type MediaGalleryLabels struct {
@@ -1172,11 +1518,14 @@ type MediaGalleryLabels struct {
 	Reorder      string `json:"reorder,omitempty"`
 	FirstIsCover string `json:"first_is_cover,omitempty"`
 	PrivateHint  string `json:"private_hint,omitempty"`
+	HideFace     string `json:"hide_face,omitempty"`
+	HideFaceHint string `json:"hide_face_hint,omitempty"`
 }
 
 type MediaGalleryActions struct {
 	Upload   *Action `json:"upload,omitempty"`
 	Link     *Action `json:"link,omitempty"`
+	Update   *Action `json:"update,omitempty"`
 	Reorder  *Action `json:"reorder,omitempty"`
 	Recenter *Action `json:"recenter,omitempty"`
 	Crop     *Action `json:"crop,omitempty"`
@@ -1537,6 +1886,7 @@ type Action struct {
 	Route          interface{}    `json:"route,omitempty"`
 	API            *APIAction     `json:"api,omitempty"`
 	Modal          *ModalAction   `json:"modal,omitempty"`
+	Client         *ClientAction  `json:"client,omitempty"`
 	Confirm        *Confirm       `json:"confirm,omitempty"`
 	AfterSuccess   *ActionResult  `json:"after_success,omitempty"`
 	AfterError     *ActionResult  `json:"after_error,omitempty"`
@@ -1574,6 +1924,11 @@ func (action Action) Validate() error {
 			return fmt.Errorf("after error: %w", err)
 		}
 	}
+	if action.Client != nil {
+		if err := action.Client.Validate(); err != nil {
+			return fmt.Errorf("client: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -1595,6 +1950,92 @@ type ModalAction struct {
 	Renderer RendererKey            `json:"renderer,omitempty"`
 	Title    string                 `json:"title,omitempty"`
 	Data     map[string]interface{} `json:"data,omitempty"`
+}
+
+// ClientAction describes a client capability selected by the API. The
+// renderer does not implement the capability itself; an application registers
+// the named handler and receives the typed arguments supplied by the producer.
+// This keeps browser-only operations, such as Web Push permission, out of a
+// server action while preserving the API as the source of its configuration.
+type ClientAction struct {
+	Name      string                 `json:"name,omitempty"`
+	Arguments []ClientActionArgument `json:"arguments,omitempty"`
+}
+
+type ClientActionArgument struct {
+	Name  string     `json:"name,omitempty"`
+	Value TypedValue `json:"value,omitempty"`
+}
+
+func (action *ClientAction) Validate() error {
+	if action == nil {
+		return nil
+	}
+	if action.Name == "" {
+		return fmt.Errorf("name is required")
+	}
+	seen := make(map[string]struct{}, len(action.Arguments))
+	for _, argument := range action.Arguments {
+		if argument.Name == "" {
+			return fmt.Errorf("argument name is required")
+		}
+		if _, exists := seen[argument.Name]; exists {
+			return fmt.Errorf("argument %q is duplicated", argument.Name)
+		}
+		seen[argument.Name] = struct{}{}
+		if err := argument.Value.Validate(); err != nil {
+			return fmt.Errorf("argument %q: %w", argument.Name, err)
+		}
+	}
+	return nil
+}
+
+// PromptList declares contextual notices rendered within a form section.
+// Prompts use the same Action contract as other renderer controls, so their
+// visual content and executable target remain producer-owned.
+type PromptList struct {
+	Variant string   `json:"variant,omitempty"`
+	Items   []Prompt `json:"items,omitempty"`
+}
+
+type Prompt struct {
+	ID          string     `json:"id,omitempty"`
+	Kind        string     `json:"kind,omitempty"`
+	Tone        string     `json:"tone,omitempty"`
+	Icon        string     `json:"icon,omitempty"`
+	Title       string     `json:"title,omitempty"`
+	Text        string     `json:"text,omitempty"`
+	Action      *Action    `json:"action,omitempty"`
+	VisibleIf   *Condition `json:"visible_if,omitempty"`
+	Dismissible bool       `json:"dismissible,omitempty"`
+}
+
+func (list *PromptList) Validate() error {
+	if list == nil {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(list.Items))
+	for _, prompt := range list.Items {
+		if prompt.ID == "" {
+			return fmt.Errorf("prompt id is required")
+		}
+		if _, exists := seen[prompt.ID]; exists {
+			return fmt.Errorf("prompt %q is duplicated", prompt.ID)
+		}
+		seen[prompt.ID] = struct{}{}
+		if prompt.Text == "" && prompt.Title == "" {
+			return fmt.Errorf("prompt %q must define title or text", prompt.ID)
+		}
+		if prompt.VisibleIf != nil && !hasCondition(prompt.VisibleIf) {
+			return fmt.Errorf("prompt %q visible_if is invalid", prompt.ID)
+		}
+		if prompt.Action != nil {
+			if err := prompt.Action.Validate(); err != nil {
+				return fmt.Errorf("prompt %q action: %w", prompt.ID, err)
+			}
+		}
+	}
+	return nil
 }
 
 type Confirm struct {

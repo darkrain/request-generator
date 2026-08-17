@@ -25,16 +25,18 @@ func TestLocalizeUsesResolverWithoutMutatingSource(t *testing.T) {
 			ID: "rates",
 			Matrix: &FieldMatrix{Type: FieldMatrixTypeTable, Table: &FieldMatrixTable{
 				Heads: []string{"rates.duration", "Incall"},
-				Rows:  []FieldMatrixRow{{Label: "rates.1h", Cells: []FieldMatrixCell{{Text: "rates.none"}}}},
+				Rows:  []FieldMatrixRow{{Label: "rates.1h", Description: "rates.description", Cells: []FieldMatrixCell{{Label: "rates.channel", Text: "rates.none"}}}},
 			}},
 		}},
 	}}
 	translations := map[string]string{
-		"form.title":     "Settings",
-		"actions.save":   "Save changes",
-		"rates.duration": "Duration",
-		"rates.1h":       "1 hour",
-		"rates.none":     "Not available",
+		"form.title":        "Settings",
+		"actions.save":      "Save changes",
+		"rates.duration":    "Duration",
+		"rates.1h":          "1 hour",
+		"rates.none":        "Not available",
+		"rates.description": "Price for one hour",
+		"rates.channel":     "Channel",
 	}
 
 	localized := Localize(source, func(value, key string) string {
@@ -62,6 +64,8 @@ func TestLocalizeUsesResolverWithoutMutatingSource(t *testing.T) {
 	require.JSONEq(t, `{"id":"save","label":"Save changes","aria_label":"Save changes","title":"Save changes","icon_only":true}`, string(encoded))
 	require.Equal(t, "Duration", localized.Form.Sections[0].Matrix.Table.Heads[0])
 	require.Equal(t, "Not available", localized.Form.Sections[0].Matrix.Table.Rows[0].Cells[0].Text)
+	require.Equal(t, "Channel", localized.Form.Sections[0].Matrix.Table.Rows[0].Cells[0].Label)
+	require.Equal(t, "Price for one hour", localized.Form.Sections[0].Matrix.Table.Rows[0].Description)
 	require.Equal(t, "form.title", source.Form.Title)
 	require.Equal(t, "actions.save", source.Form.Actions[0].LabelKey)
 }

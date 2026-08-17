@@ -491,13 +491,13 @@ func (db *DB) List(
 	if len(conditions) > 0 {
 		stmt = stmt.WHERE(pg.AND(conditions...))
 	}
-	stmt = stmt.GROUP_BY(primaryKey)
+	groupBy := groupByPrimaryAndJoinedFields(primaryKey, moduleFields, tableRef, sortColumn(sort))
+	stmt = stmt.GROUP_BY(groupBy...)
 	if sort != nil {
-		colExpr := pg.Raw(fmt.Sprintf(`%s."%s"`, table.TableName(), sort.Column.Name()))
 		if sort.Direction == actions.SortDESC {
-			stmt = stmt.ORDER_BY(colExpr.DESC())
+			stmt = stmt.ORDER_BY(sort.Column.DESC())
 		} else {
-			stmt = stmt.ORDER_BY(colExpr.ASC())
+			stmt = stmt.ORDER_BY(sort.Column.ASC())
 		}
 	}
 	stmt = stmt.LIMIT(size).OFFSET(size * page)
@@ -686,6 +686,42 @@ func columnTableRef(col pg.Column, fallback string) string {
 	return fallback
 }
 
+func sortColumn(sort *actions.SortOption) pg.Column {
+	if sort == nil {
+		return nil
+	}
+	return sort.Column
+}
+
+// groupByPrimaryAndJoinedFields preserves PostgreSQL's primary-key functional
+// dependency for the module table while adding selected or sorted columns from
+// joined tables. Direct joined fields are valid typed module fields and must
+// not be silently replaced with a base-table column in GROUP BY or ORDER BY.
+func groupByPrimaryAndJoinedFields(primaryKey pg.Column, moduleFields []fields.ModuleField, baseTable string, extra ...pg.Column) []pg.GroupByClause {
+	result := []pg.GroupByClause{primaryKey}
+	seen := map[string]struct{}{primaryKey.TableName() + "." + primaryKey.Name(): {}}
+	appendColumn := func(column pg.Column) {
+		if column == nil || columnTableRef(column, baseTable) == baseTable {
+			return
+		}
+		key := column.TableName() + "." + column.Name()
+		if _, exists := seen[key]; exists {
+			return
+		}
+		seen[key] = struct{}{}
+		result = append(result, column)
+	}
+	for _, field := range moduleFields {
+		if !field.Translatable {
+			appendColumn(field.Column)
+		}
+	}
+	for _, column := range extra {
+		appendColumn(column)
+	}
+	return result
+}
+
 func (db *DB) View(
 	log *log.Entry,
 	table pg.Table,
@@ -726,7 +762,7 @@ func (db *DB) View(
 	if where != nil {
 		stmt = stmt.WHERE(where)
 	}
-	stmt = stmt.GROUP_BY(primaryKey).LIMIT(1)
+	stmt = stmt.GROUP_BY(groupByPrimaryAndJoinedFields(primaryKey, moduleFields, tableRef)...).LIMIT(1)
 
 	query, args := stmt.Sql()
 	db.debugLog(log, "[DEBUG] VIEW QUERY: ", interpolateQuery(query, args))

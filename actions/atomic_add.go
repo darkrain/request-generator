@@ -366,11 +366,21 @@ type AtomicRealtimeCorrelation struct {
 	Source AtomicValueSource `json:"source"`
 }
 
+// AtomicRealtimePayloadField copies a server-computed atomic result field
+// into the realtime event payload. Sources are intentionally result-only: a
+// producer must validate or derive the value before it reaches another user.
+type AtomicRealtimePayloadField struct {
+	Key    string            `json:"key"`
+	Source AtomicValueSource `json:"source"`
+}
+
 // AtomicRealtimePublishConfig declares a realtime event emitted after a
 // successful atomic transaction commit.
 type AtomicRealtimePublishConfig struct {
-	Recipients  []AtomicRealtimeRecipient  `json:"recipients"`
-	Correlation *AtomicRealtimeCorrelation `json:"correlation,omitempty"`
+	Recipients          []AtomicRealtimeRecipient    `json:"recipients"`
+	Correlation         *AtomicRealtimeCorrelation   `json:"correlation,omitempty"`
+	Payload             []AtomicRealtimePayloadField `json:"payload,omitempty"`
+	SkipEmptyRecipients bool                         `json:"skip_empty_recipients,omitempty"`
 }
 
 // AtomicExecutor deliberately exposes only the operations needed by domain

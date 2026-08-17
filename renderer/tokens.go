@@ -2,7 +2,7 @@ package renderer
 
 const (
 	Name    = "UniversalRenderer"
-	Version = "2.3.0"
+	Version = "2.4.0"
 )
 
 type Identity struct {
@@ -124,6 +124,7 @@ type GridMode string
 const (
 	GridModeTable GridMode = "table"
 	GridModeCards GridMode = "cards"
+	GridModeList  GridMode = "list"
 )
 
 type PaginationMode string
@@ -136,9 +137,22 @@ const (
 type CardVariant string
 
 const (
-	CardVariantDefault CardVariant = "default"
-	CardVariantMedia   CardVariant = "media"
-	CardVariantCompact CardVariant = "compact"
+	CardVariantDefault  CardVariant = "default"
+	CardVariantMedia    CardVariant = "media"
+	CardVariantCompact  CardVariant = "compact"
+	CardVariantActivity CardVariant = "activity"
+)
+
+type ListGroupByType string
+
+const (
+	ListGroupByDate ListGroupByType = "date"
+)
+
+type TextFormat string
+
+const (
+	TextFormatRelativeTime TextFormat = "relative_time"
 )
 
 type SurfaceVariant string
@@ -210,6 +224,7 @@ const (
 	RendererBadge               RendererKey = "badge"
 	RendererChipSelect          RendererKey = "chip_select"
 	RendererPrimaryRadio        RendererKey = "primary_radio"
+	RendererRecordSelect        RendererKey = "record_select"
 )
 
 type RecordSectionRenderer = RendererKey
@@ -250,11 +265,12 @@ const (
 type ActionAppearance string
 
 const (
-	ActionAppearanceSolid   ActionAppearance = "solid"
-	ActionAppearanceOutline ActionAppearance = "outline"
-	ActionAppearanceGhost   ActionAppearance = "ghost"
-	ActionAppearanceSoft    ActionAppearance = "soft"
-	ActionAppearanceLink    ActionAppearance = "link"
+	ActionAppearanceSolid    ActionAppearance = "solid"
+	ActionAppearanceGradient ActionAppearance = "gradient"
+	ActionAppearanceOutline  ActionAppearance = "outline"
+	ActionAppearanceGhost    ActionAppearance = "ghost"
+	ActionAppearanceSoft     ActionAppearance = "soft"
+	ActionAppearanceLink     ActionAppearance = "link"
 )
 
 type MediaKind string
