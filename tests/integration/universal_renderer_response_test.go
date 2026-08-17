@@ -293,6 +293,7 @@ func TestUniversalRendererMetadata_FormSectionMediaGallery(t *testing.T) {
 								Src:        "ipfs://video",
 								Poster:     "ipfs://poster",
 								Visibility: renderer.MediaVisibilityPublic,
+								HideFace:   true,
 								Usage:      renderer.MediaUsageGallery,
 								SortOrder:  1,
 							},
@@ -308,6 +309,11 @@ func TestUniversalRendererMetadata_FormSectionMediaGallery(t *testing.T) {
 								ID:   "upload",
 								Type: renderer.ActionAPI,
 								API:  &renderer.APIAction{Method: "PUT", Endpoint: "/media_assets"},
+							},
+							Update: &renderer.Action{
+								ID:   "update",
+								Type: renderer.ActionAPI,
+								API:  &renderer.APIAction{Method: "POST", Endpoint: "/media_links/id/{link_id}"},
 							},
 							Remove: &renderer.Action{
 								ID:   "remove",

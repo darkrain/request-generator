@@ -60,6 +60,12 @@ func atomicValueFromField(field fields.ModuleField, value interface{}) (actions.
 			return actions.AtomicValue{}, fmt.Errorf("expected number")
 		}
 		return actions.AtomicFloat(value), nil
+	case fields.ModuleFieldTypeBool:
+		value, ok := value.(bool)
+		if !ok {
+			return actions.AtomicValue{}, fmt.Errorf("expected boolean")
+		}
+		return actions.AtomicBool(value), nil
 	case fields.ModuleFieldTypeArray:
 		if field.ArrayStorage.Normalize() == fields.ModuleFieldArrayStorageJSON {
 			encoded, err := fields.MarshalJSONArray(value)

@@ -43,3 +43,15 @@ func TestAtomicValueFromFieldRejectsNonArrayJSONStorage(t *testing.T) {
 	_, err := atomicValueFromField(field, map[string]interface{}{"cid": "bafy-test"})
 	require.EqualError(t, err, "expected JSON array")
 }
+
+func TestAtomicValueFromFieldBool(t *testing.T) {
+	field := fields.ModuleField{Column: pg.BoolColumn("enabled"), Type: fields.ModuleFieldTypeBool}
+
+	value, err := atomicValueFromField(field, true)
+	require.NoError(t, err)
+	require.NotNil(t, value.Bool)
+	require.True(t, *value.Bool)
+
+	_, err = atomicValueFromField(field, "true")
+	require.EqualError(t, err, "expected boolean")
+}

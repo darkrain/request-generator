@@ -507,6 +507,7 @@ func (generator *Generator) fieldOptions(c *gin.Context, field fields.ModuleFiel
 	}
 	for i := range options {
 		options[i].Label = generator.Translate(lang, options[i].Label)
+		options[i].Description = generator.Translate(lang, options[i].Description)
 	}
 	return options
 }
@@ -648,6 +649,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 				realFields = append(realFields, realField)
 			}
 		}
+		realFields = fields.ResolveProjections(c, realFields)
 
 		var where pg.BoolExpression
 		if whereFn := actions.ResolveRoleWhere(module.RoleWhere, role); whereFn != nil {
@@ -720,6 +722,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
+		results = generator.localizeResultList(lang, realFields, results)
 
 		var heads map[string]interface{}
 		if addHeads == "true" {
@@ -740,6 +743,14 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 
 		render, err := module.RenderFor(c)
 		if err != nil {
+			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			return
+		}
+		if err := generator.resolveListSummaryResource(c, &render, role); err != nil {
+			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			return
+		}
+		if err := generator.resolveFormSectionResources(c, &render, role); err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
@@ -853,6 +864,7 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 		role := actions.GetRoleFromContext(c)
 		lang := generator.getLang(c)
 		generator.setTranslationContext(c, lang)
+		ctx = c.Request.Context()
 
 		if action.Mode != actions.AddModeAtomic {
 			if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
@@ -1093,6 +1105,10 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
+		if err := generator.resolveFormSectionResources(c, &render, actions.GetRoleFromContext(c)); err != nil {
+			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			return
+		}
 		render = generator.localizeRenderer(lang, render)
 		defrecResponse := response.NewDefrecResponse(output)
 		defrecResponse.AttachRender(render)
@@ -1107,6 +1123,8 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 		ctx := c.Request.Context()
 		l, _ := icontext.GetLogger(ctx)
 		role := actions.GetRoleFromContext(c)
+		lang := generator.getLang(c)
+		generator.setTranslationContext(c, lang)
 
 		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
 			if err := hook(c); err != nil {
@@ -1158,6 +1176,7 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 				realFields = append(realFields, realField)
 			}
 		}
+		realFields = fields.ResolveProjections(c, realFields)
 
 		pkWhere := pg.RawBool(
 			fmt.Sprintf(`%s."%s" = #val`, module.Table.Alias(), whereKey),
@@ -1189,6 +1208,7 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
+		result = generator.localizeResultValue(lang, realFields, result)
 
 		// Build rich view response with field metadata
 		resultMap, ok := result.(map[string]interface{})
@@ -1204,8 +1224,6 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			editableColumns = updateAction.GetColumns(c)
 		}
 
-		lang := generator.getLang(c)
-		generator.setTranslationContext(c, lang)
 		roleStr := string(role)
 
 		item := make(map[string]interface{}, len(realFields))
@@ -1248,6 +1266,10 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
+		if err := generator.resolveFormSectionResources(c, &render, role); err != nil {
+			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			return
+		}
 		render = generator.localizeRenderer(lang, render)
 
 		output := struct {
@@ -1278,6 +1300,8 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 		l, _ := icontext.GetLogger(ctx)
 		role := actions.GetRoleFromContext(c)
 		lang := generator.getLang(c)
+		generator.setTranslationContext(c, lang)
+		ctx = c.Request.Context()
 		var err error
 
 		if action.Mode != actions.UpdateModeAtomic {

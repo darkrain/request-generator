@@ -26,6 +26,7 @@ const (
 	ModuleFieldTypeString ModuleFieldType = "string"
 	ModuleFieldTypeInt    ModuleFieldType = "int"
 	ModuleFieldTypeFloat  ModuleFieldType = "float"
+	ModuleFieldTypeBool   ModuleFieldType = "bool"
 	ModuleFieldTypeArray  ModuleFieldType = "array"
 	ModuleFieldTypeObject ModuleFieldType = "object"
 )
@@ -36,12 +37,16 @@ func ModuleFieldTypeOf(value string) (ModuleFieldType, error) {
 		return ModuleFieldTypeString, nil
 	case string(ModuleFieldTypeInt):
 		return ModuleFieldTypeInt, nil
+	case string(ModuleFieldTypeFloat):
+		return ModuleFieldTypeFloat, nil
+	case string(ModuleFieldTypeBool):
+		return ModuleFieldTypeBool, nil
 	case string(ModuleFieldTypeArray):
 		return ModuleFieldTypeArray, nil
 	case string(ModuleFieldTypeObject):
 		return ModuleFieldTypeObject, nil
 	}
-	return ModuleFieldTypeString, errors.New(ErrorUnknownFormType)
+	return ModuleFieldTypeString, errors.New(ErrorUnknownType)
 }
 
 // ModuleFieldArrayStorage controls how a typed array is persisted. It does
@@ -87,6 +92,7 @@ type ModuleFieldFormType string
 
 const (
 	ModuleFieldFormTypeText        ModuleFieldFormType = "text"
+	ModuleFieldFormTypeTime        ModuleFieldFormType = "time"
 	ModuleFieldFormTypeNumber      ModuleFieldFormType = "number"
 	ModuleFieldFormTypeTextArea    ModuleFieldFormType = "textarea"
 	ModuleFieldFormTypeSelect      ModuleFieldFormType = "select"
@@ -101,6 +107,8 @@ func ModuleFieldFormTypeOf(value string) (ModuleFieldFormType, error) {
 	switch value {
 	case string(ModuleFieldFormTypeText):
 		return ModuleFieldFormTypeMap, nil
+	case string(ModuleFieldFormTypeTime):
+		return ModuleFieldFormTypeTime, nil
 	case string(ModuleFieldFormTypeNumber):
 		return ModuleFieldFormTypeNumber, nil
 	case string(ModuleFieldFormTypeTextArea):
@@ -139,30 +147,38 @@ type RoleOptions struct {
 }
 
 type ModuleField struct {
-	Column           pg.Column                                       `json:"-"`
-	SelectExpression pg.Projection                                   `json:"-"`
-	Title            string                                          `json:"title"`
-	Titles           map[string]string                               `json:"-"`
-	Type             ModuleFieldType                                 `json:"type"`
-	FormType         ModuleFieldFormType                             `json:"form_type,omitempty"`
-	Example          string                                          `json:"example,omitempty"`
-	AllLabel         string                                          `json:"all_label,omitempty"`
-	ArrayStorage     ModuleFieldArrayStorage                         `json:"-"`
-	Presentation     *renderer.FieldPresentation                     `json:"presentation,omitempty"`
-	Media            *renderer.FieldMediaConfig                      `json:"media,omitempty"`
-	Options          []ModuleFieldOptions                            `json:"options,omitempty"`
-	OptionsSource    *FieldOptionsSource                             `json:"options_source,omitempty"`
-	OptionsFunc      func(context *gin.Context) []ModuleFieldOptions `json:"-"`
-	RoleOptions      []RoleOptions                                   `json:"-"`
-	Check            []CheckRules                                    `json:"-"`
-	CheckFunc        func(context *gin.Context) []CheckRules         `json:"-"`
-	RoleCheck        []RoleCheck                                     `json:"-"`
+	Column           pg.Column     `json:"-"`
+	SelectExpression pg.Projection `json:"-"`
+	// SelectExpressionFunc resolves a request-scoped projection without
+	// mutating shared module metadata. It is useful for computed fields whose
+	// value depends on the authenticated caller.
+	SelectExpressionFunc func(c *gin.Context) pg.Projection              `json:"-"`
+	Title                string                                          `json:"title"`
+	Titles               map[string]string                               `json:"-"`
+	Type                 ModuleFieldType                                 `json:"type"`
+	FormType             ModuleFieldFormType                             `json:"form_type,omitempty"`
+	Example              string                                          `json:"example,omitempty"`
+	AllLabel             string                                          `json:"all_label,omitempty"`
+	ArrayStorage         ModuleFieldArrayStorage                         `json:"-"`
+	Presentation         *renderer.FieldPresentation                     `json:"presentation,omitempty"`
+	Media                *renderer.FieldMediaConfig                      `json:"media,omitempty"`
+	Options              []ModuleFieldOptions                            `json:"options,omitempty"`
+	OptionsSource        *FieldOptionsSource                             `json:"options_source,omitempty"`
+	OptionsFunc          func(context *gin.Context) []ModuleFieldOptions `json:"-"`
+	RoleOptions          []RoleOptions                                   `json:"-"`
+	Check                []CheckRules                                    `json:"-"`
+	CheckFunc            func(context *gin.Context) []CheckRules         `json:"-"`
+	RoleCheck            []RoleCheck                                     `json:"-"`
 	// DefaultFunc is called during Add when the field is absent from the request body.
 	// The returned value is injected into the input before validation and DB insert.
 	DefaultFunc          func(c *gin.Context) interface{}                             `json:"-"`
 	Convert              func(c *gin.Context, value interface{}) (interface{}, error) `json:"-"`
 	ResultValueConverter func(value interface{}) interface{}                          `json:"-"`
-	Translatable         bool                                                         `json:"-"`
+	// ResultValueLocalizer converts a parsed result value into the language of
+	// the current request. It runs after the database layer and therefore does
+	// not make DB executors depend on request or locale state.
+	ResultValueLocalizer func(value interface{}, translate func(key string, fallback string) string) interface{} `json:"-"`
+	Translatable         bool                                                                                    `json:"-"`
 	// Group and Order are producer-only inputs used to build typed renderer
 	// composition. They are never serialized as field metadata.
 	Group           string                         `json:"-"`
@@ -199,6 +215,29 @@ func (f ModuleField) GetProjection() pg.Projection {
 		return f.SelectExpression
 	}
 	return f.Column
+}
+
+// ResolveProjection returns an independent field value with a request-scoped
+// projection, when configured. The original module field remains immutable and
+// can therefore be reused safely by concurrent requests.
+func (f ModuleField) ResolveProjection(c *gin.Context) ModuleField {
+	if f.SelectExpressionFunc != nil {
+		f.SelectExpression = f.SelectExpressionFunc(c)
+	}
+	return f
+}
+
+// ResolveProjections returns request-scoped copies of module fields. It is
+// called by read actions immediately before building a database query.
+func ResolveProjections(c *gin.Context, values []ModuleField) []ModuleField {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]ModuleField, len(values))
+	for i, value := range values {
+		out[i] = value.ResolveProjection(c)
+	}
+	return out
 }
 
 // NewScanValue returns a fresh sql scan destination appropriate for this column's type.
@@ -241,10 +280,11 @@ func (f ModuleFilterField) ColumnName() string {
 }
 
 type ModuleFieldOptions struct {
-	Value  interface{}       `json:"value"`
-	Label  string            `json:"label"`
-	Icon   string            `json:"icon,omitempty"`
-	Labels map[string]string `json:"-"`
+	Value       interface{}       `json:"value"`
+	Label       string            `json:"label"`
+	Description string            `json:"description,omitempty"`
+	Icon        string            `json:"icon,omitempty"`
+	Labels      map[string]string `json:"-"`
 }
 
 type FieldOptionsSourceMode string
