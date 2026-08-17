@@ -605,6 +605,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 		role := actions.GetRoleFromContext(c)
 		lang := generator.getLang(c)
 		generator.setTranslationContext(c, lang)
+		ctx = c.Request.Context()
 
 		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
 			if err := hook(c); err != nil {
@@ -854,6 +855,7 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 		role := actions.GetRoleFromContext(c)
 		lang := generator.getLang(c)
 		generator.setTranslationContext(c, lang)
+		ctx = c.Request.Context()
 
 		if action.Mode != actions.AddModeAtomic {
 			if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
@@ -1280,6 +1282,8 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 		l, _ := icontext.GetLogger(ctx)
 		role := actions.GetRoleFromContext(c)
 		lang := generator.getLang(c)
+		generator.setTranslationContext(c, lang)
+		ctx = c.Request.Context()
 		var err error
 
 		if action.Mode != actions.UpdateModeAtomic {
