@@ -649,6 +649,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 				realFields = append(realFields, realField)
 			}
 		}
+		realFields = fields.ResolveProjections(c, realFields)
 
 		var where pg.BoolExpression
 		if whereFn := actions.ResolveRoleWhere(module.RoleWhere, role); whereFn != nil {
@@ -1175,6 +1176,7 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 				realFields = append(realFields, realField)
 			}
 		}
+		realFields = fields.ResolveProjections(c, realFields)
 
 		pkWhere := pg.RawBool(
 			fmt.Sprintf(`%s."%s" = #val`, module.Table.Alias(), whereKey),

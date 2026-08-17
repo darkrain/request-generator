@@ -147,24 +147,28 @@ type RoleOptions struct {
 }
 
 type ModuleField struct {
-	Column           pg.Column                                       `json:"-"`
-	SelectExpression pg.Projection                                   `json:"-"`
-	Title            string                                          `json:"title"`
-	Titles           map[string]string                               `json:"-"`
-	Type             ModuleFieldType                                 `json:"type"`
-	FormType         ModuleFieldFormType                             `json:"form_type,omitempty"`
-	Example          string                                          `json:"example,omitempty"`
-	AllLabel         string                                          `json:"all_label,omitempty"`
-	ArrayStorage     ModuleFieldArrayStorage                         `json:"-"`
-	Presentation     *renderer.FieldPresentation                     `json:"presentation,omitempty"`
-	Media            *renderer.FieldMediaConfig                      `json:"media,omitempty"`
-	Options          []ModuleFieldOptions                            `json:"options,omitempty"`
-	OptionsSource    *FieldOptionsSource                             `json:"options_source,omitempty"`
-	OptionsFunc      func(context *gin.Context) []ModuleFieldOptions `json:"-"`
-	RoleOptions      []RoleOptions                                   `json:"-"`
-	Check            []CheckRules                                    `json:"-"`
-	CheckFunc        func(context *gin.Context) []CheckRules         `json:"-"`
-	RoleCheck        []RoleCheck                                     `json:"-"`
+	Column           pg.Column     `json:"-"`
+	SelectExpression pg.Projection `json:"-"`
+	// SelectExpressionFunc resolves a request-scoped projection without
+	// mutating shared module metadata. It is useful for computed fields whose
+	// value depends on the authenticated caller.
+	SelectExpressionFunc func(c *gin.Context) pg.Projection              `json:"-"`
+	Title                string                                          `json:"title"`
+	Titles               map[string]string                               `json:"-"`
+	Type                 ModuleFieldType                                 `json:"type"`
+	FormType             ModuleFieldFormType                             `json:"form_type,omitempty"`
+	Example              string                                          `json:"example,omitempty"`
+	AllLabel             string                                          `json:"all_label,omitempty"`
+	ArrayStorage         ModuleFieldArrayStorage                         `json:"-"`
+	Presentation         *renderer.FieldPresentation                     `json:"presentation,omitempty"`
+	Media                *renderer.FieldMediaConfig                      `json:"media,omitempty"`
+	Options              []ModuleFieldOptions                            `json:"options,omitempty"`
+	OptionsSource        *FieldOptionsSource                             `json:"options_source,omitempty"`
+	OptionsFunc          func(context *gin.Context) []ModuleFieldOptions `json:"-"`
+	RoleOptions          []RoleOptions                                   `json:"-"`
+	Check                []CheckRules                                    `json:"-"`
+	CheckFunc            func(context *gin.Context) []CheckRules         `json:"-"`
+	RoleCheck            []RoleCheck                                     `json:"-"`
 	// DefaultFunc is called during Add when the field is absent from the request body.
 	// The returned value is injected into the input before validation and DB insert.
 	DefaultFunc          func(c *gin.Context) interface{}                             `json:"-"`
@@ -211,6 +215,29 @@ func (f ModuleField) GetProjection() pg.Projection {
 		return f.SelectExpression
 	}
 	return f.Column
+}
+
+// ResolveProjection returns an independent field value with a request-scoped
+// projection, when configured. The original module field remains immutable and
+// can therefore be reused safely by concurrent requests.
+func (f ModuleField) ResolveProjection(c *gin.Context) ModuleField {
+	if f.SelectExpressionFunc != nil {
+		f.SelectExpression = f.SelectExpressionFunc(c)
+	}
+	return f
+}
+
+// ResolveProjections returns request-scoped copies of module fields. It is
+// called by read actions immediately before building a database query.
+func ResolveProjections(c *gin.Context, values []ModuleField) []ModuleField {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]ModuleField, len(values))
+	for i, value := range values {
+		out[i] = value.ResolveProjection(c)
+	}
+	return out
 }
 
 // NewScanValue returns a fresh sql scan destination appropriate for this column's type.
