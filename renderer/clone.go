@@ -399,7 +399,7 @@ func cloneFormSections(values []FormSection) []FormSection {
 		out[i].ListPage = cloneListPage(v.ListPage)
 		out[i].Collection = cloneCollectionConfig(v.Collection)
 		out[i].MediaUpload = clonePtr(v.MediaUpload)
-		out[i].MediaItems = cloneSlice(v.MediaItems)
+		out[i].MediaItems = cloneMediaGalleryItems(v.MediaItems)
 		out[i].MediaLabels = clonePtr(v.MediaLabels)
 		out[i].MediaActions = cloneMediaGalleryActions(v.MediaActions)
 		out[i].Prompts = clonePromptList(v.Prompts)
@@ -463,7 +463,7 @@ func CloneFieldMediaConfig(v *FieldMediaConfig) *FieldMediaConfig {
 		return nil
 	}
 	cp := *v
-	cp.Item = clonePtr(v.Item)
+	cp.Item = cloneMediaGalleryItem(v.Item)
 	cp.Upload = clonePtr(v.Upload)
 	cp.Labels = clonePtr(v.Labels)
 	cp.Actions = cloneMediaGalleryActions(v.Actions)
@@ -478,10 +478,32 @@ func cloneMediaGalleryActions(v *MediaGalleryActions) *MediaGalleryActions {
 	cp := *v
 	cp.Upload = cloneAction(v.Upload)
 	cp.Link = cloneAction(v.Link)
+	cp.Update = cloneAction(v.Update)
 	cp.Reorder = cloneAction(v.Reorder)
 	cp.Recenter = cloneAction(v.Recenter)
 	cp.Crop = cloneAction(v.Crop)
 	cp.Remove = cloneAction(v.Remove)
+	return &cp
+}
+
+func cloneMediaGalleryItems(values []MediaGalleryItem) []MediaGalleryItem {
+	if values == nil {
+		return nil
+	}
+	out := make([]MediaGalleryItem, len(values))
+	for i := range values {
+		out[i] = values[i]
+		out[i].AccessGranted = clonePtr(values[i].AccessGranted)
+	}
+	return out
+}
+
+func cloneMediaGalleryItem(v *MediaGalleryItem) *MediaGalleryItem {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.AccessGranted = clonePtr(v.AccessGranted)
 	return &cp
 }
 

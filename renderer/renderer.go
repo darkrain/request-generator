@@ -653,7 +653,8 @@ func validateMediaActions(actions *MediaGalleryActions) error {
 		return nil
 	}
 	for scope, action := range map[string]*Action{
-		"media upload": actions.Upload, "media link": actions.Link, "media reorder": actions.Reorder,
+		"media upload": actions.Upload, "media link": actions.Link, "media update": actions.Update,
+		"media reorder":  actions.Reorder,
 		"media recenter": actions.Recenter, "media crop": actions.Crop, "media remove": actions.Remove,
 	} {
 		if err := validateAction(scope, action); err != nil {
@@ -1491,18 +1492,20 @@ type MediaUploadConfig struct {
 }
 
 type MediaGalleryItem struct {
-	ID          string          `json:"id,omitempty"`
-	MediaID     int64           `json:"media_id,omitempty"`
-	LinkID      int64           `json:"link_id,omitempty"`
-	Kind        MediaKind       `json:"kind,omitempty"`
-	Src         string          `json:"src,omitempty"`
-	Poster      string          `json:"poster,omitempty"`
-	Thumbnail   string          `json:"thumbnail,omitempty"`
-	Visibility  MediaVisibility `json:"visibility,omitempty"`
-	Usage       MediaUsage      `json:"usage,omitempty"`
-	SortOrder   int             `json:"sort_order"`
-	Title       string          `json:"title,omitempty"`
-	Description string          `json:"description,omitempty"`
+	ID            string          `json:"id,omitempty"`
+	MediaID       int64           `json:"media_id,omitempty"`
+	LinkID        int64           `json:"link_id,omitempty"`
+	Kind          MediaKind       `json:"kind,omitempty"`
+	Src           string          `json:"src,omitempty"`
+	Poster        string          `json:"poster,omitempty"`
+	Thumbnail     string          `json:"thumbnail,omitempty"`
+	Visibility    MediaVisibility `json:"visibility,omitempty"`
+	HideFace      bool            `json:"hide_face,omitempty"`
+	AccessGranted *bool           `json:"access_granted,omitempty"`
+	Usage         MediaUsage      `json:"usage,omitempty"`
+	SortOrder     int             `json:"sort_order"`
+	Title         string          `json:"title,omitempty"`
+	Description   string          `json:"description,omitempty"`
 }
 
 type MediaGalleryLabels struct {
@@ -1514,11 +1517,14 @@ type MediaGalleryLabels struct {
 	Reorder      string `json:"reorder,omitempty"`
 	FirstIsCover string `json:"first_is_cover,omitempty"`
 	PrivateHint  string `json:"private_hint,omitempty"`
+	HideFace     string `json:"hide_face,omitempty"`
+	HideFaceHint string `json:"hide_face_hint,omitempty"`
 }
 
 type MediaGalleryActions struct {
 	Upload   *Action `json:"upload,omitempty"`
 	Link     *Action `json:"link,omitempty"`
+	Update   *Action `json:"update,omitempty"`
 	Reorder  *Action `json:"reorder,omitempty"`
 	Recenter *Action `json:"recenter,omitempty"`
 	Crop     *Action `json:"crop,omitempty"`

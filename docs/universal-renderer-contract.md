@@ -870,12 +870,14 @@ frontend использует обычный список. `query` содерж�
 | `media.item.kind` | Тип media: `photo`, `video`, `file`. |
 | `media.item.poster` | Постер видео для основного просмотра. |
 | `media.item.thumbnail` | Компактная миниатюра для лент и списков. |
+| `media.item.hide_face` | Владелец запрашивает face-blur для отображения media. Это свойство media link, а не физического файла. |
+| `media.item.access_granted` | Явный результат server-side проверки доступа к private media. При `false` UI не пытается запускать закрытое video; image URL всё равно обязан проверять storage service. |
 | `display_component.media_items` | Упорядоченные элементы для `media_gallery`; не требует дублировать их в module fields. |
 | `media.item.usage` | Назначение media: `gallery`, `avatar`, `poster`. |
 | `media.item.src` | URI значения. В `view` request-generator может подставить сюда `item[field].value`, если producer не указал `src` явно. |
 | `media.upload` | `MediaUploadConfig`: ограничения upload UI и localized labels. |
 | `media.labels` | `MediaGalleryLabels`, переиспользуется для одиночного media field. |
-| `media.actions` | `MediaGalleryActions`: стандартные действия `upload`, `link`, `reorder`, `recenter`, `crop`, `remove`. |
+| `media.actions` | `MediaGalleryActions`: стандартные действия `upload`, `link`, `update`, `reorder`, `recenter`, `crop`, `remove`. `update` получает текущий `MediaGalleryItem` как scope и подходит, в том числе, для изменения `visibility` и `hide_face`. |
 | `media.cropper` | Optional typed config универсального image cropper. |
 
 Producer задает labels как translation keys. Request-generator возвращает во внешнем JSON уже локализованные labels согласно `lang`/`Accept-Language`.
