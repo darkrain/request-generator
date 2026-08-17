@@ -1,12 +1,26 @@
 package module
 
 import (
+	"net/http/httptest"
 	"testing"
 
 	"github.com/darkrain/request-generator/locale"
 	"github.com/darkrain/request-generator/renderer"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestTranslateContextUsesRequestLocale(t *testing.T) {
+	generator := &Generator{translations: map[locale.Lang]map[string]string{
+		locale.RU: {"test.greeting": "Привет"},
+	}}
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = httptest.NewRequest("GET", "/?lang=ru", nil)
+	generator.setTranslationContext(context, locale.RU)
+
+	require.Equal(t, locale.RU, LangContext(context.Request.Context()))
+	require.Equal(t, "Привет", TranslateContext(context.Request.Context(), "test.greeting", "Hello"))
+}
 
 func TestLocalizeRenderer_LocalizesPublicTextOnly(t *testing.T) {
 	generator := &Generator{translations: map[locale.Lang]map[string]string{

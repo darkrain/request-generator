@@ -1,6 +1,7 @@
 package module
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,6 +14,13 @@ import (
 const (
 	translationLangContextKey = "request-generator.lang"
 	translationFuncContextKey = "request-generator.translate"
+)
+
+type requestTranslationContextKey string
+
+const (
+	requestTranslationLangContextKey requestTranslationContextKey = "request-generator.request.lang"
+	requestTranslationFuncContextKey requestTranslationContextKey = "request-generator.request.translate"
 )
 
 // Translator resolves a translation key with a caller-provided fallback.
@@ -123,6 +131,30 @@ func Translate(c *gin.Context, key string, fallback string) string {
 	return fallback
 }
 
+// LangContext returns the locale attached to a request context by Generator.
+// Atomic operations use context.Context rather than *gin.Context and can use
+// this helper to build a localized server response before it is published.
+func LangContext(ctx context.Context) locale.Lang {
+	if ctx != nil {
+		if lang, ok := ctx.Value(requestTranslationLangContextKey).(locale.Lang); ok {
+			return lang
+		}
+	}
+	return locale.EN
+}
+
+// TranslateContext resolves a translation key from a request context. It is
+// the context.Context counterpart of Translate for operations that do not
+// receive a Gin context.
+func TranslateContext(ctx context.Context, key string, fallback string) string {
+	if ctx != nil {
+		if translate, ok := ctx.Value(requestTranslationFuncContextKey).(Translator); ok {
+			return translate(key, fallback)
+		}
+	}
+	return fallback
+}
+
 // Plural resolves one/few/many for Russian and one/other for other locales.
 func Plural(c *gin.Context, baseKey string, count int, fallback string) string {
 	lang := Lang(c)
@@ -148,10 +180,16 @@ func Plural(c *gin.Context, baseKey string, count int, fallback string) string {
 }
 
 func (g *Generator) setTranslationContext(c *gin.Context, lang locale.Lang) {
-	c.Set(translationLangContextKey, lang)
-	c.Set(translationFuncContextKey, Translator(func(key string, fallback string) string {
+	translate := Translator(func(key string, fallback string) string {
 		return g.TranslateWithFallback(lang, key, fallback)
-	}))
+	})
+	c.Set(translationLangContextKey, lang)
+	c.Set(translationFuncContextKey, translate)
+	c.Request = c.Request.WithContext(context.WithValue(
+		context.WithValue(c.Request.Context(), requestTranslationLangContextKey, lang),
+		requestTranslationFuncContextKey,
+		translate,
+	))
 }
 
 // handleLangList returns the list of supported locales.

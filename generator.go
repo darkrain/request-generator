@@ -721,6 +721,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
+		results = generator.localizeResultList(lang, realFields, results)
 
 		var heads map[string]interface{}
 		if addHeads == "true" {
@@ -862,6 +863,7 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 		role := actions.GetRoleFromContext(c)
 		lang := generator.getLang(c)
 		generator.setTranslationContext(c, lang)
+		ctx = c.Request.Context()
 
 		if action.Mode != actions.AddModeAtomic {
 			if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
@@ -1120,6 +1122,8 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 		ctx := c.Request.Context()
 		l, _ := icontext.GetLogger(ctx)
 		role := actions.GetRoleFromContext(c)
+		lang := generator.getLang(c)
+		generator.setTranslationContext(c, lang)
 
 		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
 			if err := hook(c); err != nil {
@@ -1202,6 +1206,7 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
+		result = generator.localizeResultValue(lang, realFields, result)
 
 		// Build rich view response with field metadata
 		resultMap, ok := result.(map[string]interface{})
@@ -1217,8 +1222,6 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			editableColumns = updateAction.GetColumns(c)
 		}
 
-		lang := generator.getLang(c)
-		generator.setTranslationContext(c, lang)
 		roleStr := string(role)
 
 		item := make(map[string]interface{}, len(realFields))
@@ -1295,6 +1298,8 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 		l, _ := icontext.GetLogger(ctx)
 		role := actions.GetRoleFromContext(c)
 		lang := generator.getLang(c)
+		generator.setTranslationContext(c, lang)
+		ctx = c.Request.Context()
 		var err error
 
 		if action.Mode != actions.UpdateModeAtomic {
