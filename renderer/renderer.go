@@ -1492,20 +1492,21 @@ type MediaUploadConfig struct {
 }
 
 type MediaGalleryItem struct {
-	ID            string          `json:"id,omitempty"`
-	MediaID       int64           `json:"media_id,omitempty"`
-	LinkID        int64           `json:"link_id,omitempty"`
-	Kind          MediaKind       `json:"kind,omitempty"`
-	Src           string          `json:"src,omitempty"`
-	Poster        string          `json:"poster,omitempty"`
-	Thumbnail     string          `json:"thumbnail,omitempty"`
-	Visibility    MediaVisibility `json:"visibility,omitempty"`
-	HideFace      bool            `json:"hide_face,omitempty"`
-	AccessGranted *bool           `json:"access_granted,omitempty"`
-	Usage         MediaUsage      `json:"usage,omitempty"`
-	SortOrder     int             `json:"sort_order"`
-	Title         string          `json:"title,omitempty"`
-	Description   string          `json:"description,omitempty"`
+	ID              string          `json:"id,omitempty"`
+	MediaID         int64           `json:"media_id,omitempty"`
+	LinkID          int64           `json:"link_id,omitempty"`
+	Kind            MediaKind       `json:"kind,omitempty"`
+	Src             string          `json:"src,omitempty"`
+	Poster          string          `json:"poster,omitempty"`
+	Thumbnail       string          `json:"thumbnail,omitempty"`
+	Visibility      MediaVisibility `json:"visibility,omitempty"`
+	HideFace        bool            `json:"hide_face,omitempty"`
+	PrivacyEditable bool            `json:"privacy_editable,omitempty"`
+	AccessGranted   *bool           `json:"access_granted,omitempty"`
+	Usage           MediaUsage      `json:"usage,omitempty"`
+	SortOrder       int             `json:"sort_order"`
+	Title           string          `json:"title,omitempty"`
+	Description     string          `json:"description,omitempty"`
 }
 
 type MediaGalleryLabels struct {
