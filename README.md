@@ -154,6 +154,11 @@ Frontend должен получать готовую схему и рендер
 
 В `defrec.fields[field]` и `view.item[field]` эти blocks приходят как `presentation` и `media`. Labels в media/action metadata переводятся request-generator по текущему языку. В `view` `media.item.src` может быть автоматически заполнен из `item[field].value`, если producer не указал `src`.
 
+Для gallery item доступны `visibility`, `hide_face` и опциональный
+server-side результат `access_granted`. Изменение этих свойств оформляется
+через `MediaGalleryActions.Update`; UI не должен подменой URL реализовывать
+контроль доступа.
+
 Для typed controls выбора в `defrec` и `view` используйте renderer key вместе
 с обычными `Options`. `ModuleFieldOptions.Icon` передается в list filters,
 `defrec` и `view`, а `Label` локализуется генератором. List filter не получает
@@ -587,17 +592,17 @@ Actions: []actions.ModuleAction{
                     LoadPolicy: renderer.WidgetLoadOnOpen,
                 },
             },
-            Bindings: []renderer.WidgetRequestBinding{
+            Bindings: []renderer.RequestBinding{
                 {
-                    Target: renderer.WidgetRequestBindingPathByKey,
-                    Source: renderer.WidgetValueSource{Literal: &renderer.TypedValue{
+                    Target: renderer.RequestBindingPathByKey,
+                    Source: renderer.ValueSource{Literal: &renderer.TypedValue{
                         Type: renderer.TypedValueString, String: "id",
                     }},
                 },
                 {
-                    Target: renderer.WidgetRequestBindingPathValue,
-                    Source: renderer.WidgetValueSource{Runtime: &renderer.WidgetRuntimeValue{
-                        Scope: renderer.WidgetRuntimeValueSourceCurrentUser, Field: "id",
+                    Target: renderer.RequestBindingPathValue,
+                    Source: renderer.ValueSource{Runtime: &renderer.RuntimeValue{
+                        Scope: renderer.RuntimeValueSourceCurrentUser, Field: "id",
                     }},
                 },
             },

@@ -2,10 +2,28 @@ package db
 
 import (
 	"database/sql"
+	"strings"
 	"testing"
 
 	"github.com/darkrain/request-generator/fields"
+	pg "github.com/go-jet/jet/v2/postgres"
 )
+
+func TestGroupByPrimaryAndJoinedFieldsKeepsJoinedColumns(t *testing.T) {
+	preferenceID := pg.IntegerColumn("id")
+	base := pg.NewTable("public", "preferences", "", preferenceID)
+	available := pg.BoolColumn("email_available")
+	position := pg.IntegerColumn("position")
+	groups := pg.NewTable("public", "notification_groups", "", available, position)
+	fields := []fields.ModuleField{{Column: preferenceID}, {Column: available}}
+	clauses := groupByPrimaryAndJoinedFields(preferenceID, fields, base.TableName(), position)
+	statement := pg.SELECT(preferenceID, available).FROM(base.INNER_JOIN(groups, pg.Bool(true))).GROUP_BY(clauses...)
+	query, _ := statement.Sql()
+
+	if !strings.Contains(query, "GROUP BY preferences.id, notification_groups.email_available, notification_groups.position") {
+		t.Fatalf("joined fields must remain in GROUP BY, got %s", query)
+	}
+}
 
 func TestModuleFieldResultValueParsesJSONArray(t *testing.T) {
 	field := fields.ModuleField{Type: fields.ModuleFieldTypeArray}

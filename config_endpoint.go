@@ -7,11 +7,13 @@ import (
 	"strings"
 
 	"github.com/darkrain/request-generator/actions"
+	"github.com/darkrain/request-generator/fields"
 	"github.com/darkrain/request-generator/icontext"
 	"github.com/darkrain/request-generator/locale"
 	"github.com/darkrain/request-generator/renderer"
 	"github.com/darkrain/request-generator/response"
 	"github.com/gin-gonic/gin"
+	pg "github.com/go-jet/jet/v2/postgres"
 )
 
 // ConfigResponse структурирует ответ эндпоинта /api/config
@@ -442,7 +444,7 @@ func filterWorkspaceCommands(widget *renderer.GlobalWidget, loads []renderer.Wor
 
 func (generator *Generator) buildWidgetLoad(c *gin.Context, owner *BaseModule, action actions.ModuleAction, widget actions.WidgetConfig, role string) (renderer.WidgetLoad, bool, error) {
 	if widget.Renderer.Workspace == nil {
-		resource, available, err := generator.buildWidgetResourceLoad(c, owner, action, widget.Bindings, nil)
+		resource, available, err := generator.buildResourceLoad(c, owner, action, widget.Bindings, nil)
 		if err != nil || !available {
 			return renderer.WidgetLoad{}, available, err
 		}
@@ -454,19 +456,19 @@ func (generator *Generator) buildWidgetLoad(c *gin.Context, owner *BaseModule, a
 	if err != nil {
 		return renderer.WidgetLoad{}, false, err
 	}
-	var summary *renderer.WidgetResourceLoad
+	var summary *renderer.ResourceLoad
 	if workspace.Summary != nil {
-		resource, available, err := generator.buildReferencedWidgetResourceLoad(c, *workspace.Summary, role, &selection)
+		resource, available, err := generator.buildReferencedResourceLoad(c, *workspace.Summary, role, &selection)
 		if err != nil || !available {
 			return renderer.WidgetLoad{}, available, err
 		}
 		summary = &resource
 	}
-	master, available, err := generator.buildReferencedWidgetResourceLoad(c, workspace.Master, role, nil)
+	master, available, err := generator.buildReferencedResourceLoad(c, workspace.Master, role, nil)
 	if err != nil || !available {
 		return renderer.WidgetLoad{}, available, err
 	}
-	detail, available, err := generator.buildReferencedWidgetResourceLoad(c, workspace.Detail, role, &selection)
+	detail, available, err := generator.buildReferencedResourceLoad(c, workspace.Detail, role, &selection)
 	if err != nil || !available {
 		return renderer.WidgetLoad{}, available, err
 	}
@@ -492,23 +494,42 @@ func (generator *Generator) buildWorkspaceCommandLoads(c *gin.Context, commands 
 	return loads, nil
 }
 
-func (generator *Generator) buildReferencedWidgetResourceLoad(c *gin.Context, resource renderer.WorkspaceResource, role string, selection *widgetSelectionScope) (renderer.WidgetResourceLoad, bool, error) {
+func (generator *Generator) buildReferencedResourceLoad(c *gin.Context, resource renderer.Resource, role string, selection *widgetSelectionScope) (renderer.ResourceLoad, bool, error) {
 	module, ok := generator.moduleByName(resource.Module)
 	if !ok {
-		return renderer.WidgetResourceLoad{}, false, fmt.Errorf("widget resource references unknown module %q", resource.Module)
+		return renderer.ResourceLoad{}, false, fmt.Errorf("widget resource references unknown module %q", resource.Module)
 	}
 	action, ok := findModuleAction(module, resource.Action)
 	if !ok {
-		return renderer.WidgetResourceLoad{}, false, fmt.Errorf("widget resource %q references unknown action %q", resource.Module, resource.Action)
+		return renderer.ResourceLoad{}, false, fmt.Errorf("widget resource %q references unknown action %q", resource.Module, resource.Action)
 	}
 	if !hasPermission(action, role) {
-		return renderer.WidgetResourceLoad{}, false, nil
+		return renderer.ResourceLoad{}, false, nil
 	}
-	load, available, err := generator.buildWidgetResourceLoad(c, module, action, resource.Bindings, selection)
+	load, available, err := generator.buildResourceLoad(c, module, action, resource.Bindings, selection)
 	if err != nil || !available {
-		return renderer.WidgetResourceLoad{}, available, err
+		return renderer.ResourceLoad{}, available, err
 	}
 	return load, true, nil
+}
+
+// resolveListSummaryResource converts a producer-owned record reference into
+// the standard request contract used by summary-bound list controls.
+func (generator *Generator) resolveListSummaryResource(c *gin.Context, render *renderer.Universal, role actions.Role) error {
+	if render == nil || render.List == nil || render.List.Summary == nil || render.List.Summary.Resource == nil {
+		return nil
+	}
+
+	load, available, err := generator.buildReferencedResourceLoad(c, *render.List.Summary.Resource, string(role), nil)
+	if err != nil {
+		return fmt.Errorf("list summary resource: %w", err)
+	}
+	if !available {
+		render.List.Summary.Load = nil
+		return nil
+	}
+	render.List.Summary.Load = &load
+	return nil
 }
 
 func (generator *Generator) buildWorkspaceCommandLoad(c *gin.Context, command renderer.WorkspaceCommand, role string, selection *widgetSelectionScope) (renderer.WorkspaceCommandLoad, bool, error) {
@@ -535,43 +556,206 @@ func (generator *Generator) buildWorkspaceCommandLoad(c *gin.Context, command re
 		return renderer.WorkspaceCommandLoad{}, available, err
 	}
 	return renderer.WorkspaceCommandLoad{
-		ID:       command.ID,
-		Request:  resource.Request,
-		Bindings: resource.Bindings,
-		Input:    inputLoad,
+		ID:           command.ID,
+		Request:      resource.Request,
+		Bindings:     resource.Bindings,
+		Input:        inputLoad,
+		AfterSuccess: cloneWorkspaceCommandActionResult(command.AfterSuccess),
 	}, true, nil
 }
 
-func (generator *Generator) buildWidgetResourceLoad(c *gin.Context, module *BaseModule, action actions.ModuleAction, bindings []renderer.WidgetRequestBinding, selection *widgetSelectionScope) (renderer.WidgetResourceLoad, bool, error) {
-	available, err := generator.validateWidgetRequestBindingAvailability(c, module, action, bindings, selection, nil)
+func cloneWorkspaceCommandActionResult(value *renderer.ActionResult) *renderer.ActionResult {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	if value.Widget != nil {
+		widget := *value.Widget
+		if value.Widget.Selection != nil {
+			selection := *value.Widget.Selection
+			widget.Selection = &selection
+		}
+		widget.Refresh = append([]renderer.WorkspaceRefreshTarget(nil), value.Widget.Refresh...)
+		cloned.Widget = &widget
+	}
+	return &cloned
+}
+
+func (generator *Generator) buildResourceLoad(c *gin.Context, module *BaseModule, action actions.ModuleAction, bindings []renderer.RequestBinding, selection *widgetSelectionScope) (renderer.ResourceLoad, bool, error) {
+	available, err := generator.validateRequestBindingAvailability(c, module, action, bindings, selection, nil)
 	if err != nil || !available {
-		return renderer.WidgetResourceLoad{}, available, err
+		return renderer.ResourceLoad{}, available, err
 	}
 	if _, err := module.RenderFor(c); err != nil {
-		return renderer.WidgetResourceLoad{}, false, err
+		return renderer.ResourceLoad{}, false, err
 	}
 	contract, ok := resolveStandardActionContract(module, action)
 	if !ok {
-		return renderer.WidgetResourceLoad{}, false, fmt.Errorf("widget resource %q action %q has no request", module.Name, action.Action())
+		return renderer.ResourceLoad{}, false, fmt.Errorf("resource %q action %q has no request", module.Name, action.Action())
 	}
-	return renderer.WidgetResourceLoad{
+	return renderer.ResourceLoad{
 		Request:  contract.Request,
-		Bindings: append([]renderer.WidgetRequestBinding(nil), bindings...),
+		Bindings: append([]renderer.RequestBinding(nil), bindings...),
 	}, true, nil
 }
 
-func (generator *Generator) buildWorkspaceCommandResourceLoad(c *gin.Context, module *BaseModule, action actions.ModuleAction, bindings []renderer.WidgetRequestBinding, selection *widgetSelectionScope, input *workspaceCommandInputScope) (renderer.WidgetResourceLoad, bool, error) {
-	available, err := generator.validateWidgetRequestBindingAvailability(c, module, action, bindings, selection, input)
+// resolveFormSectionResources turns server-only section resource references
+// into executable standard-action requests for the current principal. A form
+// section never publishes a producer-defined endpoint or request body.
+func (generator *Generator) resolveFormSectionResources(c *gin.Context, render *renderer.Universal, role actions.Role) error {
+	if render == nil || render.Form == nil {
+		return nil
+	}
+
+	sections := make([]renderer.FormSection, 0, len(render.Form.Sections))
+	for _, section := range render.Form.Sections {
+		if section.Resource != nil {
+			if section.Resource.Action != string(actions.ModuleActionNameView) {
+				return fmt.Errorf("form section %q resource action must be view", section.ID)
+			}
+
+			targetModule, ok := generator.moduleByName(section.Resource.Module)
+			if !ok {
+				return fmt.Errorf("form section %q resource references unknown module %q", section.ID, section.Resource.Module)
+			}
+			targetRender, err := targetModule.RenderFor(c)
+			if err != nil {
+				return fmt.Errorf("form section %q resource render: %w", section.ID, err)
+			}
+			if targetRender.Form == nil {
+				return fmt.Errorf("form section %q resource %q must render a form", section.ID, section.Resource.Module)
+			}
+
+			load, available, err := generator.buildReferencedResourceLoad(c, *section.Resource, string(role), nil)
+			if err != nil {
+				return fmt.Errorf("form section %q resource: %w", section.ID, err)
+			}
+			if !available {
+				continue
+			}
+			section.Load = &load
+		}
+
+		if err := generator.resolveFieldMatrixSource(c, &section, role); err != nil {
+			return err
+		}
+		sections = append(sections, section)
+	}
+	render.Form.Sections = sections
+	return nil
+}
+
+func (generator *Generator) resolveFieldMatrixSource(c *gin.Context, section *renderer.FormSection, role actions.Role) error {
+	if section == nil || section.Matrix == nil || section.Matrix.Table == nil || section.Matrix.Table.Source == nil {
+		return nil
+	}
+	source := section.Matrix.Table.Source
+	if source.List.Action != string(actions.ModuleActionNameList) {
+		return fmt.Errorf("form section %q matrix source list action must be list", section.ID)
+	}
+	if source.Update.Action != string(actions.ModuleActionNameUpdate) {
+		return fmt.Errorf("form section %q matrix source update action must be update", section.ID)
+	}
+
+	listLoad, listModule, listAction, available, err := generator.resolveFieldMatrixAction(c, source.List, role)
+	if err != nil {
+		return fmt.Errorf("form section %q matrix source list: %w", section.ID, err)
+	}
+	if !available {
+		return fmt.Errorf("form section %q matrix source list is unavailable", section.ID)
+	}
+	if listAction.Action() != actions.ModuleActionNameList {
+		return fmt.Errorf("form section %q matrix source list must reference list", section.ID)
+	}
+
+	updateLoad, updateModule, updateAction, available, err := generator.resolveFieldMatrixAction(c, source.Update, role)
+	if err != nil {
+		return fmt.Errorf("form section %q matrix source update: %w", section.ID, err)
+	}
+	if !available {
+		return fmt.Errorf("form section %q matrix source update is unavailable", section.ID)
+	}
+	update, ok := updateAction.(actions.UpdateModuleAction)
+	if !ok {
+		return fmt.Errorf("form section %q matrix source update must reference update", section.ID)
+	}
+	if listModule.Name != updateModule.Name {
+		return fmt.Errorf("form section %q matrix source list and update must reference one module", section.ID)
+	}
+	if listModule.GetField(source.IDField) == nil {
+		return fmt.Errorf("form section %q matrix source id field %q is unknown", section.ID, source.IDField)
+	}
+	if !containsColumn(update.By, listModule.GetField(source.IDField).Column) {
+		return fmt.Errorf("form section %q matrix source id field %q is not an update selector", section.ID, source.IDField)
+	}
+	if listModule.GetField(source.KeyField) == nil {
+		return fmt.Errorf("form section %q matrix source key field %q is unknown", section.ID, source.KeyField)
+	}
+	for _, row := range section.Matrix.Table.Rows {
+		for _, cell := range row.Cells {
+			if cell.Field == "" {
+				continue
+			}
+			field := listModule.GetField(cell.Field)
+			if field == nil {
+				return fmt.Errorf("form section %q matrix source field %q is unknown", section.ID, cell.Field)
+			}
+			if field.Type != fields.ModuleFieldTypeBool || !containsColumn(update.Columns, field.Column) {
+				return fmt.Errorf("form section %q matrix source field %q must be an editable bool", section.ID, cell.Field)
+			}
+			if cell.AvailableField != "" && listModule.GetField(cell.AvailableField) == nil {
+				return fmt.Errorf("form section %q matrix source availability field %q is unknown", section.ID, cell.AvailableField)
+			}
+		}
+	}
+	source.Load = &renderer.FieldMatrixDataSourceLoad{List: listLoad, Update: updateLoad}
+	return nil
+}
+
+func (generator *Generator) resolveFieldMatrixAction(c *gin.Context, resource renderer.ActionResource, role actions.Role) (renderer.ResourceLoad, *BaseModule, actions.ModuleAction, bool, error) {
+	targetModule, ok := generator.moduleByName(resource.Module)
+	if !ok {
+		return renderer.ResourceLoad{}, nil, nil, false, fmt.Errorf("references unknown module %q", resource.Module)
+	}
+	action, ok := findModuleAction(targetModule, resource.Action)
+	if !ok {
+		return renderer.ResourceLoad{}, nil, nil, false, fmt.Errorf("references unknown action %q", resource.Action)
+	}
+	if !hasPermission(action, string(role)) {
+		return renderer.ResourceLoad{}, targetModule, action, false, nil
+	}
+	// A field matrix supplies the selector from source.id_field and exactly one
+	// editable boolean cell at interaction time. It cannot use the static body
+	// bindings required by a general widget update resource.
+	if action.Action() == actions.ModuleActionNameUpdate {
+		if _, err := targetModule.RenderFor(c); err != nil {
+			return renderer.ResourceLoad{}, targetModule, action, false, err
+		}
+		contract, ok := resolveStandardActionContract(targetModule, action)
+		if !ok {
+			return renderer.ResourceLoad{}, targetModule, action, false, fmt.Errorf("update action has no standard request")
+		}
+		return renderer.ResourceLoad{Request: contract.Request}, targetModule, action, true, nil
+	}
+	load, available, err := generator.buildResourceLoad(c, targetModule, action, nil, nil)
 	if err != nil || !available {
-		return renderer.WidgetResourceLoad{}, available, err
+		return renderer.ResourceLoad{}, targetModule, action, available, err
+	}
+	return load, targetModule, action, true, nil
+}
+
+func (generator *Generator) buildWorkspaceCommandResourceLoad(c *gin.Context, module *BaseModule, action actions.ModuleAction, bindings []renderer.RequestBinding, selection *widgetSelectionScope, input *workspaceCommandInputScope) (renderer.ResourceLoad, bool, error) {
+	available, err := generator.validateRequestBindingAvailability(c, module, action, bindings, selection, input)
+	if err != nil || !available {
+		return renderer.ResourceLoad{}, available, err
 	}
 	contract, ok := resolveStandardActionContract(module, action)
 	if !ok {
-		return renderer.WidgetResourceLoad{}, false, fmt.Errorf("workspace command resource %q action %q has no request", module.Name, action.Action())
+		return renderer.ResourceLoad{}, false, fmt.Errorf("workspace command resource %q action %q has no request", module.Name, action.Action())
 	}
-	return renderer.WidgetResourceLoad{
+	return renderer.ResourceLoad{
 		Request:  contract.Request,
-		Bindings: append([]renderer.WidgetRequestBinding(nil), bindings...),
+		Bindings: append([]renderer.RequestBinding(nil), bindings...),
 	}, true, nil
 }
 
@@ -748,7 +932,7 @@ func (generator *Generator) buildViewChild(module *BaseModule, render renderer.U
 		Title:    a.Label,
 		Renderer: viewRouteIdentity(render, viewActionPageType(a)),
 		PageType: viewRoutePageType(render, viewActionPageType(a)),
-		Query:    standardActionRouteQuery(module, a),
+		Query:    standardRecordActionRouteQuery(module, a, a.By),
 	}, true
 }
 
@@ -761,8 +945,33 @@ func (generator *Generator) buildUpdateChild(module *BaseModule, render renderer
 		Title:    a.Label,
 		Renderer: render.FormIdentity(),
 		PageType: render.FormRoutePageType(),
-		Query:    standardActionRouteQuery(module, a),
+		Query:    standardRecordActionRouteQuery(module, a, a.By),
 	}, true
+}
+
+// standardRecordActionRouteQuery binds the generated :id child route to the
+// standard selector placeholders. The first allowed selector is used, except
+// that a module primary key wins when it is explicitly allowed.
+func standardRecordActionRouteQuery(module *BaseModule, action actions.ModuleAction, by []pg.Column) *RouteQuery {
+	query := standardActionRouteQuery(module, action)
+	if query == nil || len(by) == 0 {
+		return query
+	}
+	byKey := by[0].Name()
+	for _, column := range by {
+		if column.Name() == module.PrimaryKey.Name() {
+			byKey = column.Name()
+			break
+		}
+	}
+	params := make(map[string]interface{}, len(query.Params)+2)
+	for key, value := range query.Params {
+		params[key] = value
+	}
+	params["bykey"] = byKey
+	params["value"] = "{id}"
+	query.Params = params
+	return query
 }
 
 func (generator *Generator) buildAddChild(module *BaseModule, render renderer.Universal, a actions.AddModuleAction, role string) (RouteConfig, bool) {

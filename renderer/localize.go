@@ -95,9 +95,21 @@ func (localizer textLocalizer) localizeListPage(page *ListPage) {
 	}
 	if page.Summary != nil {
 		localizer.localizeTextFields(&page.Summary.Title, &page.Summary.TitleFallback)
+		for i := range page.Summary.Items {
+			page.Summary.Items[i].Label = localizer.localizeRendererText(page.Summary.Items[i].Label, page.Summary.Items[i].LabelKey)
+			page.Summary.Items[i].LabelKey = ""
+		}
+	}
+	if page.GroupBy != nil {
+		localizer.localizeTextFields(&page.GroupBy.TodayLabel, &page.GroupBy.YesterdayLabel, &page.GroupBy.ThisWeekLabel, &page.GroupBy.EarlierLabel)
 	}
 	if page.CardSchema != nil {
 		localizer.localizeCardSchema(page.CardSchema)
+	}
+	if page.Selection != nil {
+		localizer.localizeTextFields(&page.Selection.SelectedLabel)
+		localizer.localizeRendererAction(page.Selection.Clear)
+		localizer.localizeRendererAction(page.Selection.Proceed)
 	}
 }
 
@@ -131,7 +143,7 @@ func (localizer textLocalizer) localizeFilterRangePresets(groups []FilterRangePr
 
 func (localizer textLocalizer) localizeFilterText(text *FilterText) {
 	if text != nil {
-		localizer.localizeTextFields(&text.SearchPlaceholder, &text.ResetLabel, &text.ResetAllLabel, &text.ApplyLabel, &text.LoadingLabel, &text.EmptyLabel, &text.NoResultsLabel, &text.CancelLabel, &text.CloseLabel, &text.RangeMinLabel, &text.RangeMaxLabel)
+		localizer.localizeTextFields(&text.SearchPlaceholder, &text.ResetLabel, &text.ResetAllLabel, &text.ApplyLabel, &text.LoadingLabel, &text.EmptyLabel, &text.EmptyDescription, &text.NoResultsLabel, &text.CancelLabel, &text.CloseLabel, &text.RangeMinLabel, &text.RangeMaxLabel)
 	}
 }
 
@@ -141,6 +153,8 @@ func (localizer textLocalizer) localizeFilterPills(rows [][]FilterPill) {
 			pill := &rows[i][j]
 			pill.Label = localizer.localizeRendererText(pill.Label, pill.LabelKey)
 			pill.LabelKey = ""
+			pill.GroupLabel = localizer.localizeRendererText(pill.GroupLabel, pill.GroupLabelKey)
+			pill.GroupLabelKey = ""
 		}
 	}
 }
@@ -160,6 +174,9 @@ func (localizer textLocalizer) localizeCardSchema(schema *CardSchema) {
 func (localizer textLocalizer) localizeBadge(badge *Badge) {
 	badge.Label = localizer.localizeRendererText(badge.Label, badge.LabelKey)
 	badge.LabelKey = ""
+	for value, label := range badge.LabelMap {
+		badge.LabelMap[value] = localizer.localizeRendererText(label, "")
+	}
 	if badge.Then != nil {
 		badge.Then.Label = localizer.localizeRendererText(badge.Then.Label, badge.Then.LabelKey)
 		badge.Then.LabelKey = ""
@@ -172,6 +189,13 @@ func (localizer textLocalizer) localizeBadge(badge *Badge) {
 
 func (localizer textLocalizer) localizeFormPage(page *FormPage) {
 	localizer.localizeTextFields(&page.Title, &page.Subtitle)
+	if page.Workflow != nil {
+		localizer.localizeTextFields(&page.Workflow.PreviousLabel, &page.Workflow.NextLabel)
+		if page.Workflow.Summary != nil {
+			localizer.localizeTextFields(&page.Workflow.Summary.Eyebrow, &page.Workflow.Summary.Title)
+			localizer.localizeBadge(page.Workflow.Summary.Badge)
+		}
+	}
 	for i := range page.Actions {
 		localizer.localizeRendererAction(&page.Actions[i])
 	}
@@ -181,7 +205,8 @@ func (localizer textLocalizer) localizeFormPage(page *FormPage) {
 }
 
 func (localizer textLocalizer) localizeFormSection(section *FormSection) {
-	localizer.localizeTextFields(&section.Title, &section.PanelTitle, &section.Subtitle, &section.GroupTitle)
+	localizer.localizeTextFields(&section.Title, &section.StepHint, &section.PanelTitle, &section.Subtitle, &section.LoadingLabel, &section.GroupTitle)
+	localizer.localizePromptList(section.Prompts)
 	localizer.localizeFieldMatrix(section.Matrix)
 	if section.ListPage != nil {
 		localizer.localizeListPage(section.ListPage)
@@ -190,6 +215,17 @@ func (localizer textLocalizer) localizeFormSection(section *FormSection) {
 	section.MediaUpload = localizer.localizeMediaUpload(section.MediaUpload)
 	section.MediaLabels = localizer.localizeMediaLabels(section.MediaLabels)
 	localizer.localizeMediaActions(section.MediaActions)
+}
+
+func (localizer textLocalizer) localizePromptList(list *PromptList) {
+	if list == nil {
+		return
+	}
+	for index := range list.Items {
+		prompt := &list.Items[index]
+		localizer.localizeTextFields(&prompt.Title, &prompt.Text)
+		localizer.localizeRendererAction(prompt.Action)
+	}
 }
 
 func (localizer textLocalizer) localizeFieldMatrix(matrix *FieldMatrix) {
@@ -201,9 +237,9 @@ func (localizer textLocalizer) localizeFieldMatrix(matrix *FieldMatrix) {
 	}
 	for i := range matrix.Table.Rows {
 		row := &matrix.Table.Rows[i]
-		localizer.localizeTextFields(&row.Label)
+		localizer.localizeTextFields(&row.Label, &row.Description)
 		for j := range row.Cells {
-			localizer.localizeTextFields(&row.Cells[j].Text)
+			localizer.localizeTextFields(&row.Cells[j].Label, &row.Cells[j].Text)
 		}
 	}
 }
@@ -217,7 +253,7 @@ func (localizer textLocalizer) localizeMediaUpload(upload *MediaUploadConfig) *M
 
 func (localizer textLocalizer) localizeMediaLabels(labels *MediaGalleryLabels) *MediaGalleryLabels {
 	if labels != nil {
-		localizer.localizeTextFields(&labels.Public, &labels.Private, &labels.Empty, &labels.CoverBadge, &labels.Remove, &labels.Reorder, &labels.FirstIsCover, &labels.PrivateHint)
+		localizer.localizeTextFields(&labels.Public, &labels.Private, &labels.Empty, &labels.CoverBadge, &labels.Remove, &labels.Reorder, &labels.FirstIsCover, &labels.PrivateHint, &labels.HideFace, &labels.HideFaceHint)
 	}
 	return labels
 }
@@ -226,6 +262,7 @@ func (localizer textLocalizer) localizeMediaActions(actions *MediaGalleryActions
 	if actions != nil {
 		localizer.localizeRendererAction(actions.Upload)
 		localizer.localizeRendererAction(actions.Link)
+		localizer.localizeRendererAction(actions.Update)
 		localizer.localizeRendererAction(actions.Reorder)
 		localizer.localizeRendererAction(actions.Recenter)
 		localizer.localizeRendererAction(actions.Crop)

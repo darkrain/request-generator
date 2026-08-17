@@ -28,7 +28,7 @@ func (generator *Generator) validateGlobalWidgets() error {
 			if err := validateNoWorkspaceInputBindings(widget.Bindings); err != nil {
 				return fmt.Errorf("widget %q: %w", widget.ID, err)
 			}
-			if err := validateWidgetRequestBindingShape(module, action, widget.Bindings); err != nil {
+			if err := validateRequestBindingShape(module, action, widget.Bindings); err != nil {
 				return fmt.Errorf("widget %q: %w", widget.ID, err)
 			}
 			if widget.Renderer.Workspace != nil {
@@ -50,6 +50,16 @@ func (generator *Generator) validateGlobalWidgets() error {
 			}
 		}
 	}
+	for _, widget := range widgets {
+		if widget.Renderer.Workspace == nil {
+			continue
+		}
+		for _, command := range widget.Renderer.Workspace.Commands {
+			if err := generator.validateWorkspaceCommandActionResult(widget.ID, command, widgets); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
@@ -63,7 +73,7 @@ func moduleActions(module *BaseModule) []actions.ModuleAction {
 }
 
 func (generator *Generator) validateWorkspaceWidget(id string, workspace renderer.WorkspaceWidget) error {
-	masterModule, masterAction, err := generator.validateWorkspaceResource(id, "master", workspace.Master)
+	masterModule, masterAction, err := generator.validateResource(id, "master", workspace.Master)
 	if err != nil {
 		return err
 	}
@@ -74,11 +84,11 @@ func (generator *Generator) validateWorkspaceWidget(id string, workspace rendere
 	if err != nil {
 		return err
 	}
-	if _, _, err := generator.validateWorkspaceResource(id, "detail", workspace.Detail); err != nil {
+	if _, _, err := generator.validateResource(id, "detail", workspace.Detail); err != nil {
 		return err
 	}
 	if workspace.Summary != nil {
-		_, summaryAction, err := generator.validateWorkspaceResource(id, "summary", *workspace.Summary)
+		_, summaryAction, err := generator.validateResource(id, "summary", *workspace.Summary)
 		if err != nil {
 			return err
 		}
@@ -104,7 +114,13 @@ func (generator *Generator) validateWorkspaceWidget(id string, workspace rendere
 				return fmt.Errorf("widget %q subscription %q references unknown action %q", id, subscription.Module, name)
 			}
 			event := actions.RealtimeEvent(action)
-			if event == nil || event.CorrelationField == "" {
+			if event == nil {
+				return fmt.Errorf("widget %q subscription %q action %q does not declare realtime event", id, subscription.Module, name)
+			}
+			if subscription.Correlation == nil {
+				continue
+			}
+			if event.CorrelationField == "" {
 				return fmt.Errorf("widget %q subscription %q action %q does not declare realtime correlation", id, subscription.Module, name)
 			}
 			if event.CorrelationField != subscription.Correlation.EventField {
@@ -139,11 +155,61 @@ func (generator *Generator) validateWorkspaceCommand(widgetID string, command re
 	if err := validateWorkspaceCommandInput(module, action, command.Input); err != nil {
 		return fmt.Errorf("widget %q command %q input: %w", widgetID, command.ID, err)
 	}
-	if err := validateWidgetRequestBindingShape(module, action, command.Bindings); err != nil {
+	if err := validateRequestBindingShape(module, action, command.Bindings); err != nil {
 		return fmt.Errorf("widget %q command %q: %w", widgetID, command.ID, err)
 	}
 	if err := validateWorkspaceCommandPresentation(command, selection); err != nil {
 		return fmt.Errorf("widget %q command %q presentation: %w", widgetID, command.ID, err)
+	}
+	return nil
+}
+
+func (generator *Generator) validateWorkspaceCommandActionResult(widgetID string, command renderer.WorkspaceCommand, widgets map[string]actions.WidgetConfig) error {
+	result := command.AfterSuccess
+	if result == nil || result.Widget == nil {
+		return nil
+	}
+	target := *result.Widget
+	widget, exists := widgets[target.ID]
+	if !exists {
+		return fmt.Errorf("widget %q command %q references unknown widget %q", widgetID, command.ID, target.ID)
+	}
+	if target.Selection == nil {
+		if len(target.Refresh) > 0 && widget.Renderer.Workspace == nil {
+			return fmt.Errorf("widget %q command %q refreshes a non-workspace widget %q", widgetID, command.ID, target.ID)
+		}
+		return nil
+	}
+	if widget.Renderer.Workspace == nil {
+		return fmt.Errorf("widget %q command %q sets selection on a non-workspace widget %q", widgetID, command.ID, target.ID)
+	}
+
+	source := target.Selection.Source
+	if source.Resource.Module != command.Module || source.Resource.Action != command.Action {
+		return fmt.Errorf("widget %q command %q selection source must reference its command action", widgetID, command.ID)
+	}
+	sourceModule, ok := generator.moduleByName(command.Module)
+	if !ok {
+		return fmt.Errorf("widget %q command %q source module %q is unavailable", widgetID, command.ID, command.Module)
+	}
+	sourceAction, ok := findModuleAction(sourceModule, command.Action)
+	if !ok {
+		return fmt.Errorf("widget %q command %q source action %q is unavailable", widgetID, command.ID, command.Action)
+	}
+	contract, ok := resolveStandardActionContract(sourceModule, sourceAction)
+	if !ok {
+		return fmt.Errorf("widget %q command %q action has no standard request", widgetID, command.ID)
+	}
+	sourceType, exists := contract.resultFieldType(source.Field)
+	if !exists {
+		return fmt.Errorf("widget %q command %q selection source field %q is not declared", widgetID, command.ID, source.Field)
+	}
+	selection, err := generator.workspaceSelectionScope(target.ID, *widget.Renderer.Workspace)
+	if err != nil {
+		return err
+	}
+	if sourceType != selection.Type {
+		return fmt.Errorf("widget %q command %q selection source field %q type %q does not match target field %q type %q", widgetID, command.ID, source.Field, sourceType, selection.Field, selection.Type)
 	}
 	return nil
 }
@@ -264,7 +330,7 @@ func workspaceCommandActionMayWriteField(action actions.ModuleAction, field fiel
 	return false
 }
 
-func (generator *Generator) validateWorkspaceResource(widgetID, name string, resource renderer.WorkspaceResource) (*BaseModule, actions.ModuleAction, error) {
+func (generator *Generator) validateResource(widgetID, name string, resource renderer.Resource) (*BaseModule, actions.ModuleAction, error) {
 	module, ok := generator.moduleByName(resource.Module)
 	if !ok {
 		return nil, nil, fmt.Errorf("widget %q %s resource references unknown module %q", widgetID, name, resource.Module)
@@ -276,7 +342,7 @@ func (generator *Generator) validateWorkspaceResource(widgetID, name string, res
 	if err := validateNoWorkspaceInputBindings(resource.Bindings); err != nil {
 		return nil, nil, fmt.Errorf("widget %q %s resource: %w", widgetID, name, err)
 	}
-	if err := validateWidgetRequestBindingShape(module, action, resource.Bindings); err != nil {
+	if err := validateRequestBindingShape(module, action, resource.Bindings); err != nil {
 		return nil, nil, fmt.Errorf("widget %q %s resource: %w", widgetID, name, err)
 	}
 	if err := validateWidgetResourcePresentation(module, action); err != nil {
@@ -331,23 +397,23 @@ type workspaceCommandInputScope struct {
 	Fields map[string]fields.ModuleField
 }
 
-func validateNoWorkspaceInputBindings(bindings []renderer.WidgetRequestBinding) error {
+func validateNoWorkspaceInputBindings(bindings []renderer.RequestBinding) error {
 	for _, binding := range bindings {
-		if binding.Source.Runtime != nil && binding.Source.Runtime.Scope == renderer.WidgetRuntimeValueSourceInput {
+		if binding.Source.Runtime != nil && binding.Source.Runtime.Scope == renderer.RuntimeValueSourceInput {
 			return fmt.Errorf("runtime input source is only supported by workspace commands")
 		}
 	}
 	return nil
 }
 
-func validateWidgetRequestBindingShape(module *BaseModule, action actions.ModuleAction, bindings []renderer.WidgetRequestBinding) error {
-	if err := renderer.ValidateWidgetRequestBindings(bindings); err != nil {
+func validateRequestBindingShape(module *BaseModule, action actions.ModuleAction, bindings []renderer.RequestBinding) error {
+	if err := renderer.ValidateRequestBindings(bindings); err != nil {
 		return err
 	}
-	byTarget := make(map[renderer.WidgetRequestBindingTarget]renderer.WidgetRequestBinding, len(bindings))
-	bodyBindings := make([]renderer.WidgetRequestBinding, 0)
+	byTarget := make(map[renderer.RequestBindingTarget]renderer.RequestBinding, len(bindings))
+	bodyBindings := make([]renderer.RequestBinding, 0)
 	for _, binding := range bindings {
-		if binding.Target == renderer.WidgetRequestBindingBody {
+		if binding.Target == renderer.RequestBindingBody {
 			bodyBindings = append(bodyBindings, binding)
 			continue
 		}
@@ -365,7 +431,7 @@ func validateWidgetRequestBindingShape(module *BaseModule, action actions.Module
 		return nil
 	case actions.ModuleActionNameList:
 		for _, binding := range bindings {
-			if binding.Target != renderer.WidgetRequestBindingFilter {
+			if binding.Target != renderer.RequestBindingFilter {
 				return fmt.Errorf("list action only supports filter bindings")
 			}
 		}
@@ -401,12 +467,12 @@ func validateWidgetRequestBindingShape(module *BaseModule, action actions.Module
 	}
 }
 
-func validateWidgetPathBindings(module *BaseModule, action actions.ModuleAction, bindings map[renderer.WidgetRequestBindingTarget]renderer.WidgetRequestBinding, actionName string) error {
-	byKey, hasByKey := bindings[renderer.WidgetRequestBindingPathByKey]
+func validateWidgetPathBindings(module *BaseModule, action actions.ModuleAction, bindings map[renderer.RequestBindingTarget]renderer.RequestBinding, actionName string) error {
+	byKey, hasByKey := bindings[renderer.RequestBindingPathByKey]
 	if !hasByKey {
 		return fmt.Errorf("%s action requires path_by_key and path_value bindings", actionName)
 	}
-	if _, hasValue := bindings[renderer.WidgetRequestBindingPathValue]; !hasValue {
+	if _, hasValue := bindings[renderer.RequestBindingPathValue]; !hasValue {
 		return fmt.Errorf("%s action requires path_by_key and path_value bindings", actionName)
 	}
 	if byKey.Source.Literal == nil || byKey.Source.Literal.Type != renderer.TypedValueString {
@@ -419,13 +485,13 @@ func validateWidgetPathBindings(module *BaseModule, action actions.ModuleAction,
 	return nil
 }
 
-func validateWidgetBodyBindingFields(module *BaseModule, bindings []renderer.WidgetRequestBinding) error {
+func validateWidgetBodyBindingFields(module *BaseModule, bindings []renderer.RequestBinding) error {
 	for _, binding := range bindings {
 		field := module.GetField(binding.Field)
 		if field == nil {
 			return fmt.Errorf("body field %q is not declared", binding.Field)
 		}
-		if binding.Source.Runtime != nil && binding.Source.Runtime.Scope == renderer.WidgetRuntimeValueSourceInput {
+		if binding.Source.Runtime != nil && binding.Source.Runtime.Scope == renderer.RuntimeValueSourceInput {
 			continue
 		}
 		fieldType, err := runtimeTypedValueType(*field)
@@ -439,26 +505,26 @@ func validateWidgetBodyBindingFields(module *BaseModule, bindings []renderer.Wid
 	return nil
 }
 
-// validateWidgetRequestBindingAvailability resolves the one source of truth
+// validateRequestBindingAvailability resolves the one source of truth
 // for filter availability in the current request context. Static validation
 // intentionally only checks binding shape because FilterFunc and
 // FilterCondition are context-dependent.
-func (generator *Generator) validateWidgetRequestBindingAvailability(c *gin.Context, module *BaseModule, action actions.ModuleAction, bindings []renderer.WidgetRequestBinding, selection *widgetSelectionScope, input *workspaceCommandInputScope) (bool, error) {
-	if err := validateWidgetRequestBindingShape(module, action, bindings); err != nil {
+func (generator *Generator) validateRequestBindingAvailability(c *gin.Context, module *BaseModule, action actions.ModuleAction, bindings []renderer.RequestBinding, selection *widgetSelectionScope, input *workspaceCommandInputScope) (bool, error) {
+	if err := validateRequestBindingShape(module, action, bindings); err != nil {
 		return false, err
 	}
 
 	switch action.Action() {
 	case actions.ModuleActionNameView, actions.ModuleActionNameUpdate, actions.ModuleActionNameDelete:
-		var byKey renderer.WidgetRequestBinding
+		var byKey renderer.RequestBinding
 		for _, binding := range bindings {
-			if binding.Target == renderer.WidgetRequestBindingPathByKey {
+			if binding.Target == renderer.RequestBindingPathByKey {
 				byKey = binding
 				break
 			}
 		}
 		for _, binding := range bindings {
-			if binding.Target != renderer.WidgetRequestBindingPathValue {
+			if binding.Target != renderer.RequestBindingPathValue {
 				continue
 			}
 			field := widgetActionByField(module, action, byKey.Source.Literal.String)
@@ -480,14 +546,14 @@ func (generator *Generator) validateWidgetRequestBindingAvailability(c *gin.Cont
 			return false, fmt.Errorf("action %q has unsupported type %T", action.Action(), action)
 		}
 		for _, binding := range bindings {
-			if binding.Target != renderer.WidgetRequestBindingBody {
+			if binding.Target != renderer.RequestBindingBody {
 				continue
 			}
 			field, exists := inputs[binding.Field]
 			if !exists {
 				return false, nil
 			}
-			if binding.Source.Runtime != nil && binding.Source.Runtime.Scope == renderer.WidgetRuntimeValueSourceInput {
+			if binding.Source.Runtime != nil && binding.Source.Runtime.Scope == renderer.RuntimeValueSourceInput {
 				if input == nil {
 					return false, fmt.Errorf("body field %q: input source is unavailable", binding.Field)
 				}
@@ -585,7 +651,7 @@ func workspaceCommandInputScopeForContext(c *gin.Context, module *BaseModule, ac
 		return nil, nil, false, fmt.Errorf("module %q defrec has no standard request", module.Name)
 	}
 	return scope, &renderer.WorkspaceCommandInputLoad{
-		Definition: renderer.WidgetResourceLoad{Request: contract.Request},
+		Definition: renderer.ResourceLoad{Request: contract.Request},
 	}, true, nil
 }
 
@@ -604,7 +670,7 @@ func widgetListAction(action actions.ModuleAction) (actions.ListModuleAction, bo
 	}
 }
 
-func validateWidgetRequestValueSource(source renderer.WidgetValueSource, expected renderer.TypedValueType, selection *widgetSelectionScope, input *workspaceCommandInputScope) error {
+func validateWidgetRequestValueSource(source renderer.ValueSource, expected renderer.TypedValueType, selection *widgetSelectionScope, input *workspaceCommandInputScope) error {
 	if source.Literal != nil {
 		if source.Literal.Type != expected {
 			return fmt.Errorf("literal type %q does not match expected type %q", source.Literal.Type, expected)
@@ -615,14 +681,14 @@ func validateWidgetRequestValueSource(source renderer.WidgetValueSource, expecte
 		return fmt.Errorf("source is required")
 	}
 	switch source.Runtime.Scope {
-	case renderer.WidgetRuntimeValueSourceCurrentUser:
+	case renderer.RuntimeValueSourceCurrentUser:
 		if source.Runtime.Field != "id" {
 			return fmt.Errorf("current_user field %q is not declared", source.Runtime.Field)
 		}
 		if expected != renderer.TypedValueNumber {
 			return fmt.Errorf("current_user.id has type %q, expected %q", renderer.TypedValueNumber, expected)
 		}
-	case renderer.WidgetRuntimeValueSourceSelection:
+	case renderer.RuntimeValueSourceSelection:
 		if selection == nil {
 			return fmt.Errorf("selection source is unavailable")
 		}
@@ -633,7 +699,7 @@ func validateWidgetRequestValueSource(source renderer.WidgetValueSource, expecte
 		if actual != expected {
 			return fmt.Errorf("selection field %q has type %q, expected %q", source.Runtime.Field, actual, expected)
 		}
-	case renderer.WidgetRuntimeValueSourceInput:
+	case renderer.RuntimeValueSourceInput:
 		if input == nil {
 			return fmt.Errorf("input source is unavailable")
 		}
@@ -807,6 +873,8 @@ func runtimeModuleFieldType(fieldType fields.ModuleFieldType) (renderer.TypedVal
 		return renderer.TypedValueString, true
 	case fields.ModuleFieldTypeInt, fields.ModuleFieldTypeFloat:
 		return renderer.TypedValueNumber, true
+	case fields.ModuleFieldTypeBool:
+		return renderer.TypedValueBool, true
 	default:
 		return "", false
 	}

@@ -1,12 +1,26 @@
 package module
 
 import (
+	"net/http/httptest"
 	"testing"
 
 	"github.com/darkrain/request-generator/locale"
 	"github.com/darkrain/request-generator/renderer"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestTranslateContextUsesRequestLocale(t *testing.T) {
+	generator := &Generator{translations: map[locale.Lang]map[string]string{
+		locale.RU: {"test.greeting": "Привет"},
+	}}
+	context, _ := gin.CreateTestContext(httptest.NewRecorder())
+	context.Request = httptest.NewRequest("GET", "/?lang=ru", nil)
+	generator.setTranslationContext(context, locale.RU)
+
+	require.Equal(t, locale.RU, LangContext(context.Request.Context()))
+	require.Equal(t, "Привет", TranslateContext(context.Request.Context(), "test.greeting", "Hello"))
+}
 
 func TestLocalizeRenderer_LocalizesPublicTextOnly(t *testing.T) {
 	generator := &Generator{translations: map[locale.Lang]map[string]string{
@@ -63,7 +77,7 @@ func TestLocalizeRenderer_LocalizesPublicTextOnly(t *testing.T) {
 			Title:    "list.title",
 			Subtitle: "list.subtitle",
 			Filters: &renderer.Filters{PillRows: [][]renderer.FilterPill{{
-				{Label: "All", LabelKey: "pill.all", Key: "status", Val: "all"},
+				{Label: "All", LabelKey: "pill.all", CountField: "all_count", Key: "status", Val: "all"},
 			}}, Groups: []renderer.FilterGroup{{
 				ID: "price", Label: "Price", LabelKey: "filter.price", Placement: renderer.FilterGroupPlacementPrimary, Presentation: renderer.FilterGroupPresentationTabs,
 				Sections: []renderer.FilterGroupSection{{ID: "incall", Label: "Incall", LabelKey: "filter.incall", Fields: []string{"price"}}},
@@ -147,6 +161,7 @@ func TestLocalizeRenderer_LocalizesPublicTextOnly(t *testing.T) {
 	require.Equal(t, "Список", localized.List.Title)
 	require.Equal(t, "Все", localized.List.Filters.PillRows[0][0].Label)
 	require.Empty(t, localized.List.Filters.PillRows[0][0].LabelKey)
+	require.Equal(t, "all_count", localized.List.Filters.PillRows[0][0].CountField)
 	require.Equal(t, "Поиск", localized.List.Filters.Text.SearchPlaceholder)
 	require.Equal(t, "Сбросить фильтр", localized.List.Filters.Text.ResetLabel)
 	require.Equal(t, "Сбросить всё", localized.List.Filters.Text.ResetAllLabel)
