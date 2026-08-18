@@ -3,6 +3,7 @@ package module
 import (
 	"database/sql"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -13,6 +14,20 @@ import (
 	"github.com/gin-gonic/gin"
 	pg "github.com/go-jet/jet/v2/postgres"
 )
+
+func validationResponseMessage(fallback string, errs map[string]string) string {
+	keys := make([]string, 0, len(errs))
+	for key := range errs {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if message := strings.TrimSpace(errs[key]); message != "" {
+			return message
+		}
+	}
+	return fallback
+}
 
 func (generator *Generator) getPagination(page int64, size int64) (int64, int64, int64) {
 	var limit int64

@@ -928,7 +928,7 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 
 		errs := generator.checkRequest(c, input, module, action, fields.ScenarioAdd, lang)
 		if len(errs) > 0 {
-			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, errs)
+			response.ErrorResponse(l, c, http.StatusBadRequest, validationResponseMessage(GeneratorErrorAdd, errs), errs)
 			return
 		}
 
@@ -1369,7 +1369,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 
 		errs := generator.checkRequest(c, input, module, action, fields.ScenarioUpdate, lang)
 		if len(errs) > 0 {
-			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, errs)
+			response.ErrorResponse(l, c, http.StatusBadRequest, validationResponseMessage(GeneratorErrorUpdate, errs), errs)
 			return
 		}
 
