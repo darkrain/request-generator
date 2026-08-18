@@ -1334,6 +1334,7 @@ type ActionPresentation struct {
     IconOnly         *bool
     Variant          ActionVariant
     Appearance       ActionAppearance
+    Placement        ActionPlacement
     ActiveAppearance ActionAppearance
     Active           string
     Block            *bool
@@ -1342,6 +1343,15 @@ type ActionPresentation struct {
     DisabledIf       *Condition
 }
 ```
+
+`placement` is optional. `full` stretches a card action across its action row;
+`filter_footer` places a list action immediately after the filter controls.
+An omitted placement keeps the renderer's normal action position. The value is
+presentation-only and does not change action execution.
+
+Modal actions may set `modal.show_header=false` when the rendered modal body
+already owns its heading. This hides only the popup heading; the shared popup
+still owns its close control and accessible dialog surface.
 
 Он описывает только вид и интерактивное состояние. В нём нельзя передавать
 `endpoint`, `method`, payload, `APIAction`, route, modal или result: request

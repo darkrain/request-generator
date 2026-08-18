@@ -784,6 +784,7 @@ func cloneModalAction(v *ModalAction) *ModalAction {
 		return nil
 	}
 	cp := *v
+	cp.ShowHeader = clonePtr(v.ShowHeader)
 	cp.Data = cloneMap(v.Data)
 	return &cp
 }

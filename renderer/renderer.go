@@ -1894,6 +1894,7 @@ type ActionPresentation struct {
 	IconOnly         *bool            `json:"icon_only,omitempty"`
 	Variant          ActionVariant    `json:"variant,omitempty"`
 	Appearance       ActionAppearance `json:"appearance,omitempty"`
+	Placement        ActionPlacement  `json:"placement,omitempty"`
 	ActiveAppearance ActionAppearance `json:"active_appearance,omitempty"`
 	Active           string           `json:"active,omitempty"`
 	Block            *bool            `json:"block,omitempty"`
@@ -1903,6 +1904,9 @@ type ActionPresentation struct {
 }
 
 func (presentation ActionPresentation) Validate() error {
+	if !presentation.Placement.Valid() {
+		return fmt.Errorf("unsupported placement %q", presentation.Placement)
+	}
 	if presentation.VisibleIf != nil && !hasCondition(presentation.VisibleIf) {
 		return fmt.Errorf("visible_if is invalid")
 	}
@@ -1995,9 +1999,10 @@ type APIAction struct {
 }
 
 type ModalAction struct {
-	Renderer RendererKey            `json:"renderer,omitempty"`
-	Title    string                 `json:"title,omitempty"`
-	Data     map[string]interface{} `json:"data,omitempty"`
+	Renderer   RendererKey            `json:"renderer,omitempty"`
+	Title      string                 `json:"title,omitempty"`
+	ShowHeader *bool                  `json:"show_header,omitempty"`
+	Data       map[string]interface{} `json:"data,omitempty"`
 }
 
 // ClientAction describes a client capability selected by the API. The
