@@ -1,7 +1,6 @@
 package module
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 
@@ -109,7 +108,7 @@ func atomicValueFromField(field fields.ModuleField, value interface{}) (actions.
 			return actions.AtomicValue{}, fmt.Errorf("expected array")
 		}
 	case fields.ModuleFieldTypeObject:
-		encoded, err := json.Marshal(value)
+		encoded, err := fields.MarshalJSONObject(value)
 		if err != nil {
 			return actions.AtomicValue{}, err
 		}

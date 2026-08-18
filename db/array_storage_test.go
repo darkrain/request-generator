@@ -14,6 +14,7 @@ import (
 )
 
 const jsonArrayStorageValue = `[{"cid":"bafy-test","kind":"image"}]`
+const jsonObjectStorageValue = `{"source":"profile_settings","upload":true}`
 
 func TestDBAddStoresJSONArray(t *testing.T) {
 	sqlDB, mock, err := sqlmock.New()
@@ -44,6 +45,59 @@ func TestDBAddStoresJSONArray(t *testing.T) {
 	})
 	require.True(t, ok)
 	require.Equal(t, int64(17), stored.Value)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDBAddStoresJSONObject(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	id := pg.IntegerColumn("id")
+	metadata := pg.StringColumn("metadata")
+	assets := pg.NewTable("public", "assets", "", id, metadata)
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta(`INSERT INTO public."assets" ("metadata") VALUES ($1) RETURNING "id"`)).
+		WithArgs(jsonObjectStorageValue).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(18))
+	mock.ExpectCommit()
+
+	_, err = NewDB(sqlDB).Add(log.NewEntry(log.New()), assets, id, []fields.ModuleField{{
+		Column: metadata,
+		Type:   fields.ModuleFieldTypeObject,
+	}}, map[string]interface{}{
+		"metadata": map[string]interface{}{"source": "profile_settings", "upload": true},
+	}, nil)
+
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestDBUpdateStoresJSONObject(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	id := pg.IntegerColumn("id")
+	metadata := pg.StringColumn("metadata")
+	assets := pg.NewTable("public", "assets", "", id, metadata)
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE public."assets" SET "metadata" = $1 WHERE assets.id = $2`)).
+		WithArgs(jsonObjectStorageValue, 18).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT assets.id AS "assets.id", assets.metadata AS "assets.metadata" FROM public.assets WHERE assets.id = $1 GROUP BY assets.id LIMIT $2;`)).
+		WithArgs(18, 1).
+		WillReturnRows(sqlmock.NewRows([]string{"assets.id", "assets.metadata"}).AddRow(18, jsonObjectStorageValue))
+
+	_, err = NewDB(sqlDB).Update(log.NewEntry(log.New()), assets, id, []fields.ModuleField{{
+		Column: metadata,
+		Type:   fields.ModuleFieldTypeObject,
+	}}, map[string]interface{}{
+		"metadata": map[string]interface{}{"source": "profile_settings", "upload": true},
+	}, id.EQ(pg.Int(18)), nil)
+
+	require.NoError(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
