@@ -101,13 +101,22 @@ func (localizer textLocalizer) localizeListPage(page *ListPage) {
 		}
 		if page.Summary.Trend != nil {
 			trend := page.Summary.Trend
+			localizer.localizeTextFields(&trend.Title, &trend.Subtitle)
 			trend.AriaLabel = localizer.localizeRendererText(trend.AriaLabel, trend.AriaLabelKey)
 			trend.AriaLabelKey = ""
 			trend.EmptyLabel = localizer.localizeRendererText(trend.EmptyLabel, trend.EmptyLabelKey)
 			trend.EmptyLabelKey = ""
 			trend.LoadingLabel = localizer.localizeRendererText(trend.LoadingLabel, trend.LoadingLabelKey)
 			trend.LoadingLabelKey = ""
+			for i := range trend.Series {
+				trend.Series[i].Label = localizer.localizeRendererText(trend.Series[i].Label, trend.Series[i].LabelKey)
+				trend.Series[i].LabelKey = ""
+			}
+			localizer.localizeDateRangeToolbar(trend.DateRange)
 		}
+	}
+	if page.Filters != nil {
+		localizer.localizeDateRangeToolbar(page.Filters.DateRange)
 	}
 	if page.GroupBy != nil {
 		localizer.localizeTextFields(&page.GroupBy.TodayLabel, &page.GroupBy.YesterdayLabel, &page.GroupBy.ThisWeekLabel, &page.GroupBy.EarlierLabel)
@@ -119,6 +128,23 @@ func (localizer textLocalizer) localizeListPage(page *ListPage) {
 		localizer.localizeTextFields(&page.Selection.SelectedLabel)
 		localizer.localizeRendererAction(page.Selection.Clear)
 		localizer.localizeRendererAction(page.Selection.Proceed)
+	}
+}
+
+func (localizer textLocalizer) localizeDateRangeToolbar(toolbar *DateRangeToolbar) {
+	if toolbar == nil {
+		return
+	}
+	localizer.localizeTextFields(&toolbar.Placeholder, &toolbar.ApplyLabel, &toolbar.CancelLabel, &toolbar.StartLabel, &toolbar.EndLabel, &toolbar.EmptyLabel, &toolbar.DialogLabel, &toolbar.PreviousLabel, &toolbar.NextLabel)
+	for i := range toolbar.Presets {
+		toolbar.Presets[i].Label = localizer.localizeRendererText(toolbar.Presets[i].Label, toolbar.Presets[i].LabelKey)
+		toolbar.Presets[i].LabelKey = ""
+	}
+	for i := range toolbar.Months {
+		toolbar.Months[i] = localizer.localizeRendererText(toolbar.Months[i], "")
+	}
+	for i := range toolbar.Weekdays {
+		toolbar.Weekdays[i] = localizer.localizeRendererText(toolbar.Weekdays[i], "")
 	}
 }
 

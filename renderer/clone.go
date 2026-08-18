@@ -176,6 +176,7 @@ func cloneFilters(v *Filters) *Filters {
 	cp.Reset = cloneFilterReset(v.Reset)
 	cp.Text = clonePtr(v.Text)
 	cp.RangePresets = cloneFilterRangePresets(v.RangePresets)
+	cp.DateRange = cloneDateRangeToolbar(v.DateRange)
 	return &cp
 }
 
@@ -287,7 +288,22 @@ func cloneSummary(v *Summary) *Summary {
 	cp.ShowAction = clonePtr(v.ShowAction)
 	cp.Resource = cloneResource(v.Resource)
 	cp.Load = cloneResourceLoad(v.Load)
-	cp.Trend = clonePtr(v.Trend)
+	if v.Trend != nil {
+		cp.Trend = clonePtr(v.Trend)
+		cp.Trend.Series = cloneSlice(v.Trend.Series)
+		cp.Trend.DateRange = cloneDateRangeToolbar(v.Trend.DateRange)
+	}
+	return &cp
+}
+
+func cloneDateRangeToolbar(v *DateRangeToolbar) *DateRangeToolbar {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.Presets = cloneSlice(v.Presets)
+	cp.Months = cloneSlice(v.Months)
+	cp.Weekdays = cloneSlice(v.Weekdays)
 	return &cp
 }
 

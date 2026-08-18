@@ -15,8 +15,13 @@ func TestSummaryTrendUsesTheExistingSummaryResource(t *testing.T) {
 			ChangeField: "total_change", DirectionField: "total_direction", Icon: "chart", Tone: "cyan",
 		}},
 		Trend: &SummaryTrend{
-			PointsField: "points", PeriodField: "period", AriaLabelKey: "summary.chart",
-			EmptyLabelKey: "summary.empty", LoadingLabelKey: "summary.loading", Tone: "pink",
+			Title: "summary.title", Subtitle: "summary.subtitle", PeriodField: "period", AriaLabelKey: "summary.chart",
+			EmptyLabelKey: "summary.empty", LoadingLabelKey: "summary.loading",
+			Series: []SummaryTrendSeries{
+				{ID: "total", LabelKey: "summary.total", PointsField: "total_points", Tone: "pink", Fill: true},
+				{ID: "earnings", LabelKey: "summary.earnings", PointsField: "earnings_points", Tone: "amber", Axis: SummaryTrendAxisSecondary},
+			},
+			DateRange: &DateRangeToolbar{Field: "created_at", DefaultPreset: "week", Presets: []DateRangePreset{{ID: "week", LabelKey: "range.week", Days: 7}, {ID: "all", LabelKey: "range.all", Days: 0}}},
 		},
 	}}}
 
@@ -31,20 +36,24 @@ func TestSummaryTrendUsesTheExistingSummaryResource(t *testing.T) {
 	require.Equal(t, "localized:summary.chart", localized.List.Summary.Trend.AriaLabel)
 	require.Equal(t, "localized:summary.empty", localized.List.Summary.Trend.EmptyLabel)
 	require.Equal(t, "localized:summary.loading", localized.List.Summary.Trend.LoadingLabel)
+	require.Equal(t, "localized:summary.earnings", localized.List.Summary.Trend.Series[1].Label)
+	require.Equal(t, "localized:range.week", localized.List.Summary.Trend.DateRange.Presets[0].Label)
 	require.Empty(t, localized.List.Summary.Trend.AriaLabelKey)
 
 	clone := value.Clone()
-	clone.List.Summary.Trend.PointsField = "other_points"
-	require.Equal(t, "points", value.List.Summary.Trend.PointsField)
+	clone.List.Summary.Trend.Series[0].PointsField = "other_points"
+	clone.List.Summary.Trend.DateRange.Presets[0].Days = 30
+	require.Equal(t, "total_points", value.List.Summary.Trend.Series[0].PointsField)
+	require.Equal(t, 7, value.List.Summary.Trend.DateRange.Presets[0].Days)
 
 	payload, err := json.Marshal(value)
 	require.NoError(t, err)
-	require.Contains(t, string(payload), `"points_field":"points"`)
+	require.Contains(t, string(payload), `"points_field":"total_points"`)
 }
 
-func TestSummaryTrendRequiresPointsField(t *testing.T) {
-	err := (Universal{List: &ListPage{Summary: &Summary{Trend: &SummaryTrend{Tone: "cyan"}}}}).Validate()
-	require.EqualError(t, err, "renderer.Universal: list page: renderer.Summary: trend points field is required")
+func TestSummaryTrendRequiresTypedSeries(t *testing.T) {
+	err := (Universal{List: &ListPage{Summary: &Summary{Trend: &SummaryTrend{}}}}).Validate()
+	require.EqualError(t, err, "renderer.Universal: list page: renderer.Summary: trend series are required")
 }
 
 func TestSummaryRejectsUnknownPresentation(t *testing.T) {

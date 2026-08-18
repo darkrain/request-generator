@@ -373,6 +373,11 @@ func validateListPage(scope string, page *ListPage) error {
 	if err := validateFilterPills(scope, page.Filters); err != nil {
 		return err
 	}
+	if page.Filters != nil {
+		if err := page.Filters.DateRange.Validate(scope + " filters"); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -714,6 +719,7 @@ type Filters struct {
 	Reset             *FilterReset         `json:"reset,omitempty"`
 	Text              *FilterText          `json:"text,omitempty"`
 	RangePresets      []FilterRangePresets `json:"range_presets,omitempty"`
+	DateRange         *DateRangeToolbar    `json:"date_range,omitempty"`
 }
 
 // FilterPresentation selects a reusable arrangement of the controls declared
@@ -987,18 +993,69 @@ type SummaryItem struct {
 	Tone           string `json:"tone,omitempty"`
 }
 
-// SummaryTrend binds an already prepared series to the same record loaded by
+// SummaryTrend binds already prepared series to the same record loaded by
 // Summary.Resource. The renderer never calculates, groups or formats points.
 type SummaryTrend struct {
-	PointsField     string `json:"points_field"`
-	PeriodField     string `json:"period_field,omitempty"`
-	AriaLabel       string `json:"aria_label,omitempty"`
-	AriaLabelKey    string `json:"aria_label_key,omitempty"`
-	EmptyLabel      string `json:"empty_label,omitempty"`
-	EmptyLabelKey   string `json:"empty_label_key,omitempty"`
-	LoadingLabel    string `json:"loading_label,omitempty"`
-	LoadingLabelKey string `json:"loading_label_key,omitempty"`
-	Tone            string `json:"tone,omitempty"`
+	Title           string               `json:"title,omitempty"`
+	Subtitle        string               `json:"subtitle,omitempty"`
+	PeriodField     string               `json:"period_field,omitempty"`
+	AriaLabel       string               `json:"aria_label,omitempty"`
+	AriaLabelKey    string               `json:"aria_label_key,omitempty"`
+	EmptyLabel      string               `json:"empty_label,omitempty"`
+	EmptyLabelKey   string               `json:"empty_label_key,omitempty"`
+	LoadingLabel    string               `json:"loading_label,omitempty"`
+	LoadingLabelKey string               `json:"loading_label_key,omitempty"`
+	Series          []SummaryTrendSeries `json:"series"`
+	DateRange       *DateRangeToolbar    `json:"date_range,omitempty"`
+}
+
+type SummaryTrendAxis string
+
+const (
+	SummaryTrendAxisPrimary   SummaryTrendAxis = "primary"
+	SummaryTrendAxisSecondary SummaryTrendAxis = "secondary"
+)
+
+// SummaryTrendSeries describes one server-prepared line. Axis allows values
+// with different units, such as counts and money, to share one chart.
+type SummaryTrendSeries struct {
+	ID          string           `json:"id"`
+	Label       string           `json:"label,omitempty"`
+	LabelKey    string           `json:"label_key,omitempty"`
+	PointsField string           `json:"points_field"`
+	Tone        string           `json:"tone,omitempty"`
+	Axis        SummaryTrendAxis `json:"axis,omitempty"`
+	Fill        bool             `json:"fill,omitempty"`
+	Dashed      bool             `json:"dashed,omitempty"`
+}
+
+// DateRangeToolbar is a presentation contract for a server-side date filter.
+// Field is sent as filter[field]=YYYY-MM-DD..YYYY-MM-DD. A preset with Days=0
+// clears that filter and therefore represents the complete period.
+type DateRangeToolbar struct {
+	Field         string            `json:"field"`
+	DefaultPreset string            `json:"default_preset,omitempty"`
+	Presets       []DateRangePreset `json:"presets,omitempty"`
+	Min           string            `json:"min,omitempty"`
+	Max           string            `json:"max,omitempty"`
+	Placeholder   string            `json:"placeholder,omitempty"`
+	ApplyLabel    string            `json:"apply_label,omitempty"`
+	CancelLabel   string            `json:"cancel_label,omitempty"`
+	StartLabel    string            `json:"start_label,omitempty"`
+	EndLabel      string            `json:"end_label,omitempty"`
+	EmptyLabel    string            `json:"empty_label,omitempty"`
+	DialogLabel   string            `json:"dialog_label,omitempty"`
+	PreviousLabel string            `json:"previous_label,omitempty"`
+	NextLabel     string            `json:"next_label,omitempty"`
+	Months        []string          `json:"months,omitempty"`
+	Weekdays      []string          `json:"weekdays,omitempty"`
+}
+
+type DateRangePreset struct {
+	ID       string `json:"id"`
+	Label    string `json:"label,omitempty"`
+	LabelKey string `json:"label_key,omitempty"`
+	Days     int    `json:"days"`
 }
 
 func (summary *Summary) Validate() error {
@@ -1031,8 +1088,65 @@ func (summary *Summary) Validate() error {
 			return fmt.Errorf("renderer.Summary: item %q value field is required", item.ID)
 		}
 	}
-	if summary.Trend != nil && summary.Trend.PointsField == "" {
-		return fmt.Errorf("renderer.Summary: trend points field is required")
+	if summary.Trend != nil {
+		if len(summary.Trend.Series) == 0 {
+			return fmt.Errorf("renderer.Summary: trend series are required")
+		}
+		seriesIDs := make(map[string]struct{}, len(summary.Trend.Series))
+		for _, series := range summary.Trend.Series {
+			if series.ID == "" || series.PointsField == "" || (series.Label == "" && series.LabelKey == "") {
+				return fmt.Errorf("renderer.Summary: trend series id, label and points field are required")
+			}
+			if _, exists := seriesIDs[series.ID]; exists {
+				return fmt.Errorf("renderer.Summary: trend series %q is duplicated", series.ID)
+			}
+			seriesIDs[series.ID] = struct{}{}
+			if series.Axis != "" && series.Axis != SummaryTrendAxisPrimary && series.Axis != SummaryTrendAxisSecondary {
+				return fmt.Errorf("renderer.Summary: trend series %q has unsupported axis %q", series.ID, series.Axis)
+			}
+		}
+		if err := summary.Trend.DateRange.Validate("summary trend"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (toolbar *DateRangeToolbar) Validate(scope string) error {
+	if toolbar == nil {
+		return nil
+	}
+	if toolbar.Field == "" {
+		return fmt.Errorf("renderer.DateRangeToolbar: %s field is required", scope)
+	}
+	if len(toolbar.Months) != 0 && len(toolbar.Months) != 12 {
+		return fmt.Errorf("renderer.DateRangeToolbar: %s months must contain 12 values", scope)
+	}
+	if len(toolbar.Weekdays) != 0 && len(toolbar.Weekdays) != 7 {
+		return fmt.Errorf("renderer.DateRangeToolbar: %s weekdays must contain 7 values", scope)
+	}
+	ids := make(map[string]struct{}, len(toolbar.Presets))
+	for _, preset := range toolbar.Presets {
+		if preset.ID == "" || (preset.Label == "" && preset.LabelKey == "") || preset.Days < 0 {
+			return fmt.Errorf("renderer.DateRangeToolbar: %s preset id, label and non-negative days are required", scope)
+		}
+		if _, exists := ids[preset.ID]; exists {
+			return fmt.Errorf("renderer.DateRangeToolbar: %s preset %q is duplicated", scope, preset.ID)
+		}
+		ids[preset.ID] = struct{}{}
+	}
+	if toolbar.DefaultPreset != "" {
+		if _, exists := ids[toolbar.DefaultPreset]; !exists {
+			return fmt.Errorf("renderer.DateRangeToolbar: %s default preset %q is not declared", scope, toolbar.DefaultPreset)
+		}
+	}
+	for _, value := range []string{toolbar.Min, toolbar.Max} {
+		if value == "" {
+			continue
+		}
+		if _, err := time.Parse("2006-01-02", value); err != nil {
+			return fmt.Errorf("renderer.DateRangeToolbar: %s date %q must use YYYY-MM-DD", scope, value)
+		}
 	}
 	return nil
 }
