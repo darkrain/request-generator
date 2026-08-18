@@ -88,6 +88,32 @@ func MarshalJSONArray(value interface{}) ([]byte, error) {
 	return encoded, nil
 }
 
+// MarshalJSONObject validates and serializes a value for a JSON/JSONB object
+// column. A JSON object provided as a string stays JSON rather than becoming
+// a quoted JSON string, which preserves defaults such as "{}".
+func MarshalJSONObject(value interface{}) ([]byte, error) {
+	if raw, ok := value.(string); ok {
+		encoded := []byte(strings.TrimSpace(raw))
+		if !strings.HasPrefix(string(encoded), "{") {
+			return nil, fmt.Errorf("expected JSON object")
+		}
+		var object map[string]interface{}
+		if err := json.Unmarshal(encoded, &object); err != nil {
+			return nil, err
+		}
+		return encoded, nil
+	}
+
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.HasPrefix(strings.TrimSpace(string(encoded)), "{") {
+		return nil, fmt.Errorf("expected JSON object")
+	}
+	return encoded, nil
+}
+
 type ModuleFieldFormType string
 
 const (

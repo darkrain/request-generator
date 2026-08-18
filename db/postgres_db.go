@@ -1081,14 +1081,22 @@ func hasModuleField(moduleFields []fields.ModuleField, columnName string) bool {
 }
 
 func dbValue(field fields.ModuleField, value interface{}) interface{} {
-	if field.Type != fields.ModuleFieldTypeArray {
-		return value
-	}
-	if field.ArrayStorage.Normalize() == fields.ModuleFieldArrayStorageJSON {
-		encoded, err := fields.MarshalJSONArray(value)
-		if err == nil {
-			return string(encoded)
+	switch field.Type {
+	case fields.ModuleFieldTypeObject:
+		encoded, err := fields.MarshalJSONObject(value)
+		if err != nil {
+			return value
 		}
+		return string(encoded)
+	case fields.ModuleFieldTypeArray:
+		if field.ArrayStorage.Normalize() == fields.ModuleFieldArrayStorageJSON {
+			encoded, err := fields.MarshalJSONArray(value)
+			if err == nil {
+				return string(encoded)
+			}
+			return value
+		}
+	default:
 		return value
 	}
 
