@@ -2204,6 +2204,7 @@ Generator behavior:
           {
             "id": "identity",
             "type": "identity",
+            "action_id": "open_story",
             "fields": ["avatar", "name", "status"]
           },
           {
@@ -2246,6 +2247,12 @@ Generator behavior:
   }
 }
 ```
+
+`components[].action_id` — необязательная ссылка на action из
+`record_page.actions`. Она не дублирует descriptor действия: renderer берёт
+его по `id` и передаёт стандартный record scope. Generator отклоняет ссылку
+на отсутствующий action. Компонент без `action_id` остаётся неинтерактивным;
+конкретный consumer применяет ссылку только к поддерживаемому типу компонента.
 
 `record_page.sections[].components` и `record_page.sections[].stack` являются canonical metadata для display renderer.
 
