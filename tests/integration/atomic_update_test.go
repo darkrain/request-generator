@@ -263,6 +263,27 @@ func TestAtomicUpdateRejectsInvalidTypedSelectorBeforeOpeningTransaction(t *test
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestAtomicUpdateReturnsOperationErrorAsClientMessage(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	localized := "Этот тикет уже закрыт."
+	operation := func(context.Context, actions.AtomicExecutor, actions.AtomicUpdateInput) (actions.AtomicRecord, error) {
+		return actions.AtomicRecord{}, errors.New(localized)
+	}
+	engine := setupAtomicUpdateRouter(t, sqlDB, module.NewMemoryBroker(module.MemoryBrokerOptions{}), operation, func(*gin.Context, module.RelationScope) error { return nil })
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(41))
+	mock.ExpectRollback()
+
+	w := executeJSONRequest(engine, http.MethodPost, "/admin/atomic-update-items/id/41", map[string]interface{}{"title": "updated"})
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), localized)
+	require.NotContains(t, w.Body.String(), "Cannot update record")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func mustAtomicInputString(t *testing.T, input actions.AtomicInput, name string) string {
 	t.Helper()
 	value, ok := input.String(name)

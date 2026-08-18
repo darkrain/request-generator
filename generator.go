@@ -882,7 +882,7 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 			err := action.BeforeRequest(c)
 			if err != nil {
 				if !c.Writer.Written() {
-					response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{
+					response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), []string{
 						err.Error(),
 					})
 				}
@@ -982,7 +982,7 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 			}()
 			output, err := action.Atomic.Operation(ctx, db.NewAtomicExecutor(tx), atomicInput)
 			if err != nil {
-				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{err.Error()})
+				response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), []string{err.Error()})
 				return
 			}
 			if output.PrimaryKey == "" {
@@ -1320,7 +1320,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 			err = action.BeforeRequest(c)
 			if err != nil {
 				if !c.Writer.Written() {
-					response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, nil)
+					response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), []string{err.Error()})
 				}
 				return
 			}
@@ -1447,7 +1447,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 				Selector: atomicSelector,
 			})
 			if err != nil {
-				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, []string{err.Error()})
+				response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), []string{err.Error()})
 				return
 			}
 			if output.PrimaryKey == "" {
@@ -1546,7 +1546,7 @@ func (generator *Generator) actionDelete(module *BaseModule, action actions.Dele
 
 		err := action.BeforeRequest(c)
 		if err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorDelete, nil)
+			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), []string{err.Error()})
 			return
 		}
 
