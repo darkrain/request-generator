@@ -1720,6 +1720,7 @@ pagination и фильтры не искажают значение счётчи
   "size": "sm",
   "surface_variant": "secondary",
   "surface_effect": "flat",
+  "leading_accent": {"tone": "pink"},
   "badge_size": "sm",
   "action_size": "sm",
   "action_layout": "edge_fill",
@@ -1751,6 +1752,9 @@ pagination и фильтры не искажают значение счётчи
 поля строки. `icon.marker` задаёт нетекстовый индикатор и его условие видимости
 относительно текущей строки. `meta` является дополнительным коротким текстом; `relative_time`
 разрешён для date-like значения и форматируется UI kit согласно locale браузера.
+
+`leading_accent` опционально добавляет линию по ведущему краю карточки. `tone`
+передаёт расширяемый presentation token; без `leading_accent` линия не рисуется.
 
 `badges[].visible_if` использует тот же `Condition` и позволяет producer-у
 показывать badge только для записей, где он несёт полезный визуальный сигнал.

@@ -1009,6 +1009,7 @@ type CardSchema struct {
 	Size             SizeToken        `json:"size,omitempty"`
 	SurfaceVariant   SurfaceVariant   `json:"surface_variant,omitempty"`
 	SurfaceEffect    SurfaceEffect    `json:"surface_effect,omitempty"`
+	LeadingAccent    *CardEdgeAccent  `json:"leading_accent,omitempty"`
 	BadgeSize        SizeToken        `json:"badge_size,omitempty"`
 	ActionSize       SizeToken        `json:"action_size,omitempty"`
 	DeleteActionSize SizeToken        `json:"delete_action_size,omitempty"`
@@ -1036,6 +1037,9 @@ func (schema *CardSchema) Validate() error {
 	default:
 		return fmt.Errorf("renderer.CardSchema: unsupported action layout %q", schema.ActionLayout)
 	}
+	if schema.LeadingAccent != nil && schema.LeadingAccent.Tone == "" {
+		return fmt.Errorf("renderer.CardSchema: leading_accent tone is required")
+	}
 	for _, binding := range []*TextBinding{schema.Title, schema.Subtitle, schema.Meta, schema.Description} {
 		if err := binding.Validate(); err != nil {
 			return err
@@ -1045,6 +1049,12 @@ func (schema *CardSchema) Validate() error {
 		return fmt.Errorf("renderer.CardSchema: icon field or icon_field is required")
 	}
 	return nil
+}
+
+// CardEdgeAccent adds an opt-in visual line to the leading edge of a card.
+// Tone is an extensible presentation token interpreted by the consuming UI.
+type CardEdgeAccent struct {
+	Tone ToneToken `json:"tone"`
 }
 
 // IconBinding resolves an icon and its visual tone from a row. IconField and
