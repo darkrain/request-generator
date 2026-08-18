@@ -46,6 +46,10 @@ func LocalizeGlobalWidget(widget GlobalWidget, resolve TextResolver) GlobalWidge
 	}
 	for index := range localized.Workspace.Commands {
 		localized.Workspace.Commands[index].Label = resolve(localized.Workspace.Commands[index].Label, "")
+		if confirm := localized.Workspace.Commands[index].Confirm; confirm != nil {
+			localizer := textLocalizer{resolve: resolve}
+			localizer.localizeTextFields(&confirm.Title, &confirm.Message, &confirm.CancelLabel, &confirm.ConfirmLabel)
+		}
 	}
 	localizer := textLocalizer{resolve: resolve}
 	for index := range localized.Workspace.ComposerActions {
@@ -167,6 +171,7 @@ func (surface WidgetSurface) Validate() error {
 // shell surface. Resources remain normal module actions.
 type WorkspaceWidget struct {
 	Selection       WorkspaceSelection `json:"selection"`
+	Mode            WorkspaceMode      `json:"mode,omitempty"`
 	Summary         *Resource          `json:"summary,omitempty"`
 	Master          Resource           `json:"master"`
 	Detail          Resource           `json:"detail"`
@@ -180,6 +185,9 @@ type WorkspaceWidget struct {
 }
 
 func (workspace WorkspaceWidget) Validate() error {
+	if err := workspace.Mode.Validate(); err != nil {
+		return fmt.Errorf("mode: %w", err)
+	}
 	if workspace.Selection.Field == "" {
 		return fmt.Errorf("selection field is required")
 	}
@@ -260,6 +268,24 @@ func (workspace WorkspaceWidget) Validate() error {
 	return nil
 }
 
+// WorkspaceMode controls only the visible master/detail composition. The
+// master resource remains the source of the selected record in both modes.
+type WorkspaceMode string
+
+const (
+	WorkspaceModeMasterDetail WorkspaceMode = "master_detail"
+	WorkspaceModeDetailOnly   WorkspaceMode = "detail_only"
+)
+
+func (mode WorkspaceMode) Validate() error {
+	switch mode {
+	case "", WorkspaceModeMasterDetail, WorkspaceModeDetailOnly:
+		return nil
+	default:
+		return fmt.Errorf("unsupported value %q", mode)
+	}
+}
+
 type WorkspaceSelection struct {
 	// Field identifies the current master row. Bindings may read this field or
 	// another declared scalar field from that same selected row.
@@ -317,6 +343,9 @@ type WorkspaceCommand struct {
 	// Input permits an add command to bind values entered in the workspace.
 	// Field definitions remain owned by the target module defrec response.
 	Input *WorkspaceCommandInput `json:"input,omitempty"`
+	// Confirm describes an optional confirmation step before the generated
+	// request is executed. Its text values are producer translation keys.
+	Confirm *Confirm `json:"confirm,omitempty"`
 	// AfterSuccess applies the typed result of this standard command to the
 	// shell, for example by opening another registered global widget. The
 	// command request remains generated from Resource.
@@ -347,6 +376,11 @@ func (command WorkspaceCommand) Validate() error {
 	}
 	if err := command.Input.Validate(command.Bindings); err != nil {
 		return fmt.Errorf("input: %w", err)
+	}
+	if command.Confirm != nil {
+		if err := command.Confirm.Validate(); err != nil {
+			return fmt.Errorf("confirm: %w", err)
+		}
 	}
 	if err := command.Resource.Validate("resource"); err != nil {
 		return err
@@ -878,6 +912,10 @@ func cloneWorkspaceCommands(values []WorkspaceCommand) []WorkspaceCommand {
 			input := *value.Input
 			input.Fields = cloneSlice(value.Input.Fields)
 			cloned[index].Input = &input
+		}
+		if value.Confirm != nil {
+			confirm := *value.Confirm
+			cloned[index].Confirm = &confirm
 		}
 		cloned[index].Bindings = cloneRequestBindings(value.Bindings)
 		cloned[index].Refresh = cloneSlice(value.Refresh)
