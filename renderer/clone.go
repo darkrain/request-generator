@@ -287,6 +287,7 @@ func cloneSummary(v *Summary) *Summary {
 	cp.ShowAction = clonePtr(v.ShowAction)
 	cp.Resource = cloneResource(v.Resource)
 	cp.Load = cloneResourceLoad(v.Load)
+	cp.Trend = clonePtr(v.Trend)
 	return &cp
 }
 
@@ -407,10 +408,22 @@ func cloneFormSections(values []FormSection) []FormSection {
 		out[i].MediaLabels = clonePtr(v.MediaLabels)
 		out[i].MediaActions = cloneMediaGalleryActions(v.MediaActions)
 		out[i].Prompts = clonePromptList(v.Prompts)
+		out[i].DateRange = cloneDateRangeConfig(v.DateRange)
 		out[i].Resource = cloneResource(v.Resource)
 		out[i].Load = cloneResourceLoad(v.Load)
 	}
 	return out
+}
+
+func cloneDateRangeConfig(v *DateRangeConfig) *DateRangeConfig {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.DisabledDates = cloneSlice(v.DisabledDates)
+	cp.Months = cloneSlice(v.Months)
+	cp.Weekdays = cloneSlice(v.Weekdays)
+	return &cp
 }
 
 func cloneFieldMatrix(v *FieldMatrix) *FieldMatrix {
