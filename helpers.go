@@ -100,6 +100,15 @@ func (generator *Generator) effectiveListFilters(c *gin.Context, module *BaseMod
 	return registry
 }
 
+func fieldFormTypeForRole(field fields.ModuleField, role string) fields.ModuleFieldFormType {
+	if field.RoleFormType != nil {
+		if formType, ok := field.RoleFormType[role]; ok {
+			return formType
+		}
+	}
+	return field.FormType
+}
+
 func (generator *Generator) checkRequest(
 	context *gin.Context,
 	data map[string]interface{},
