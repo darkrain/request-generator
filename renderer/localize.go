@@ -181,6 +181,9 @@ func (localizer textLocalizer) localizeCardSchema(schema *CardSchema) {
 }
 
 func (localizer textLocalizer) localizeBadge(badge *Badge) {
+	if badge == nil {
+		return
+	}
 	badge.Label = localizer.localizeRendererText(badge.Label, badge.LabelKey)
 	badge.LabelKey = ""
 	for value, label := range badge.LabelMap {

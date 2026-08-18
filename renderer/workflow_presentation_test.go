@@ -111,3 +111,17 @@ func TestStatusTimelineUsesOneDeclaredField(t *testing.T) {
 	require.EqualError(t, (DisplayComponent{Type: DisplayStatusTimeline}).Validate(), "status timeline requires exactly one field")
 	require.EqualError(t, (DisplayComponent{Type: DisplayStatusTimeline, Fields: []string{"one", "two"}}).Validate(), "status timeline requires exactly one field")
 }
+
+func TestLocalizeWorkflowSummaryWithoutBadge(t *testing.T) {
+	value := Universal{Form: &FormPage{Workflow: &FormWorkflow{Summary: &FormWorkflowSummary{
+		Eyebrow: "workflow.eyebrow",
+		Title:   "workflow.title",
+	}}}}
+
+	localized := Localize(value, func(value, _ string) string { return "localized:" + value })
+
+	require.NotNil(t, localized.Form.Workflow.Summary)
+	require.Nil(t, localized.Form.Workflow.Summary.Badge)
+	require.Equal(t, "localized:workflow.eyebrow", localized.Form.Workflow.Summary.Eyebrow)
+	require.Equal(t, "localized:workflow.title", localized.Form.Workflow.Summary.Title)
+}
