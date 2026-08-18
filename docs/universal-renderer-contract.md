@@ -872,6 +872,7 @@ frontend использует обычный список. `query` содерж�
 | `media.item.thumbnail` | Компактная миниатюра для лент и списков. |
 | `media.item.hide_face` | Владелец запрашивает face-blur для отображения media. Это свойство media link, а не физического файла. |
 | `media.item.access_granted` | Явный результат server-side проверки доступа к private media. При `false` UI не пытается запускать закрытое video; image URL всё равно обязан проверять storage service. |
+| `media.item.badges` | Server-owned annotations конкретного tile. Использует общий `Badge` contract и подходит для сохранённого state вроде публикации или active срока, без client-only marker. |
 | `media.item.actions` | Действия, доступные именно для этого элемента media. Producer выдаёт их только после проверки прав; UI не выводит и не угадывает доступность по `visibility`, роли или URL. Каждое действие имеет обычный typed `Action` contract и получает текущий `MediaGalleryItem` как scope. |
 | `display_component.media_items` | Упорядоченные элементы для `media_gallery`; не требует дублировать их в module fields. |
 | `media.item.usage` | Назначение media: `gallery`, `avatar`, `poster`. |
@@ -1519,6 +1520,14 @@ Subscriptions: []renderer.WorkspaceSubscription{{
 локализованные `TextBinding` из event payload. `skip_empty_recipients` у
 atomic publish допускает отсутствие второго, optional effect для всех
 получателей, но не маскирует отсутствие получателей у обязательной публикации.
+
+Когда один и тот же refresh допустим для всех online-пользователей заданных
+ролей, producer использует `AtomicRealtimePublishConfig.Roles`, а не
+выгружает список user id. Generator публикует `role:{role}` и transport
+автоматически добавляет connection только его authenticated role и `role:all`.
+Событие такого topic не является источником данных: его payload должен быть
+безопасным для всей роли, а renderer перечитывает permission-filtered record
+или list через API.
 
 `WidgetSurface.size` использует общий `SizeToken`. Это семантический размер
 surface (`xs` ... `xl`), а не CSS-значение: consumer сам выбирает адаптивную

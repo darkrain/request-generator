@@ -1565,6 +1565,10 @@ type MediaGalleryItem struct {
 	SortOrder       int             `json:"sort_order"`
 	Title           string          `json:"title,omitempty"`
 	Description     string          `json:"description,omitempty"`
+	// Badges are server-owned annotations for an individual gallery item. They
+	// are useful for state that must survive reloads, such as a published media
+	// item, without making the browser infer state from a URL or local cache.
+	Badges          []Badge         `json:"badges,omitempty"`
 	Actions         []Action        `json:"actions,omitempty"`
 }
 

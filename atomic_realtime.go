@@ -44,8 +44,8 @@ func validateAtomicResultConfig(module *BaseModule, realtime *actions.RealtimeEv
 		return fmt.Errorf("atomic realtime publish requires declared realtime correlation")
 	}
 	for index, publish := range configuredPublishes {
-		if len(publish.Recipients) == 0 {
-			return fmt.Errorf("atomic realtime publish %d requires recipients", index)
+		if len(publish.Recipients) == 0 && len(publish.Roles) == 0 {
+			return fmt.Errorf("atomic realtime publish %d requires recipients or roles", index)
 		}
 		for recipientIndex, recipient := range publish.Recipients {
 			if err := recipient.UserID.Validate(); err != nil {
@@ -61,6 +61,16 @@ func validateAtomicResultConfig(module *BaseModule, realtime *actions.RealtimeEv
 			if kind != actions.AtomicValueKindInt && kind != actions.AtomicValueKindInts {
 				return fmt.Errorf("atomic realtime publish %d recipient %d field %q must be int or ints", index, recipientIndex, recipient.UserID.Field)
 			}
+		}
+		seenRoles := make(map[actions.Role]struct{}, len(publish.Roles))
+		for roleIndex, role := range publish.Roles {
+			if role == "" {
+				return fmt.Errorf("atomic realtime publish %d role %d is required", index, roleIndex)
+			}
+			if _, exists := seenRoles[role]; exists {
+				return fmt.Errorf("atomic realtime publish %d role %q is duplicated", index, role)
+			}
+			seenRoles[role] = struct{}{}
 		}
 		if publish.Correlation == nil {
 			return fmt.Errorf("atomic realtime publish %d requires correlation", index)
@@ -236,8 +246,16 @@ func atomicRealtimePublishesFor(configuredPublishes []actions.AtomicRealtimePubl
 		if configured.Correlation == nil {
 			return nil, fmt.Errorf("atomic realtime publish %d requires correlation", index)
 		}
-		topics := make([]string, 0, len(configured.Recipients))
+		topics := make([]string, 0, len(configured.Recipients)+len(configured.Roles))
 		seenTopics := make(map[string]struct{})
+		for _, role := range configured.Roles {
+			topic := realtimeRoleTopic(string(role))
+			if _, exists := seenTopics[topic]; exists {
+				continue
+			}
+			seenTopics[topic] = struct{}{}
+			topics = append(topics, topic)
+		}
 		for recipientIndex, recipient := range configured.Recipients {
 			value, err := resolveAtomicValueSource(input, result, recipient.UserID)
 			if err != nil {
