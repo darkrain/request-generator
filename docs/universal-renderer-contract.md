@@ -2,7 +2,7 @@
 
 Имя: `UniversalRenderer`
 
-Версия: `2.3.0`
+Версия: `2.5.0`
 
 Статус: `draft`
 
@@ -1027,7 +1027,12 @@ Media: &renderer.FieldMediaConfig{
     },
     "grid": {
       "enabled": true,
-      "mode": "cards"
+      "mode": "cards",
+      "columns": {
+        "desktop": 2,
+        "tablet": 2,
+        "mobile": 1
+      }
     },
     "pagination": {
       "renderer": "universal.pagination",
@@ -1051,7 +1056,7 @@ Media: &renderer.FieldMediaConfig{
 {
   "id": "work-area",
   "order": 10,
-  "renderer": {"name": "UniversalRenderer", "version": "2.3.0"},
+  "renderer": {"name": "UniversalRenderer", "version": "2.5.0"},
   "widget": {
     "surface": {
       "kind": "drawer",
@@ -1556,6 +1561,7 @@ request-generator.
 | `list_page.layout.type`, `record_page.layout.type` | `one_column`, `two_column`, `three_column` |
 | `list_page.layout.max_width` | `none`, `sm`, `md`, `lg`, `xl`, `full` |
 | `list_page.grid.mode` | `table`, `cards`, `list` |
+| `list_page.grid.columns.desktop`, `.tablet`, `.mobile` | Целое число от `1` до `6`; если `columns` задан, обязательны все три значения и `mobile <= tablet <= desktop` |
 | `pagination.mode` | `server`, `client` |
 | `card_schema.variant` | `default`, `media`, `compact`, `activity` |
 | `card_schema.surface_variant` | `default`, `primary`, `secondary` |
@@ -1569,6 +1575,27 @@ request-generator.
 | `form_page.sections[].block.variant` | `default`, `compact` |
 | `action.variant` | `default`, `primary`, `secondary`, `success`, `warning`, `danger` |
 | `action.appearance`, `action.active_appearance` | open token. Гарантированные UI kit варианты: `solid`, `outline`, `outline-fill`, `ghost`, `soft`, `link`; integration может передать свой string token. |
+
+`grid.mode` выбирает вид коллекции, а `grid.columns` независимо задаёт её
+responsive-геометрию. `CardSchema.Variant` описывает только саму карточку и не
+должен менять число колонок. Отсутствие всего объекта `columns` сохраняет
+дефолтное поведение consumer-а для обратной совместимости.
+
+Пример плотной сетки карточек:
+
+```json
+{
+  "grid": {
+    "enabled": true,
+    "mode": "cards",
+    "columns": {
+      "desktop": 6,
+      "tablet": 3,
+      "mobile": 2
+    }
+  }
+}
+```
 
 ### Filters
 

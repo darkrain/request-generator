@@ -262,6 +262,10 @@ func cloneGrid(v *Grid) *Grid {
 		return nil
 	}
 	cp := *v
+	if v.Columns != nil {
+		columns := *v.Columns
+		cp.Columns = &columns
+	}
 	return &cp
 }
 

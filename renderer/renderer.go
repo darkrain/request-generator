@@ -332,6 +332,9 @@ func validateListPage(scope string, page *ListPage) error {
 	if page == nil {
 		return nil
 	}
+	if err := page.Grid.Validate(); err != nil {
+		return fmt.Errorf("renderer.Universal: %s: %w", scope, err)
+	}
 	if err := page.GroupBy.Validate(); err != nil {
 		return fmt.Errorf("renderer.Universal: %s: %w", scope, err)
 	}
@@ -841,8 +844,43 @@ type FilterReset struct {
 }
 
 type Grid struct {
-	Enabled bool     `json:"enabled"`
-	Mode    GridMode `json:"mode,omitempty"`
+	Enabled bool         `json:"enabled"`
+	Mode    GridMode     `json:"mode,omitempty"`
+	Columns *GridColumns `json:"columns,omitempty"`
+}
+
+type GridColumns struct {
+	Desktop GridColumnCount `json:"desktop"`
+	Tablet  GridColumnCount `json:"tablet"`
+	Mobile  GridColumnCount `json:"mobile"`
+}
+
+func (grid *Grid) Validate() error {
+	if grid == nil {
+		return nil
+	}
+	if !grid.Mode.Valid() {
+		return fmt.Errorf("renderer.Grid: unsupported mode %q", grid.Mode)
+	}
+	if grid.Columns == nil {
+		return nil
+	}
+	for _, value := range []struct {
+		name  string
+		count GridColumnCount
+	}{
+		{name: "desktop", count: grid.Columns.Desktop},
+		{name: "tablet", count: grid.Columns.Tablet},
+		{name: "mobile", count: grid.Columns.Mobile},
+	} {
+		if !value.count.Valid() {
+			return fmt.Errorf("renderer.Grid: columns.%s must be between 1 and 6", value.name)
+		}
+	}
+	if grid.Columns.Mobile > grid.Columns.Tablet || grid.Columns.Tablet > grid.Columns.Desktop {
+		return fmt.Errorf("renderer.Grid: columns must satisfy mobile <= tablet <= desktop")
+	}
+	return nil
 }
 
 type Pagination struct {
