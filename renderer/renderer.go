@@ -113,6 +113,9 @@ func (r Universal) Validate() error {
 					return err
 				}
 			}
+			if err := validateMediaGalleryItems(fmt.Sprintf("form section %q", section.ID), section.MediaItems); err != nil {
+				return err
+			}
 			if section.Collection == nil {
 				if err := validateMediaActions(section.MediaActions); err != nil {
 					return err
@@ -197,6 +200,9 @@ func validateRecordComponents(page *RecordPage) error {
 }
 
 func (component DisplayComponent) Validate() error {
+	if err := validateMediaGalleryItems(fmt.Sprintf("display component %q", component.ID), component.MediaItems); err != nil {
+		return err
+	}
 	if component.DisplayType != "" {
 		if component.Type != DisplayDataList {
 			return fmt.Errorf("display type requires component type %q", DisplayDataList)
@@ -661,6 +667,15 @@ func validateMediaActions(actions *MediaGalleryActions) error {
 		"media recenter": actions.Recenter, "media crop": actions.Crop, "media remove": actions.Remove,
 	} {
 		if err := validateAction(scope, action); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateMediaGalleryItems(scope string, items []MediaGalleryItem) error {
+	for index := range items {
+		if err := validateActions(fmt.Sprintf("%s media item %q", scope, items[index].ID), items[index].Actions); err != nil {
 			return err
 		}
 	}
@@ -1136,8 +1151,13 @@ type MediaCropperOutputConfig struct {
 }
 
 func (config *FieldMediaConfig) Validate() error {
-	if config == nil || config.Cropper == nil {
+	if config == nil {
 		return nil
+	}
+	if config.Item != nil {
+		if err := validateMediaGalleryItems("field media", []MediaGalleryItem{*config.Item}); err != nil {
+			return err
+		}
 	}
 	return config.Cropper.Validate()
 }
@@ -1545,6 +1565,7 @@ type MediaGalleryItem struct {
 	SortOrder       int             `json:"sort_order"`
 	Title           string          `json:"title,omitempty"`
 	Description     string          `json:"description,omitempty"`
+	Actions         []Action        `json:"actions,omitempty"`
 }
 
 type MediaGalleryLabels struct {
