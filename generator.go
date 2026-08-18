@@ -1091,11 +1091,7 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 					field.Section = s
 				}
 			}
-			if field.RoleFormType != nil {
-				if ft, ok := field.RoleFormType[role]; ok {
-					field.FormType = ft
-				}
-			}
+			field.FormType = fieldFormTypeForRole(field, role)
 
 			output = append(output, field)
 		}
@@ -1237,7 +1233,7 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			fieldItem := map[string]interface{}{
 				"title":     generator.Translate(lang, field.Title),
 				"type":      string(field.Type),
-				"form_type": string(field.FormType),
+				"form_type": string(fieldFormTypeForRole(field, roleStr)),
 				"value":     value,
 				"edit":      containsColumn(editableColumns, field.Column),
 			}
