@@ -59,6 +59,7 @@ func TestLocalizeRenderer_LocalizesPublicTextOnly(t *testing.T) {
 			"modal.search":       "Поиск",
 			"media.upload":       "Загрузить файл",
 			"media.empty":        "Нет файлов",
+			"media.publish":      "Опубликовать",
 			"record.title":       "Профиль",
 			"record.section":     "О пользователе",
 			"component.value":    "Значение",
@@ -132,7 +133,10 @@ func TestLocalizeRenderer_LocalizesPublicTextOnly(t *testing.T) {
 					Modal:        &renderer.CollectionModal{SearchPlaceholder: "modal.search"},
 				},
 				MediaUpload: &renderer.MediaUploadConfig{Title: "media.upload"},
-				MediaItems:  []renderer.MediaGalleryItem{{ID: "photo-1", Title: "User supplied title"}},
+				MediaItems: []renderer.MediaGalleryItem{{
+					ID: "photo-1", Title: "User supplied title",
+					Actions: []renderer.Action{{ID: "publish", Label: "media.publish", Type: renderer.ActionEmit}},
+				}},
 				MediaLabels: &renderer.MediaGalleryLabels{Empty: "media.empty"},
 			}},
 		},
@@ -208,6 +212,7 @@ func TestLocalizeRenderer_LocalizesPublicTextOnly(t *testing.T) {
 	require.Equal(t, "Загрузить файл", section.MediaUpload.Title)
 	require.Equal(t, "Нет файлов", section.MediaLabels.Empty)
 	require.Equal(t, "User supplied title", section.MediaItems[0].Title)
+	require.Equal(t, "Опубликовать", section.MediaItems[0].Actions[0].Label)
 
 	require.Equal(t, "Профиль", localized.Record.Title)
 	require.Equal(t, "Проверен", localized.Record.Badge)

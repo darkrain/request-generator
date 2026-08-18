@@ -61,6 +61,7 @@ func LocalizeFieldMedia(value *FieldMediaConfig, resolve TextResolver) *FieldMed
 	localized.Upload = localizer.localizeMediaUpload(localized.Upload)
 	localized.Labels = localizer.localizeMediaLabels(localized.Labels)
 	localizer.localizeMediaActions(localized.Actions)
+	localizer.localizeMediaGalleryItem(localized.Item)
 	localizer.localizeMediaCropper(localized.Cropper)
 	return localized
 }
@@ -215,6 +216,7 @@ func (localizer textLocalizer) localizeFormSection(section *FormSection) {
 	section.MediaUpload = localizer.localizeMediaUpload(section.MediaUpload)
 	section.MediaLabels = localizer.localizeMediaLabels(section.MediaLabels)
 	localizer.localizeMediaActions(section.MediaActions)
+	localizer.localizeMediaGalleryItems(section.MediaItems)
 }
 
 func (localizer textLocalizer) localizePromptList(list *PromptList) {
@@ -270,6 +272,22 @@ func (localizer textLocalizer) localizeMediaActions(actions *MediaGalleryActions
 	}
 }
 
+func (localizer textLocalizer) localizeMediaGalleryItems(items []MediaGalleryItem) {
+	for index := range items {
+		localizer.localizeMediaGalleryItem(&items[index])
+	}
+}
+
+func (localizer textLocalizer) localizeMediaGalleryItem(item *MediaGalleryItem) {
+	if item == nil {
+		return
+	}
+	localizer.localizeTextFields(&item.Title, &item.Description)
+	for actionIndex := range item.Actions {
+		localizer.localizeRendererAction(&item.Actions[actionIndex])
+	}
+}
+
 func (localizer textLocalizer) localizeMediaCropper(cropper *MediaCropperConfig) {
 	if cropper == nil {
 		return
@@ -321,6 +339,7 @@ func (localizer textLocalizer) localizeRecordPage(page *RecordPage) {
 					group.LabelFallback = ""
 				}
 			}
+			localizer.localizeMediaGalleryItems(component.MediaItems)
 		}
 	}
 }

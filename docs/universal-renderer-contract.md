@@ -872,6 +872,7 @@ frontend использует обычный список. `query` содерж�
 | `media.item.thumbnail` | Компактная миниатюра для лент и списков. |
 | `media.item.hide_face` | Владелец запрашивает face-blur для отображения media. Это свойство media link, а не физического файла. |
 | `media.item.access_granted` | Явный результат server-side проверки доступа к private media. При `false` UI не пытается запускать закрытое video; image URL всё равно обязан проверять storage service. |
+| `media.item.actions` | Действия, доступные именно для этого элемента media. Producer выдаёт их только после проверки прав; UI не выводит и не угадывает доступность по `visibility`, роли или URL. Каждое действие имеет обычный typed `Action` contract и получает текущий `MediaGalleryItem` как scope. |
 | `display_component.media_items` | Упорядоченные элементы для `media_gallery`; не требует дублировать их в module fields. |
 | `media.item.usage` | Назначение media: `gallery`, `avatar`, `poster`. |
 | `media.item.src` | URI значения. В `view` request-generator может подставить сюда `item[field].value`, если producer не указал `src` явно. |
