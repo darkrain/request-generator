@@ -2,7 +2,7 @@ package renderer
 
 const (
 	Name    = "UniversalRenderer"
-	Version = "2.4.0"
+	Version = "2.5.0"
 )
 
 type Identity struct {
@@ -126,6 +126,30 @@ const (
 	GridModeCards GridMode = "cards"
 	GridModeList  GridMode = "list"
 )
+
+func (mode GridMode) Valid() bool {
+	switch mode {
+	case "", GridModeTable, GridModeCards, GridModeList:
+		return true
+	default:
+		return false
+	}
+}
+
+type GridColumnCount uint8
+
+const (
+	GridColumnsOne GridColumnCount = iota + 1
+	GridColumnsTwo
+	GridColumnsThree
+	GridColumnsFour
+	GridColumnsFive
+	GridColumnsSix
+)
+
+func (count GridColumnCount) Valid() bool {
+	return count >= GridColumnsOne && count <= GridColumnsSix
+}
 
 type PaginationMode string
 
