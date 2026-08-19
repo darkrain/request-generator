@@ -304,11 +304,12 @@ type ActionPlacement string
 const (
 	ActionPlacementFull         ActionPlacement = "full"
 	ActionPlacementFilterFooter ActionPlacement = "filter_footer"
+	ActionPlacementBadge        ActionPlacement = "badge"
 )
 
 func (placement ActionPlacement) Valid() bool {
 	switch placement {
-	case "", ActionPlacementFull, ActionPlacementFilterFooter:
+	case "", ActionPlacementFull, ActionPlacementFilterFooter, ActionPlacementBadge:
 		return true
 	default:
 		return false

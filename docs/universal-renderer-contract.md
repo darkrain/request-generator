@@ -1346,7 +1346,11 @@ type ActionPresentation struct {
 
 `placement` is optional. `full` stretches a card action across its action row;
 `filter_footer` places a list action immediately after the filter controls.
-An omitted placement keeps the renderer's normal action position. The value is
+`badge` makes an existing card badge with the same `id` the action surface and
+keeps the action out of the ordinary action row. The badge remains ordinary
+`card_schema.badges[]` metadata; route, API execution, conditions and
+localization continue to come from the matching typed action. An omitted
+placement keeps the renderer's normal action position. The value is
 presentation-only and does not change action execution.
 
 Modal actions may set `modal.show_header=false` when the rendered modal body
@@ -1770,6 +1774,26 @@ pagination и фильтры не искажают значение счётчи
 показывать badge только для записей, где он несёт полезный визуальный сигнал.
 `badges[].variant` передаёт нейтральный renderer-token конкретного варианта
 отображения; его интерпретацию определяет UI kit.
+
+Карточка может сделать badge интерактивным без отдельной кнопки, объявив в
+`actions[]` обычное typed действие с тем же `id` и `placement: "badge"`:
+
+```json
+{
+  "badges": [{"id": "owner", "field": "owner_name", "tone": "glass-slate"}],
+  "actions": [{
+    "id": "owner",
+    "type": "route",
+    "placement": "badge",
+    "route": {"path": "/records/{id}", "params": {"id": "record.owner_id"}}
+  }]
+}
+```
+
+Действие с `placement: "badge"` не создаёт новый badge и не отображается в
+обычном ряду действий. Если badge с совпадающим `id` отсутствует или скрыт
+своим `visible_if`, renderer не должен создавать запасную кнопку или иной
+неявный surface.
 
 Если вкладка list должна показывать серверный счётчик, она объявляет
 `count_field`. Значение берётся из одной summary-записи, описанной producer-ом

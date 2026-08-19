@@ -45,6 +45,28 @@ func TestActionSurfacePresentationRejectsUnknownPlacement(t *testing.T) {
 	}
 }
 
+func TestActionSurfacePresentationAcceptsBadgePlacement(t *testing.T) {
+	action := Action{
+		ID:   "owner",
+		Type: ActionRoute,
+		ActionPresentation: ActionPresentation{
+			Placement: ActionPlacementBadge,
+		},
+		Route: RouteAction{Path: "/records/{id}", Params: map[string]string{"id": "record.id"}},
+	}
+	if err := action.Validate(); err != nil {
+		t.Fatalf("validate badge action: %v", err)
+	}
+
+	payload, err := json.Marshal(action)
+	if err != nil {
+		t.Fatalf("marshal badge action: %v", err)
+	}
+	if !containsJSONFragment(string(payload), `"placement":"badge"`) {
+		t.Fatalf("expected badge placement in %s", payload)
+	}
+}
+
 func containsJSONFragment(value, fragment string) bool {
 	for index := 0; index+len(fragment) <= len(value); index++ {
 		if value[index:index+len(fragment)] == fragment {
