@@ -222,3 +222,27 @@ func TestPublishCommittedRealtimeRejectsUnknownContract(t *testing.T) {
 	_, err = generator.PublishCommittedRealtime(context.Background(), "records", actions.ModuleActionNameAdd, RealtimePublish{})
 	require.EqualError(t, err, "realtime topics are required")
 }
+
+func TestPublishCommittedRealtimeRejectsUnavailableTransport(t *testing.T) {
+	module := &BaseModule{Name: "records", Actions: []actions.ModuleAction{actions.AddModuleAction{}}}
+	pub := RealtimePublish{Topics: []string{"actor:42"}}
+
+	tests := []struct {
+		name     string
+		realtime RealtimeConfig
+		hub      *realtimeHub
+		expected string
+	}{
+		{name: "disabled", expected: "realtime is disabled"},
+		{name: "broker", realtime: RealtimeConfig{Enabled: true}, hub: newRealtimeHub(), expected: "realtime broker is not configured"},
+		{name: "hub", realtime: RealtimeConfig{Enabled: true, Broker: &realtimeBrokerStub{}}, expected: "realtime hub is not initialized"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			generator := &Generator{Modules: []*BaseModule{module}, Realtime: test.realtime, realtimeHub: test.hub}
+			_, err := generator.PublishCommittedRealtime(context.Background(), "records", actions.ModuleActionNameAdd, pub)
+			require.EqualError(t, err, test.expected)
+		})
+	}
+}
