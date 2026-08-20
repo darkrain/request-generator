@@ -99,6 +99,24 @@ func (localizer textLocalizer) localizeListPage(page *ListPage) {
 			page.Summary.Items[i].Label = localizer.localizeRendererText(page.Summary.Items[i].Label, page.Summary.Items[i].LabelKey)
 			page.Summary.Items[i].LabelKey = ""
 		}
+		if page.Summary.Trend != nil {
+			trend := page.Summary.Trend
+			localizer.localizeTextFields(&trend.Title, &trend.Subtitle)
+			trend.AriaLabel = localizer.localizeRendererText(trend.AriaLabel, trend.AriaLabelKey)
+			trend.AriaLabelKey = ""
+			trend.EmptyLabel = localizer.localizeRendererText(trend.EmptyLabel, trend.EmptyLabelKey)
+			trend.EmptyLabelKey = ""
+			trend.LoadingLabel = localizer.localizeRendererText(trend.LoadingLabel, trend.LoadingLabelKey)
+			trend.LoadingLabelKey = ""
+			for i := range trend.Series {
+				trend.Series[i].Label = localizer.localizeRendererText(trend.Series[i].Label, trend.Series[i].LabelKey)
+				trend.Series[i].LabelKey = ""
+			}
+			localizer.localizeDateRangeToolbar(trend.DateRange)
+		}
+	}
+	if page.Filters != nil {
+		localizer.localizeDateRangeToolbar(page.Filters.DateRange)
 	}
 	if page.GroupBy != nil {
 		localizer.localizeTextFields(&page.GroupBy.TodayLabel, &page.GroupBy.YesterdayLabel, &page.GroupBy.ThisWeekLabel, &page.GroupBy.EarlierLabel)
@@ -110,6 +128,23 @@ func (localizer textLocalizer) localizeListPage(page *ListPage) {
 		localizer.localizeTextFields(&page.Selection.SelectedLabel)
 		localizer.localizeRendererAction(page.Selection.Clear)
 		localizer.localizeRendererAction(page.Selection.Proceed)
+	}
+}
+
+func (localizer textLocalizer) localizeDateRangeToolbar(toolbar *DateRangeToolbar) {
+	if toolbar == nil {
+		return
+	}
+	localizer.localizeTextFields(&toolbar.Placeholder, &toolbar.ApplyLabel, &toolbar.CancelLabel, &toolbar.StartLabel, &toolbar.EndLabel, &toolbar.EmptyLabel, &toolbar.DialogLabel, &toolbar.PreviousLabel, &toolbar.NextLabel)
+	for i := range toolbar.Presets {
+		toolbar.Presets[i].Label = localizer.localizeRendererText(toolbar.Presets[i].Label, toolbar.Presets[i].LabelKey)
+		toolbar.Presets[i].LabelKey = ""
+	}
+	for i := range toolbar.Months {
+		toolbar.Months[i] = localizer.localizeRendererText(toolbar.Months[i], "")
+	}
+	for i := range toolbar.Weekdays {
+		toolbar.Weekdays[i] = localizer.localizeRendererText(toolbar.Weekdays[i], "")
 	}
 }
 
@@ -172,6 +207,9 @@ func (localizer textLocalizer) localizeCardSchema(schema *CardSchema) {
 }
 
 func (localizer textLocalizer) localizeBadge(badge *Badge) {
+	if badge == nil {
+		return
+	}
 	badge.Label = localizer.localizeRendererText(badge.Label, badge.LabelKey)
 	badge.LabelKey = ""
 	for value, label := range badge.LabelMap {
@@ -215,6 +253,20 @@ func (localizer textLocalizer) localizeFormSection(section *FormSection) {
 	section.MediaUpload = localizer.localizeMediaUpload(section.MediaUpload)
 	section.MediaLabels = localizer.localizeMediaLabels(section.MediaLabels)
 	localizer.localizeMediaActions(section.MediaActions)
+	localizer.localizeDateRange(section.DateRange)
+}
+
+func (localizer textLocalizer) localizeDateRange(config *DateRangeConfig) {
+	if config == nil {
+		return
+	}
+	localizer.localizeTextFields(&config.Placeholder, &config.ApplyLabel, &config.CancelLabel, &config.StartLabel, &config.EndLabel, &config.EmptyLabel)
+	for index := range config.Months {
+		config.Months[index] = localizer.localizeRendererText(config.Months[index], "")
+	}
+	for index := range config.Weekdays {
+		config.Weekdays[index] = localizer.localizeRendererText(config.Weekdays[index], "")
+	}
 }
 
 func (localizer textLocalizer) localizePromptList(list *PromptList) {

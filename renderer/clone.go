@@ -176,6 +176,7 @@ func cloneFilters(v *Filters) *Filters {
 	cp.Reset = cloneFilterReset(v.Reset)
 	cp.Text = clonePtr(v.Text)
 	cp.RangePresets = cloneFilterRangePresets(v.RangePresets)
+	cp.DateRange = cloneDateRangeToolbar(v.DateRange)
 	return &cp
 }
 
@@ -287,6 +288,22 @@ func cloneSummary(v *Summary) *Summary {
 	cp.ShowAction = clonePtr(v.ShowAction)
 	cp.Resource = cloneResource(v.Resource)
 	cp.Load = cloneResourceLoad(v.Load)
+	if v.Trend != nil {
+		cp.Trend = clonePtr(v.Trend)
+		cp.Trend.Series = cloneSlice(v.Trend.Series)
+		cp.Trend.DateRange = cloneDateRangeToolbar(v.Trend.DateRange)
+	}
+	return &cp
+}
+
+func cloneDateRangeToolbar(v *DateRangeToolbar) *DateRangeToolbar {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.Presets = cloneSlice(v.Presets)
+	cp.Months = cloneSlice(v.Months)
+	cp.Weekdays = cloneSlice(v.Weekdays)
 	return &cp
 }
 
@@ -407,10 +424,22 @@ func cloneFormSections(values []FormSection) []FormSection {
 		out[i].MediaLabels = clonePtr(v.MediaLabels)
 		out[i].MediaActions = cloneMediaGalleryActions(v.MediaActions)
 		out[i].Prompts = clonePromptList(v.Prompts)
+		out[i].DateRange = cloneDateRangeConfig(v.DateRange)
 		out[i].Resource = cloneResource(v.Resource)
 		out[i].Load = cloneResourceLoad(v.Load)
 	}
 	return out
+}
+
+func cloneDateRangeConfig(v *DateRangeConfig) *DateRangeConfig {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	cp.DisabledDates = cloneSlice(v.DisabledDates)
+	cp.Months = cloneSlice(v.Months)
+	cp.Weekdays = cloneSlice(v.Weekdays)
+	return &cp
 }
 
 func cloneFieldMatrix(v *FieldMatrix) *FieldMatrix {
