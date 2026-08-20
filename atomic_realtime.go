@@ -345,6 +345,6 @@ func atomicTypedValue(value actions.AtomicValue) (renderer.TypedValue, error) {
 
 func (generator *Generator) publishAtomicRealtime(c *gin.Context, module *BaseModule, action actions.ModuleActionName, record actions.AtomicRecord, publishes []RealtimePublish) {
 	for _, publish := range publishes {
-		generator.publishRealtimeEvent(c, module, action, record, publish)
+		_, _ = generator.publishRealtimeEvent(c.Request.Context(), module, action, record, publish)
 	}
 }

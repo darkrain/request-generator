@@ -88,6 +88,68 @@ func TestGlobalWidgetValidateAndSerialize(t *testing.T) {
 }`, string(encoded))
 }
 
+func TestInlineGlobalWidgetValidateAndSerialize(t *testing.T) {
+	widget := GlobalWidget{Surface: WidgetSurface{
+		Kind:       WidgetSurfaceInline,
+		Placement:  WidgetPlacementShellStart,
+		LoadPolicy: WidgetLoadEager,
+		Size:       SizeSM,
+	}}
+	require.NoError(t, widget.Validate())
+
+	encoded, err := json.Marshal(widget)
+	require.NoError(t, err)
+	require.JSONEq(t, `{
+  "surface":{"kind":"inline","placement":"shell_start","load_policy":"eager","size":"sm"}
+}`, string(encoded))
+}
+
+func TestInlineGlobalWidgetRejectsInteractiveSurfaceContract(t *testing.T) {
+	tests := []struct {
+		name   string
+		widget GlobalWidget
+		err    string
+	}{
+		{
+			name: "lazy load",
+			widget: GlobalWidget{Surface: WidgetSurface{
+				Kind: WidgetSurfaceInline, Placement: WidgetPlacementShellStart, LoadPolicy: WidgetLoadOnOpen,
+			}},
+			err: `renderer.GlobalWidget: surface: inline requires load policy "eager"`,
+		},
+		{
+			name: "trigger",
+			widget: GlobalWidget{Surface: WidgetSurface{
+				Kind: WidgetSurfaceInline, Placement: WidgetPlacementShellStart, LoadPolicy: WidgetLoadEager,
+				Trigger: &WidgetTrigger{Label: "Open", Icon: "ref-open"},
+			}},
+			err: `renderer.GlobalWidget: surface: inline does not support trigger`,
+		},
+		{
+			name: "wrong placement",
+			widget: GlobalWidget{Surface: WidgetSurface{
+				Kind: WidgetSurfaceInline, Placement: WidgetPlacementShellEnd, LoadPolicy: WidgetLoadEager,
+			}},
+			err: `renderer.GlobalWidget: surface: inline requires placement "shell_start"`,
+		},
+		{
+			name: "workspace",
+			widget: func() GlobalWidget {
+				value := validGlobalWorkspace()
+				value.Surface = WidgetSurface{Kind: WidgetSurfaceInline, Placement: WidgetPlacementShellStart, LoadPolicy: WidgetLoadEager}
+				return value
+			}(),
+			err: `renderer.GlobalWidget: inline surface does not support workspace`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.EqualError(t, test.widget.Validate(), test.err)
+		})
+	}
+}
+
 func TestGlobalWidgetValidateRejectsInvalidContract(t *testing.T) {
 	tests := []struct {
 		name string

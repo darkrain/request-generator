@@ -2,7 +2,7 @@
 
 Имя: `UniversalRenderer`
 
-Версия: `2.5.0`
+Версия: `2.6.0`
 
 Статус: `draft`
 
@@ -1056,7 +1056,7 @@ Media: &renderer.FieldMediaConfig{
 {
   "id": "work-area",
   "order": 10,
-  "renderer": {"name": "UniversalRenderer", "version": "2.5.0"},
+  "renderer": {"name": "UniversalRenderer", "version": "2.6.0"},
   "widget": {
     "surface": {
       "kind": "drawer",
