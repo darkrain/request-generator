@@ -145,6 +145,20 @@ func TestDisplayComponentValidation(t *testing.T) {
 	}
 }
 
+func TestDisplayComponentActionReferenceValidation(t *testing.T) {
+	valid := Universal{Record: &RecordPage{
+		Actions: []Action{{ID: "open_story", Type: ActionEmit}},
+		Sections: []RecordSection{{ID: "identity", Components: []DisplayComponent{{
+			ID: "identity", Type: DisplayIdentity, ActionID: "open_story",
+		}}}},
+	}}
+	require.NoError(t, valid.Validate())
+
+	invalid := valid.Clone()
+	invalid.Record.Sections[0].Components[0].ActionID = "unknown"
+	require.EqualError(t, invalid.Validate(), `renderer.Universal: record section "identity" component "identity" action_id "unknown" is not declared in record page actions`)
+}
+
 func TestBlockOverlayValidation(t *testing.T) {
 	tests := []struct {
 		name  string

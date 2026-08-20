@@ -194,9 +194,21 @@ func validateRecordComponents(page *RecordPage) error {
 			if err := component.Validate(); err != nil {
 				return fmt.Errorf("renderer.Universal: record section %q component %q: %w", section.ID, component.ID, err)
 			}
+			if component.ActionID != "" && !recordPageHasAction(page, component.ActionID) {
+				return fmt.Errorf("renderer.Universal: record section %q component %q action_id %q is not declared in record page actions", section.ID, component.ID, component.ActionID)
+			}
 		}
 	}
 	return nil
+}
+
+func recordPageHasAction(page *RecordPage, id string) bool {
+	for index := range page.Actions {
+		if page.Actions[index].ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func (component DisplayComponent) Validate() error {
@@ -1759,6 +1771,7 @@ type Stack struct {
 type DisplayComponent struct {
 	ID                  string                   `json:"id,omitempty"`
 	Type                DisplayComponentType     `json:"type,omitempty"`
+	ActionID            string                   `json:"action_id,omitempty"`
 	Fields              []string                 `json:"fields,omitempty"`
 	MediaItems          []MediaGalleryItem       `json:"media_items,omitempty"`
 	Value               interface{}              `json:"value,omitempty"`
