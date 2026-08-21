@@ -764,7 +764,13 @@ func TestUniversalRendererMetadata_ViewFormPageResponse(t *testing.T) {
 		PrimaryKey: id,
 		Fields: []fields.ModuleField{
 			{Column: id, Title: "ID", Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeNumber},
-			{Column: status, Title: "Status", Type: fields.ModuleFieldTypeString, FormType: fields.ModuleFieldFormTypeText},
+			{
+				Column:       status,
+				Title:        "Status",
+				Type:         fields.ModuleFieldTypeString,
+				FormType:     fields.ModuleFieldFormTypeText,
+				RoleFormType: map[string]fields.ModuleFieldFormType{"admin": fields.ModuleFieldFormTypeSelect},
+			},
 		},
 		Render: renderer.Universal{
 			Form: &renderer.FormPage{
@@ -840,12 +846,16 @@ func TestUniversalRendererMetadata_ViewFormPageResponse(t *testing.T) {
 		Renderer   *renderer.Identity   `json:"renderer"`
 		FormPage   *renderer.FormPage   `json:"form_page"`
 		RecordPage *renderer.RecordPage `json:"record_page"`
+		Item       map[string]struct {
+			FormType string `json:"form_type"`
+		} `json:"item"`
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
 	require.NotNil(t, response.Renderer)
 	require.NotNil(t, response.FormPage)
 	assert.Equal(t, "renderer-settings-form", response.FormPage.ID)
 	assert.Nil(t, response.RecordPage)
+	assert.Equal(t, string(fields.ModuleFieldFormTypeSelect), response.Item["status"].FormType)
 
 	w = executeRequest(engine, http.MethodGet, "/admin/renderer-settings/view/id/1", nil)
 	require.Equal(t, http.StatusOK, w.Code)
@@ -853,6 +863,9 @@ func TestUniversalRendererMetadata_ViewFormPageResponse(t *testing.T) {
 		Renderer   *renderer.Identity   `json:"renderer"`
 		FormPage   *renderer.FormPage   `json:"form_page"`
 		RecordPage *renderer.RecordPage `json:"record_page"`
+		Item       map[string]struct {
+			FormType string `json:"form_type"`
+		} `json:"item"`
 	}{}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
 	require.NotNil(t, response.RecordPage)
