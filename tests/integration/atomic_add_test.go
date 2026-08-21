@@ -327,6 +327,30 @@ func TestAtomicAdd_SelectOneAndInsertsShareTransaction(t *testing.T) {
 	}
 }
 
+func TestAtomicAddReturnsOperationErrorAsClientMessage(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	localized := "Этот тикет уже закрыт."
+	engine := setupAtomicAddRouter(t, sqlDB, func(context.Context, actions.AtomicExecutor, actions.AtomicInput) (actions.AtomicRecord, error) {
+		return actions.AtomicRecord{}, errors.New(localized)
+	})
+	mock.ExpectBegin()
+	mock.ExpectRollback()
+
+	w := executeJSONRequest(engine, http.MethodPut, "/admin/atomic-items", map[string]interface{}{"title": "hello"})
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	var body struct {
+		Message string   `json:"message"`
+		Errors  []string `json:"errors"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	require.Equal(t, localized, body.Message)
+	require.Equal(t, []string{localized}, body.Errors)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestAtomicAdd_SelectManyReadsInsideTransactionAndRollsBack(t *testing.T) {
 	sqlDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
