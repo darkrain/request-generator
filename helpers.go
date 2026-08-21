@@ -123,7 +123,7 @@ func (generator *Generator) checkRequest(
 			fieldKey = field.Name()
 		}
 		checked[fieldKey] = struct{}{}
-		validateRequestField(context, data, *field, scenario, lang, generator.db(module).RawDB(), errs)
+		generator.validateRequestField(context, data, *field, scenario, lang, generator.db(module).RawDB(), errs)
 	}
 
 	for key := range data {
@@ -137,13 +137,30 @@ func (generator *Generator) checkRequest(
 		if len(module.GetRules(context, *field, scenario)) == 0 {
 			continue
 		}
-		validateRequestField(context, data, *field, scenario, lang, generator.db(module).RawDB(), errs)
+		generator.validateRequestField(context, data, *field, scenario, lang, generator.db(module).RawDB(), errs)
 	}
 
 	return errs
 }
 
-func validateRequestField(
+func (generator *Generator) validationErrorMessage(field fields.ModuleField, lang locale.Lang, err error) string {
+	if err == nil {
+		return ""
+	}
+	message := err.Error()
+	label := strings.TrimSpace(generator.TranslateWithFallback(lang, field.Title, field.ColumnName()))
+	if label == "" {
+		return message
+	}
+	for _, name := range []string{field.ColumnName(), field.Name()} {
+		if name != "" {
+			message = strings.ReplaceAll(message, name, label)
+		}
+	}
+	return message
+}
+
+func (generator *Generator) validateRequestField(
 	context *gin.Context,
 	data map[string]interface{},
 	field fields.ModuleField,
@@ -160,7 +177,7 @@ func validateRequestField(
 				for _, rule := range rules {
 					err := rule.Validate(langVal, string(lang))
 					if err != nil {
-						errs[field.Name()+"."+langKey] = err.Error()
+						errs[field.Name()+"."+langKey] = generator.validationErrorMessage(field, lang, err)
 					}
 				}
 			}
@@ -168,7 +185,7 @@ func validateRequestField(
 			for _, rule := range rules {
 				err := rule.Validate(value, string(lang))
 				if err != nil {
-					errs[field.Name()] = err.Error()
+					errs[field.Name()] = generator.validationErrorMessage(field, lang, err)
 				}
 			}
 		}
@@ -181,20 +198,20 @@ func validateRequestField(
 	for _, rule := range rules {
 		if dr, ok := rule.(fields.DataCheckRule); ok {
 			if err := dr.ValidateData(context, rawDB, data, string(lang)); err != nil {
-				errs[colName] = err.Error()
+				errs[colName] = generator.validationErrorMessage(field, lang, err)
 			}
 			continue
 		}
 		err := rule.Validate(value, string(lang))
 		if err != nil {
-			errs[colName] = err.Error()
+			errs[colName] = generator.validationErrorMessage(field, lang, err)
 		}
 	}
 
 	if field.Convert != nil && value != nil {
 		_, err := field.Convert(context, value)
 		if err != nil {
-			errs[colName] = err.Error()
+			errs[colName] = generator.validationErrorMessage(field, lang, err)
 		}
 	}
 	if field.Type == fields.ModuleFieldTypeArray && field.ArrayStorage.Normalize() == fields.ModuleFieldArrayStorageJSON && value != nil {
