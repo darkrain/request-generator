@@ -298,6 +298,25 @@ const (
 	ActionAppearanceLink     ActionAppearance = "link"
 )
 
+// ActionPlacement selects an optional generic action surface. An empty value
+// leaves placement to the renderer that owns the action.
+type ActionPlacement string
+
+const (
+	ActionPlacementFull         ActionPlacement = "full"
+	ActionPlacementFilterFooter ActionPlacement = "filter_footer"
+	ActionPlacementBadge        ActionPlacement = "badge"
+)
+
+func (placement ActionPlacement) Valid() bool {
+	switch placement {
+	case "", ActionPlacementFull, ActionPlacementFilterFooter, ActionPlacementBadge:
+		return true
+	default:
+		return false
+	}
+}
+
 type MediaKind string
 
 const (

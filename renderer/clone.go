@@ -320,6 +320,7 @@ func cloneCardSchema(v *CardSchema) *CardSchema {
 		return nil
 	}
 	cp := *v
+	cp.LeadingAccent = cloneCardEdgeAccent(v.LeadingAccent)
 	cp.Media = cloneMedia(v.Media)
 	cp.Icon = cloneIconBinding(v.Icon)
 	cp.Title = cloneTextBinding(v.Title)
@@ -330,6 +331,14 @@ func cloneCardSchema(v *CardSchema) *CardSchema {
 	cp.Badges = cloneBadges(v.Badges)
 	cp.Stats = cloneBadges(v.Stats)
 	cp.Actions = cloneActions(v.Actions)
+	return &cp
+}
+
+func cloneCardEdgeAccent(v *CardEdgeAccent) *CardEdgeAccent {
+	if v == nil {
+		return nil
+	}
+	cp := *v
 	return &cp
 }
 
@@ -804,6 +813,7 @@ func cloneModalAction(v *ModalAction) *ModalAction {
 		return nil
 	}
 	cp := *v
+	cp.ShowHeader = clonePtr(v.ShowHeader)
 	cp.Data = cloneMap(v.Data)
 	return &cp
 }

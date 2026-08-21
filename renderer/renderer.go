@@ -1165,6 +1165,7 @@ type CardSchema struct {
 	Size             SizeToken        `json:"size,omitempty"`
 	SurfaceVariant   SurfaceVariant   `json:"surface_variant,omitempty"`
 	SurfaceEffect    SurfaceEffect    `json:"surface_effect,omitempty"`
+	LeadingAccent    *CardEdgeAccent  `json:"leading_accent,omitempty"`
 	BadgeSize        SizeToken        `json:"badge_size,omitempty"`
 	ActionSize       SizeToken        `json:"action_size,omitempty"`
 	DeleteActionSize SizeToken        `json:"delete_action_size,omitempty"`
@@ -1192,6 +1193,9 @@ func (schema *CardSchema) Validate() error {
 	default:
 		return fmt.Errorf("renderer.CardSchema: unsupported action layout %q", schema.ActionLayout)
 	}
+	if schema.LeadingAccent != nil && schema.LeadingAccent.Tone == "" {
+		return fmt.Errorf("renderer.CardSchema: leading_accent tone is required")
+	}
 	for _, binding := range []*TextBinding{schema.Title, schema.Subtitle, schema.Meta, schema.Description} {
 		if err := binding.Validate(); err != nil {
 			return err
@@ -1201,6 +1205,12 @@ func (schema *CardSchema) Validate() error {
 		return fmt.Errorf("renderer.CardSchema: icon field or icon_field is required")
 	}
 	return nil
+}
+
+// CardEdgeAccent adds an opt-in visual line to the leading edge of a card.
+// Tone is an extensible presentation token interpreted by the consuming UI.
+type CardEdgeAccent struct {
+	Tone ToneToken `json:"tone"`
 }
 
 // IconBinding resolves an icon and its visual tone from a row. IconField and
@@ -2106,6 +2116,7 @@ type ActionPresentation struct {
 	IconOnly         *bool            `json:"icon_only,omitempty"`
 	Variant          ActionVariant    `json:"variant,omitempty"`
 	Appearance       ActionAppearance `json:"appearance,omitempty"`
+	Placement        ActionPlacement  `json:"placement,omitempty"`
 	ActiveAppearance ActionAppearance `json:"active_appearance,omitempty"`
 	Active           string           `json:"active,omitempty"`
 	Block            *bool            `json:"block,omitempty"`
@@ -2115,6 +2126,9 @@ type ActionPresentation struct {
 }
 
 func (presentation ActionPresentation) Validate() error {
+	if !presentation.Placement.Valid() {
+		return fmt.Errorf("unsupported placement %q", presentation.Placement)
+	}
 	if presentation.VisibleIf != nil && !hasCondition(presentation.VisibleIf) {
 		return fmt.Errorf("visible_if is invalid")
 	}
@@ -2207,9 +2221,10 @@ type APIAction struct {
 }
 
 type ModalAction struct {
-	Renderer RendererKey            `json:"renderer,omitempty"`
-	Title    string                 `json:"title,omitempty"`
-	Data     map[string]interface{} `json:"data,omitempty"`
+	Renderer   RendererKey            `json:"renderer,omitempty"`
+	Title      string                 `json:"title,omitempty"`
+	ShowHeader *bool                  `json:"show_header,omitempty"`
+	Data       map[string]interface{} `json:"data,omitempty"`
 }
 
 // ClientAction describes a client capability selected by the API. The

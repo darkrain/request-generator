@@ -1370,6 +1370,7 @@ type ActionPresentation struct {
     IconOnly         *bool
     Variant          ActionVariant
     Appearance       ActionAppearance
+    Placement        ActionPlacement
     ActiveAppearance ActionAppearance
     Active           string
     Block            *bool
@@ -1378,6 +1379,19 @@ type ActionPresentation struct {
     DisabledIf       *Condition
 }
 ```
+
+`placement` is optional. `full` stretches a card action across its action row;
+`filter_footer` places a list action immediately after the filter controls.
+`badge` makes an existing card badge with the same `id` the action surface and
+keeps the action out of the ordinary action row. The badge remains ordinary
+`card_schema.badges[]` metadata; route, API execution, conditions and
+localization continue to come from the matching typed action. An omitted
+placement keeps the renderer's normal action position. The value is
+presentation-only and does not change action execution.
+
+Modal actions may set `modal.show_header=false` when the rendered modal body
+already owns its heading. This hides only the popup heading; the shared popup
+still owns its close control and accessible dialog surface.
 
 Он описывает только вид и интерактивное состояние. В нём нельзя передавать
 `endpoint`, `method`, payload, `APIAction`, route, modal или result: request
@@ -1805,6 +1819,7 @@ renderer.DisplayComponent{
   "size": "sm",
   "surface_variant": "secondary",
   "surface_effect": "flat",
+  "leading_accent": {"tone": "pink"},
   "badge_size": "sm",
   "action_size": "sm",
   "action_layout": "edge_fill",
@@ -1837,10 +1852,33 @@ renderer.DisplayComponent{
 относительно текущей строки. `meta` является дополнительным коротким текстом; `relative_time`
 разрешён для date-like значения и форматируется UI kit согласно locale браузера.
 
+`leading_accent` опционально добавляет линию по ведущему краю карточки. `tone`
+передаёт расширяемый presentation token; без `leading_accent` линия не рисуется.
+
 `badges[].visible_if` использует тот же `Condition` и позволяет producer-у
 показывать badge только для записей, где он несёт полезный визуальный сигнал.
 `badges[].variant` передаёт нейтральный renderer-token конкретного варианта
 отображения; его интерпретацию определяет UI kit.
+
+Карточка может сделать badge интерактивным без отдельной кнопки, объявив в
+`actions[]` обычное typed действие с тем же `id` и `placement: "badge"`:
+
+```json
+{
+  "badges": [{"id": "owner", "field": "owner_name", "tone": "glass-slate"}],
+  "actions": [{
+    "id": "owner",
+    "type": "route",
+    "placement": "badge",
+    "route": {"path": "/records/{id}", "params": {"id": "record.owner_id"}}
+  }]
+}
+```
+
+Действие с `placement: "badge"` не создаёт новый badge и не отображается в
+обычном ряду действий. Если badge с совпадающим `id` отсутствует или скрыт
+своим `visible_if`, renderer не должен создавать запасную кнопку или иной
+неявный surface.
 
 Если вкладка list должна показывать серверный счётчик, она объявляет
 `count_field`. Значение берётся из одной summary-записи, описанной producer-ом
