@@ -200,6 +200,8 @@ func atomicValueKind(value actions.AtomicValue) actions.AtomicValueKind {
 		return actions.AtomicValueKindFloat
 	case value.Bool != nil:
 		return actions.AtomicValueKindBool
+	case value.Time != nil:
+		return actions.AtomicValueKindTime
 	case value.Strings != nil:
 		return actions.AtomicValueKindStrings
 	case value.Ints != nil:
