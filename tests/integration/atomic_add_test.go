@@ -487,6 +487,52 @@ func TestAtomicAdd_InsertThenUpdateRollsBackOnUpdateError(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestAtomicAddCommittedRejectionPersistsWrite(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	id := pg.IntegerColumn("id")
+	count := pg.IntegerColumn("attempt_count")
+	items := pg.NewTable("public", "atomic_items", "", id, count)
+	operation := func(ctx context.Context, executor actions.AtomicExecutor, _ actions.AtomicInput) (actions.AtomicRecord, error) {
+		_, err := executor.Update(ctx, actions.AtomicUpdate{
+			Table:  items,
+			Fields: []actions.AtomicUpdateField{{Column: count, Operation: actions.AtomicUpdateIncrement, Value: actions.AtomicInt(1)}},
+			Where:  id.EQ(pg.Int(41)),
+		})
+		if err != nil {
+			return actions.AtomicRecord{}, err
+		}
+		return actions.AtomicRecord{}, actions.NewAtomicCommittedRejection("invalid code; 4 attempts remain")
+	}
+	engine := setupAtomicAddRouter(t, sqlDB, operation)
+
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE public\.atomic_items`).WithArgs(int64(1), int64(41)).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	w := executeJSONRequest(engine, http.MethodPut, "/admin/atomic-items", map[string]interface{}{"title": "hello"})
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), "invalid code; 4 attempts remain")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAtomicAddCommittedRejectionReturnsServerErrorWhenCommitFails(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	engine := setupAtomicAddRouter(t, sqlDB, func(context.Context, actions.AtomicExecutor, actions.AtomicInput) (actions.AtomicRecord, error) {
+		return actions.AtomicRecord{}, actions.NewAtomicCommittedRejection("business rejection")
+	})
+
+	mock.ExpectBegin()
+	mock.ExpectCommit().WillReturnError(errors.New("commit failed"))
+	w := executeJSONRequest(engine, http.MethodPut, "/admin/atomic-items", map[string]interface{}{"title": "hello"})
+	require.Equal(t, http.StatusInternalServerError, w.Code, w.Body.String())
+	require.NotContains(t, w.Body.String(), "business rejection")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestAtomicAdd_RejectsHooksAtConfigurationTime(t *testing.T) {
 	for _, testCase := range []struct {
 		name       string
