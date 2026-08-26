@@ -210,11 +210,13 @@ func TestAtomicExecutorUpdateSetAndIncrement(t *testing.T) {
 	id := pg.IntegerColumn("id")
 	name := pg.StringColumn("name")
 	unreadCount := pg.IntegerColumn("unread_count")
-	profiles := pg.NewTable("public", "profiles", "", id, name, unreadCount)
+	arrivalDate := pg.DateColumn("arrival_date")
+	date := time.Date(2026, time.September, 10, 0, 0, 0, 0, time.UTC)
+	profiles := pg.NewTable("public", "profiles", "", id, name, unreadCount, arrivalDate)
 	mock.ExpectBegin()
 	tx, err := sqlDB.Begin()
 	require.NoError(t, err)
-	mock.ExpectExec("UPDATE").WithArgs("Renamed", int64(1), int64(17)).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("UPDATE").WithArgs("Renamed", int64(1), date, int64(17)).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectRollback()
 
 	updated, err := NewAtomicExecutor(tx).Update(context.Background(), actions.AtomicUpdate{
@@ -222,6 +224,7 @@ func TestAtomicExecutorUpdateSetAndIncrement(t *testing.T) {
 		Fields: []actions.AtomicUpdateField{
 			{Column: name, Operation: actions.AtomicUpdateSet, Value: actions.AtomicString("Renamed")},
 			{Column: unreadCount, Operation: actions.AtomicUpdateIncrement, Value: actions.AtomicInt(1)},
+			{Column: arrivalDate, Operation: actions.AtomicUpdateSet, Value: actions.AtomicTime(date)},
 		},
 		Where: id.EQ(pg.Int(17)),
 	})

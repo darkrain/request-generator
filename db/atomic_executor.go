@@ -272,6 +272,13 @@ func atomicUpdateAssignment(field actions.AtomicUpdateField) (pg.ColumnAssigment
 		if field.Operation == actions.AtomicUpdateSet {
 			return column.SET(pg.TimestampzT(*field.Value.Time)), nil
 		}
+	case pg.ColumnDate:
+		if field.Value.Time == nil {
+			return nil, fmt.Errorf("date column %q requires time value", column.Name())
+		}
+		if field.Operation == actions.AtomicUpdateSet {
+			return column.SET(pg.DateT(*field.Value.Time)), nil
+		}
 	}
 	return nil, fmt.Errorf("operation %q is unsupported for column %q", field.Operation, field.Column.Name())
 }
