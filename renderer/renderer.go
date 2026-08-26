@@ -1553,6 +1553,9 @@ type DateRangeConfig struct {
 	StartLabel    string   `json:"start_label,omitempty"`
 	EndLabel      string   `json:"end_label,omitempty"`
 	EmptyLabel    string   `json:"empty_label,omitempty"`
+	DialogLabel   string   `json:"dialog_label,omitempty"`
+	PreviousLabel string   `json:"previous_label,omitempty"`
+	NextLabel     string   `json:"next_label,omitempty"`
 	Months        []string `json:"months,omitempty"`
 	Weekdays      []string `json:"weekdays,omitempty"`
 }

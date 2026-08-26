@@ -260,7 +260,7 @@ func (localizer textLocalizer) localizeDateRange(config *DateRangeConfig) {
 	if config == nil {
 		return
 	}
-	localizer.localizeTextFields(&config.Placeholder, &config.ApplyLabel, &config.CancelLabel, &config.StartLabel, &config.EndLabel, &config.EmptyLabel)
+	localizer.localizeTextFields(&config.Placeholder, &config.ApplyLabel, &config.CancelLabel, &config.StartLabel, &config.EndLabel, &config.EmptyLabel, &config.DialogLabel, &config.PreviousLabel, &config.NextLabel)
 	for index := range config.Months {
 		config.Months[index] = localizer.localizeRendererText(config.Months[index], "")
 	}
