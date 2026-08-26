@@ -43,17 +43,19 @@ func NewDefrecResponse(fields []f.ModuleField) DefrecResponse {
 		for _, rule := range field.Check {
 			if intr, ok := rule.(f.CheckRuleIntrospectable); ok {
 				info := intr.RuleInfo()
-				if info.Type == "required" {
-					for _, s := range info.Scenarios {
-						if s == f.ScenarioAdd {
-							item["required"] = true
-							break
-						}
+				for _, scenario := range info.Scenarios {
+					if scenario != f.ScenarioAdd {
+						continue
 					}
+					switch info.Type {
+					case "required":
+						item["required"] = true
+					case "length":
+						item["min_length"] = info.Min
+						item["max_length"] = info.Max
+					}
+					break
 				}
-			}
-			if _, set := item["required"]; set {
-				break
 			}
 		}
 		key := field.ColumnName()

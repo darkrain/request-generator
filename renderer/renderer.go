@@ -1259,8 +1259,43 @@ type FieldPresentation struct {
 	Description string           `json:"description,omitempty"`
 	Rows        uint8            `json:"rows,omitempty"`
 	MaxItems    uint16           `json:"max_items,omitempty"`
+	InputMode   FieldInputMode   `json:"input_mode,omitempty"`
 	VisibleIf   *Condition       `json:"visible_if,omitempty"`
 	ToneByValue []FieldValueTone `json:"tone_by_value,omitempty"`
+}
+
+// FieldInputMode hints which virtual keyboard a text control should open.
+// Validation constraints remain owned by ModuleField checks.
+type FieldInputMode string
+
+const (
+	FieldInputModeText    FieldInputMode = "text"
+	FieldInputModeNumeric FieldInputMode = "numeric"
+	FieldInputModeDecimal FieldInputMode = "decimal"
+	FieldInputModeEmail   FieldInputMode = "email"
+	FieldInputModeTel     FieldInputMode = "tel"
+	FieldInputModeURL     FieldInputMode = "url"
+	FieldInputModeSearch  FieldInputMode = "search"
+)
+
+func (mode FieldInputMode) Valid() bool {
+	switch mode {
+	case "", FieldInputModeText, FieldInputModeNumeric, FieldInputModeDecimal,
+		FieldInputModeEmail, FieldInputModeTel, FieldInputModeURL, FieldInputModeSearch:
+		return true
+	default:
+		return false
+	}
+}
+
+func (presentation *FieldPresentation) Validate() error {
+	if presentation == nil {
+		return nil
+	}
+	if !presentation.InputMode.Valid() {
+		return fmt.Errorf("renderer.FieldPresentation: unsupported input mode %q", presentation.InputMode)
+	}
+	return nil
 }
 
 type FieldValueTone struct {

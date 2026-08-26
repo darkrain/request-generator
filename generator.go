@@ -139,6 +139,9 @@ func (generator *Generator) Run() {
 		if err := validateModuleFieldMedia(module); err != nil {
 			panic(fmt.Sprintf("invalid field media config in module %s: %v", module.Name, err))
 		}
+		if err := validateModuleFieldPresentations(module); err != nil {
+			panic(fmt.Sprintf("invalid field presentation config in module %s: %v", module.Name, err))
+		}
 		if err := validateModuleFieldArrayStorage(module); err != nil {
 			panic(fmt.Sprintf("invalid array storage config in module %s: %v", module.Name, err))
 		}
@@ -429,6 +432,15 @@ func validateAtomicUpdateActions(module *BaseModule) error {
 func validateModuleFieldMedia(module *BaseModule) error {
 	for _, field := range module.Fields {
 		if err := field.Media.Validate(); err != nil {
+			return fmt.Errorf("field %q: %w", field.ColumnName(), err)
+		}
+	}
+	return nil
+}
+
+func validateModuleFieldPresentations(module *BaseModule) error {
+	for _, field := range module.Fields {
+		if err := field.Presentation.Validate(); err != nil {
 			return fmt.Errorf("field %q: %w", field.ColumnName(), err)
 		}
 	}
@@ -982,6 +994,15 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 			}()
 			output, err := action.Atomic.Operation(ctx, db.NewAtomicExecutor(tx), atomicInput)
 			if err != nil {
+				if rejection, ok := actions.AsAtomicCommittedRejection(err); ok {
+					if err := tx.Commit(); err != nil {
+						response.ErrorResponse(l, c, http.StatusInternalServerError, GeneratorErrorAdd, []string{err.Error()})
+						return
+					}
+					committed = true
+					response.ErrorResponse(l, c, rejection.StatusCode(), rejection.Error(), []string{rejection.Error()})
+					return
+				}
 				response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), []string{err.Error()})
 				return
 			}
@@ -1443,6 +1464,15 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 				Selector: atomicSelector,
 			})
 			if err != nil {
+				if rejection, ok := actions.AsAtomicCommittedRejection(err); ok {
+					if err := tx.Commit(); err != nil {
+						response.ErrorResponse(l, c, http.StatusInternalServerError, GeneratorErrorUpdate, []string{err.Error()})
+						return
+					}
+					committed = true
+					response.ErrorResponse(l, c, rejection.StatusCode(), rejection.Error(), []string{rejection.Error()})
+					return
+				}
 				response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), []string{err.Error()})
 				return
 			}

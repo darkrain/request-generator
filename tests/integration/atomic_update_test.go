@@ -284,6 +284,41 @@ func TestAtomicUpdateReturnsOperationErrorAsClientMessage(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestAtomicUpdateCommittedRejectionPersistsWriteWithoutRealtime(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	id := pg.IntegerColumn("id")
+	count := pg.IntegerColumn("attempt_count")
+	items := pg.NewTable("public", "atomic_update_items", "", id, count)
+	broker := module.NewMemoryBroker(module.MemoryBrokerOptions{MaxEvents: 10})
+	operation := func(ctx context.Context, executor actions.AtomicExecutor, input actions.AtomicUpdateInput) (actions.AtomicRecord, error) {
+		_, err := executor.Update(ctx, actions.AtomicUpdate{
+			Table:  items,
+			Fields: []actions.AtomicUpdateField{{Column: count, Operation: actions.AtomicUpdateIncrement, Value: actions.AtomicInt(1)}},
+			Where:  id.EQ(pg.Int(*input.Selector.Value.Int)),
+		})
+		if err != nil {
+			return actions.AtomicRecord{}, err
+		}
+		return actions.AtomicRecord{}, actions.NewAtomicCommittedRejection("invalid code; 3 attempts remain")
+	}
+	engine := setupAtomicUpdateRouter(t, sqlDB, broker, operation, func(*gin.Context, module.RelationScope) error { return nil })
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(41))
+	mock.ExpectExec(`UPDATE public\.atomic_update_items`).WithArgs(int64(1), int64(41)).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	w := executeJSONRequest(engine, http.MethodPost, "/admin/atomic-update-items/id/41", map[string]interface{}{"title": "updated"})
+	require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), "invalid code; 3 attempts remain")
+	require.NoError(t, mock.ExpectationsWereMet())
+	events, _, err := broker.Replay(context.Background(), "0", 10)
+	require.NoError(t, err)
+	require.Empty(t, events)
+}
+
 func mustAtomicInputString(t *testing.T, input actions.AtomicInput, name string) string {
 	t.Helper()
 	value, ok := input.String(name)
