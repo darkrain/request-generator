@@ -27,6 +27,12 @@ func TestLocalizeUsesResolverWithoutMutatingSource(t *testing.T) {
 				Heads: []string{"rates.duration", "Incall"},
 				Rows:  []FieldMatrixRow{{Label: "rates.1h", Description: "rates.description", Cells: []FieldMatrixCell{{Label: "rates.channel", Text: "rates.none"}}}},
 			}},
+		}, {
+			ID: "dates", Renderer: RendererDateRange,
+			DateRange: &DateRangeConfig{
+				StartField: "from", EndField: "to",
+				DialogLabel: "calendar.dialog", PreviousLabel: "calendar.previous", NextLabel: "calendar.next",
+			},
 		}},
 	}}
 	translations := map[string]string{
@@ -37,6 +43,9 @@ func TestLocalizeUsesResolverWithoutMutatingSource(t *testing.T) {
 		"rates.none":        "Not available",
 		"rates.description": "Price for one hour",
 		"rates.channel":     "Channel",
+		"calendar.dialog":   "Choose dates",
+		"calendar.previous": "Previous month",
+		"calendar.next":     "Next month",
 	}
 
 	localized := Localize(source, func(value, key string) string {
@@ -66,6 +75,9 @@ func TestLocalizeUsesResolverWithoutMutatingSource(t *testing.T) {
 	require.Equal(t, "Not available", localized.Form.Sections[0].Matrix.Table.Rows[0].Cells[0].Text)
 	require.Equal(t, "Channel", localized.Form.Sections[0].Matrix.Table.Rows[0].Cells[0].Label)
 	require.Equal(t, "Price for one hour", localized.Form.Sections[0].Matrix.Table.Rows[0].Description)
+	require.Equal(t, "Choose dates", localized.Form.Sections[1].DateRange.DialogLabel)
+	require.Equal(t, "Previous month", localized.Form.Sections[1].DateRange.PreviousLabel)
+	require.Equal(t, "Next month", localized.Form.Sections[1].DateRange.NextLabel)
 	require.Equal(t, "form.title", source.Form.Title)
 	require.Equal(t, "actions.save", source.Form.Actions[0].LabelKey)
 }

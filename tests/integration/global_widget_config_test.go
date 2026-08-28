@@ -224,8 +224,29 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 			},
 		}},
 	}
+	inline := &module.BaseModule{
+		Name:   "inline_status",
+		Path:   "/shell",
+		Fields: []fields.ModuleField{{Column: id, Type: fields.ModuleFieldTypeInt, FormType: fields.ModuleFieldFormTypeOnlyView}},
+		Render: renderer.Universal{List: &renderer.ListPage{}},
+		Actions: []actions.ModuleAction{actions.ListModuleAction{
+			Label:      "Inline status",
+			Permission: []actions.Role{"member"},
+			Auth:       true,
+			Widget: &actions.WidgetConfig{
+				ID:    "inline-status",
+				Order: 10,
+				Renderer: renderer.GlobalWidget{Surface: renderer.WidgetSurface{
+					Kind:       renderer.WidgetSurfaceInline,
+					Placement:  renderer.WidgetPlacementShellStart,
+					LoadPolicy: renderer.WidgetLoadEager,
+					Size:       renderer.SizeSM,
+				}},
+			},
+		}},
+	}
 
-	generator := module.NewGenerator(nil, *group, []*module.BaseModule{master, summary, detail, state, workspace, resource}, func(_ actions.ModuleAction, _ []actions.Role) gin.HandlerFunc {
+	generator := module.NewGenerator(nil, *group, []*module.BaseModule{master, summary, detail, state, workspace, resource, inline}, func(_ actions.ModuleAction, _ []actions.Role) gin.HandlerFunc {
 		return func(c *gin.Context) { c.Next() }
 	}, func(_ actions.ModuleAction) gin.HandlerFunc {
 		return func(c *gin.Context) {
@@ -250,9 +271,9 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 		Widgets []configWidget `json:"widgets"`
 	}
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &config))
-	require.Len(t, config.Widgets, 2)
+	require.Len(t, config.Widgets, 3)
 
-	var workArea, resourceMenu *configWidget
+	var workArea, resourceMenu, inlineStatus *configWidget
 	for index := range config.Widgets {
 		widget := &config.Widgets[index]
 		switch widget.ID {
@@ -260,6 +281,8 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 			workArea = widget
 		case "resource-menu":
 			resourceMenu = widget
+		case "inline-status":
+			inlineStatus = widget
 		}
 	}
 	require.NotNil(t, workArea)
@@ -301,6 +324,14 @@ func TestConfigEndpointSerializesTypedGlobalWidgets(t *testing.T) {
 	require.Equal(t, "/api/shell/resource_entry/view/:bykey/:value", resourceMenu.Load.Resource.Request.Endpoint)
 	require.Equal(t, renderer.RequestBindingPathValue, resourceMenu.Load.Resource.Bindings[1].Target)
 	require.Equal(t, renderer.RuntimeValueSourceCurrentUser, resourceMenu.Load.Resource.Bindings[1].Source.Runtime.Scope)
+	require.NotNil(t, inlineStatus)
+	require.Equal(t, renderer.WidgetSurfaceInline, inlineStatus.Widget.Surface.Kind)
+	require.Equal(t, renderer.WidgetPlacementShellStart, inlineStatus.Widget.Surface.Placement)
+	require.Equal(t, renderer.WidgetLoadEager, inlineStatus.Widget.Surface.LoadPolicy)
+	require.Nil(t, inlineStatus.Widget.Workspace)
+	require.NotNil(t, inlineStatus.Load.Resource)
+	require.Equal(t, http.MethodGet, inlineStatus.Load.Resource.Request.Method)
+	require.Equal(t, "/api/shell/inline_status", inlineStatus.Load.Resource.Request.Endpoint)
 	require.NotContains(t, response.Body.String(), `"config"`)
 	require.NotContains(t, response.Body.String(), `"params"`)
 }

@@ -65,6 +65,9 @@ func (widget GlobalWidget) Validate() error {
 	if err := widget.Surface.Validate(); err != nil {
 		return fmt.Errorf("renderer.GlobalWidget: surface: %w", err)
 	}
+	if widget.Surface.Kind == WidgetSurfaceInline && widget.Workspace != nil {
+		return fmt.Errorf("renderer.GlobalWidget: inline surface does not support workspace")
+	}
 	if widget.Workspace != nil {
 		if err := widget.Workspace.Validate(); err != nil {
 			return fmt.Errorf("renderer.GlobalWidget: workspace: %w", err)
@@ -78,6 +81,7 @@ type WidgetSurfaceKind string
 const (
 	WidgetSurfaceDrawer WidgetSurfaceKind = "drawer"
 	WidgetSurfacePopup  WidgetSurfaceKind = "popup"
+	WidgetSurfaceInline WidgetSurfaceKind = "inline"
 )
 
 type WidgetPlacement string
@@ -135,7 +139,7 @@ func (trigger WidgetTrigger) Validate() error {
 
 func (surface WidgetSurface) Validate() error {
 	switch surface.Kind {
-	case WidgetSurfaceDrawer, WidgetSurfacePopup:
+	case WidgetSurfaceDrawer, WidgetSurfacePopup, WidgetSurfaceInline:
 	default:
 		return fmt.Errorf("unsupported kind %q", surface.Kind)
 	}
@@ -147,10 +151,19 @@ func (surface WidgetSurface) Validate() error {
 	if surface.Kind == WidgetSurfaceDrawer && surface.Placement == WidgetPlacementCenter {
 		return fmt.Errorf("drawer does not support placement %q", surface.Placement)
 	}
+	if surface.Kind == WidgetSurfaceInline && surface.Placement != WidgetPlacementShellStart {
+		return fmt.Errorf("inline requires placement %q", WidgetPlacementShellStart)
+	}
 	switch surface.LoadPolicy {
 	case WidgetLoadOnOpen, WidgetLoadEager:
 	default:
 		return fmt.Errorf("unsupported load policy %q", surface.LoadPolicy)
+	}
+	if surface.Kind == WidgetSurfaceInline && surface.LoadPolicy != WidgetLoadEager {
+		return fmt.Errorf("inline requires load policy %q", WidgetLoadEager)
+	}
+	if surface.Kind == WidgetSurfaceInline && surface.Trigger != nil {
+		return fmt.Errorf("inline does not support trigger")
 	}
 	if surface.Size != "" {
 		switch surface.Size {

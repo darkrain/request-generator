@@ -3,11 +3,47 @@ package actions
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	pg "github.com/go-jet/jet/v2/postgres"
 )
+
+// AtomicCommittedRejection is a business rejection returned after an atomic
+// operation has intentionally persisted state such as an attempt counter.
+// It is created through constructors so producers cannot define invalid HTTP
+// statuses or empty client messages.
+type AtomicCommittedRejection struct {
+	status  int
+	message string
+}
+
+func NewAtomicCommittedRejection(message string) error {
+	return NewAtomicCommittedRejectionWithStatus(http.StatusBadRequest, message)
+}
+
+func NewAtomicCommittedRejectionWithStatus(status int, message string) error {
+	if status < http.StatusBadRequest || status >= http.StatusInternalServerError {
+		status = http.StatusBadRequest
+	}
+	if message == "" {
+		message = http.StatusText(status)
+	}
+	return &AtomicCommittedRejection{status: status, message: message}
+}
+
+func (rejection *AtomicCommittedRejection) Error() string   { return rejection.message }
+func (rejection *AtomicCommittedRejection) StatusCode() int { return rejection.status }
+
+func AsAtomicCommittedRejection(err error) (*AtomicCommittedRejection, bool) {
+	var rejection *AtomicCommittedRejection
+	if !errors.As(err, &rejection) {
+		return nil, false
+	}
+	return rejection, true
+}
 
 // AddMode selects the persistence path for an add action.
 type AddMode string

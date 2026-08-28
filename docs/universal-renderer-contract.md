@@ -2,7 +2,7 @@
 
 Имя: `UniversalRenderer`
 
-Версия: `2.5.0`
+Версия: `2.6.0`
 
 Статус: `draft`
 
@@ -203,6 +203,42 @@ renderer.FormSection{
     Columns: renderer.FieldMatrixColumnsOne,
 }
 ```
+
+### Date Range Form Section
+
+`RendererDateRange` объединяет два уже объявленных поля формы в один контрол
+диапазона дат. Это только presentation: стандартный add/update body остаётся
+плоским и содержит исходные `start_field` и `end_field`.
+
+```go
+renderer.FormSection{
+    ID:       "period",
+    Renderer: renderer.RendererDateRange,
+    Fields:   []string{"starts_on", "ends_on"},
+    DateRange: &renderer.DateRangeConfig{
+        StartField: "starts_on",
+        EndField:   "ends_on",
+        Min:        "2026-01-01",
+        ApplyLabel: "ui.apply",
+        CancelLabel: "ui.cancel",
+        Months: []string{
+            "calendar.january", "calendar.february", "calendar.march",
+            "calendar.april", "calendar.may", "calendar.june",
+            "calendar.july", "calendar.august", "calendar.september",
+            "calendar.october", "calendar.november", "calendar.december",
+        },
+        Weekdays: []string{
+            "calendar.monday", "calendar.tuesday", "calendar.wednesday",
+            "calendar.thursday", "calendar.friday", "calendar.saturday",
+            "calendar.sunday",
+        },
+    },
+}
+```
+
+Оба field id должны входить и в `form_page.fields`, и в `section.fields`.
+`min`, `max` и `disabled_dates` используют ISO `YYYY-MM-DD`. Месяцы и дни
+недели передаются producer-ом и локализуются обычным renderer localizer.
 
 ### Prompt List Внутри Формы
 
@@ -1058,7 +1094,7 @@ Media: &renderer.FieldMediaConfig{
 {
   "id": "work-area",
   "order": 10,
-  "renderer": {"name": "UniversalRenderer", "version": "2.5.0"},
+  "renderer": {"name": "UniversalRenderer", "version": "2.6.0"},
   "widget": {
     "surface": {
       "kind": "drawer",
@@ -1685,6 +1721,55 @@ server-side filter query. `count_field` ссылается на поле record,
 `value_field` читается только из результата `summary.load`. Клиент не
 подсчитывает строки текущей страницы как fallback, поэтому server-side
 pagination и фильтры не искажают значение счётчиков.
+
+Для расширенной сводки item может также ссылаться на `change_field` и
+`direction_field`, а `icon` и `tone` задают только presentation. Готовая серия
+описывается через `summary.trend` и читается из той же summary record:
+
+```json
+{
+  "summary": {
+    "presentation": "dashboard",
+    "items": [{
+      "id": "volume",
+      "label": "Volume",
+      "value_field": "volume_display",
+      "change_field": "volume_change",
+      "direction_field": "volume_direction",
+      "icon": "chart",
+      "tone": "cyan"
+    }],
+    "trend": {
+      "points_field": "trend_points",
+      "period_field": "period_label",
+      "aria_label": "Volume dynamics",
+      "empty_label": "No data",
+      "loading_label": "Loading",
+      "tone": "pink"
+    }
+  }
+}
+```
+
+Producer отдаёт уже рассчитанные и отформатированные значения. Generator и
+клиент не агрегируют list rows и не выводят валюту из числа.
+`presentation: "compact"` сохраняет обычную строку счётчиков, а `dashboard`
+включает плитки и trend-композицию. Пустое значение эквивалентно `compact`.
+
+### Status Timeline
+
+`DisplayStatusTimeline` размещает общий timeline внутри обычного
+`RecordSection`. Первое и единственное поле содержит готовый упорядоченный
+массив элементов с `state`, `tone`, `icon`, `label`, `date` и `description`.
+Renderer не выводит lifecycle из статуса и не меняет порядок элементов.
+
+```go
+renderer.DisplayComponent{
+    ID:     "history",
+    Type:   renderer.DisplayStatusTimeline,
+    Fields: []string{"status_history"},
+}
+```
 
 Пример named controls:
 
