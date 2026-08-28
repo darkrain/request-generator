@@ -89,6 +89,9 @@ type WidgetPlacement string
 const (
 	WidgetPlacementShellStart WidgetPlacement = "shell_start"
 	WidgetPlacementShellEnd   WidgetPlacement = "shell_end"
+	// WidgetPlacementShellOverlay places an eager inline widget above the
+	// current page, anchored to the application shell rather than page flow.
+	WidgetPlacementShellOverlay WidgetPlacement = "shell_overlay"
 	WidgetPlacementCenter     WidgetPlacement = "center"
 )
 
@@ -144,15 +147,15 @@ func (surface WidgetSurface) Validate() error {
 		return fmt.Errorf("unsupported kind %q", surface.Kind)
 	}
 	switch surface.Placement {
-	case WidgetPlacementShellStart, WidgetPlacementShellEnd, WidgetPlacementCenter:
+	case WidgetPlacementShellStart, WidgetPlacementShellEnd, WidgetPlacementShellOverlay, WidgetPlacementCenter:
 	default:
 		return fmt.Errorf("unsupported placement %q", surface.Placement)
 	}
 	if surface.Kind == WidgetSurfaceDrawer && surface.Placement == WidgetPlacementCenter {
 		return fmt.Errorf("drawer does not support placement %q", surface.Placement)
 	}
-	if surface.Kind == WidgetSurfaceInline && surface.Placement != WidgetPlacementShellStart {
-		return fmt.Errorf("inline requires placement %q", WidgetPlacementShellStart)
+	if surface.Kind == WidgetSurfaceInline && surface.Placement != WidgetPlacementShellStart && surface.Placement != WidgetPlacementShellOverlay {
+		return fmt.Errorf("inline requires placement %q or %q", WidgetPlacementShellStart, WidgetPlacementShellOverlay)
 	}
 	switch surface.LoadPolicy {
 	case WidgetLoadOnOpen, WidgetLoadEager:
