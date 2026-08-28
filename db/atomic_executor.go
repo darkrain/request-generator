@@ -345,6 +345,14 @@ func atomicSelectScan(kind actions.AtomicValueKind) (interface{}, func() (action
 			}
 			return actions.AtomicString(value.String), nil
 		}, nil
+	case actions.AtomicValueKindNullableString:
+		value := &sql.NullString{}
+		return value, func() (actions.AtomicValue, error) {
+			if !value.Valid {
+				return actions.AtomicString(""), nil
+			}
+			return actions.AtomicString(value.String), nil
+		}, nil
 	case actions.AtomicValueKindInt:
 		value := &sql.NullInt64{}
 		return value, func() (actions.AtomicValue, error) {

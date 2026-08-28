@@ -68,6 +68,33 @@ func TestAtomicExecutorSelectOneRequiresWhere(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestAtomicExecutorSelectOneMapsNullableStringToEmptyValue(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	id := pg.IntegerColumn("id")
+	email := pg.StringColumn("email")
+	users := pg.NewTable("public", "users", "", id, email)
+	mock.ExpectBegin()
+	tx, err := sqlDB.Begin()
+	require.NoError(t, err)
+	mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"email"}).AddRow(nil))
+	mock.ExpectRollback()
+
+	record, err := NewAtomicExecutor(tx).SelectOne(context.Background(), actions.AtomicSelect{
+		Table:  users,
+		Fields: []actions.AtomicSelectField{{Name: "email", Column: email, Kind: actions.AtomicValueKindNullableString}},
+		Where:  id.EQ(pg.Int(17)),
+	})
+	require.NoError(t, err)
+	value, ok := record.String("email")
+	require.True(t, ok)
+	require.Empty(t, value)
+	require.NoError(t, tx.Rollback())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestAtomicExecutorSelectManyReturnsTypedRows(t *testing.T) {
 	sqlDB, mock, err := sqlmock.New()
 	require.NoError(t, err)

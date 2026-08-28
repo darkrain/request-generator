@@ -8,6 +8,7 @@ import (
 
 	"github.com/darkrain/request-generator/actions"
 	"github.com/darkrain/request-generator/fields"
+	"github.com/darkrain/request-generator/icontext"
 	"github.com/darkrain/request-generator/renderer"
 	pg "github.com/go-jet/jet/v2/postgres"
 	"github.com/stretchr/testify/require"
@@ -53,6 +54,14 @@ func TestMemoryBrokerReplay(t *testing.T) {
 	if len(events) != 1 || events[0].EventID != second.EventID {
 		t.Fatalf("unexpected replay events: %#v", events)
 	}
+}
+
+func TestRealtimeTopicsForUserRestrictsRoleTopics(t *testing.T) {
+	topics := realtimeTopicsForUser(&icontext.UserInfo{ID: 42, Role: "model"})
+	require.Contains(t, topics, "user:42")
+	require.Contains(t, topics, "role:model")
+	require.Contains(t, topics, "role:all")
+	require.NotContains(t, topics, "role:agency")
 }
 
 func TestMemoryBrokerReplayOverflowRequiresResync(t *testing.T) {

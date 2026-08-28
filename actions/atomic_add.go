@@ -208,18 +208,19 @@ type AtomicUpsertResult struct {
 type AtomicValueKind string
 
 const (
-	AtomicValueKindString  AtomicValueKind = "string"
-	AtomicValueKindInt     AtomicValueKind = "int"
-	AtomicValueKindFloat   AtomicValueKind = "float"
-	AtomicValueKindBool    AtomicValueKind = "bool"
-	AtomicValueKindTime    AtomicValueKind = "time"
-	AtomicValueKindStrings AtomicValueKind = "strings"
-	AtomicValueKindInts    AtomicValueKind = "ints"
+	AtomicValueKindString         AtomicValueKind = "string"
+	AtomicValueKindNullableString AtomicValueKind = "nullable_string"
+	AtomicValueKindInt            AtomicValueKind = "int"
+	AtomicValueKindFloat          AtomicValueKind = "float"
+	AtomicValueKindBool           AtomicValueKind = "bool"
+	AtomicValueKindTime           AtomicValueKind = "time"
+	AtomicValueKindStrings        AtomicValueKind = "strings"
+	AtomicValueKindInts           AtomicValueKind = "ints"
 )
 
 func (kind AtomicValueKind) valid() bool {
 	switch kind {
-	case AtomicValueKindString, AtomicValueKindInt, AtomicValueKindFloat, AtomicValueKindBool, AtomicValueKindTime, AtomicValueKindStrings, AtomicValueKindInts:
+	case AtomicValueKindString, AtomicValueKindNullableString, AtomicValueKindInt, AtomicValueKindFloat, AtomicValueKindBool, AtomicValueKindTime, AtomicValueKindStrings, AtomicValueKindInts:
 		return true
 	default:
 		return false
@@ -413,7 +414,13 @@ type AtomicRealtimePayloadField struct {
 // AtomicRealtimePublishConfig declares a realtime event emitted after a
 // successful atomic transaction commit.
 type AtomicRealtimePublishConfig struct {
-	Recipients          []AtomicRealtimeRecipient    `json:"recipients"`
+	Recipients []AtomicRealtimeRecipient `json:"recipients"`
+	// Roles publishes a refresh-only event to every currently connected user
+	// with one of the declared roles. The realtime transport authorizes these
+	// topics from the authenticated connection; a client cannot subscribe to a
+	// different role. It is intended for shared resources where enumerating all
+	// users on each write would be both expensive and unnecessary.
+	Roles               []Role                       `json:"roles,omitempty"`
 	Correlation         *AtomicRealtimeCorrelation   `json:"correlation,omitempty"`
 	Payload             []AtomicRealtimePayloadField `json:"payload,omitempty"`
 	SkipEmptyRecipients bool                         `json:"skip_empty_recipients,omitempty"`

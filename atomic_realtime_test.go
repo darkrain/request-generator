@@ -71,6 +71,21 @@ func TestAtomicRealtimePublishesUsesTrustedResults(t *testing.T) {
 	require.Equal(t, map[string]interface{}{"message": "Hello"}, publishes[0].Payload)
 }
 
+func TestAtomicRealtimePublishesRoleTopicsWithoutUserFanOut(t *testing.T) {
+	config := &actions.AtomicAddConfig{Publish: []actions.AtomicRealtimePublishConfig{{
+		Roles: []actions.Role{"model", "agency"},
+		Correlation: &actions.AtomicRealtimeCorrelation{
+			Field: "post_id", Source: actions.AtomicValueSource{Scope: actions.AtomicValueSourceResult, Field: "post_id"},
+		},
+	}}}
+	record := actions.AtomicRecord{Fields: []actions.AtomicField{{Name: "post_id", Value: actions.AtomicInt(42)}}}
+
+	publishes, err := atomicRealtimePublishes(config, actions.AtomicInput{}, record)
+	require.NoError(t, err)
+	require.Len(t, publishes, 1)
+	require.Equal(t, []string{"role:model", "role:agency"}, publishes[0].Topics)
+}
+
 func TestValidateAtomicRealtimePayloadRejectsInputAndUnknownResult(t *testing.T) {
 	chatID := pg.IntegerColumn("chat_id")
 	text := pg.StringColumn("text")

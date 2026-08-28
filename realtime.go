@@ -68,6 +68,25 @@ type RealtimePublish struct {
 	Payload     map[string]interface{}
 }
 
+func realtimeUserTopic(userID int64) string {
+	return fmt.Sprintf("user:%d", userID)
+}
+
+func realtimeRoleTopic(role string) string {
+	return "role:" + role
+}
+
+func realtimeTopicsForUser(user *icontext.UserInfo) map[string]struct{} {
+	topics := map[string]struct{}{
+		realtimeUserTopic(user.ID):                 {},
+		realtimeRoleTopic(string(actions.RoleAll)): {},
+	}
+	if user.Role != "" {
+		topics[realtimeRoleTopic(user.Role)] = struct{}{}
+	}
+	return topics
+}
+
 type MemoryBrokerOptions struct {
 	MaxEvents int
 }
@@ -320,7 +339,7 @@ func (generator *Generator) handleRealtimeWebSocket() gin.HandlerFunc {
 			hub:    generator.realtimeHub,
 			conn:   conn,
 			send:   make(chan RealtimeEvent, 64),
-			topics: map[string]struct{}{fmt.Sprintf("user:%d", user.ID): {}},
+			topics: realtimeTopicsForUser(user),
 			userID: user.ID,
 			role:   user.Role,
 		}
@@ -356,7 +375,7 @@ func (generator *Generator) handleRealtimeSSE() gin.HandlerFunc {
 		sc := &sseConnection{
 			hub:    generator.realtimeHub,
 			send:   make(chan RealtimeEvent, 64),
-			topics: map[string]struct{}{fmt.Sprintf("user:%d", user.ID): {}},
+			topics: realtimeTopicsForUser(user),
 			userID: user.ID,
 			role:   user.Role,
 		}
@@ -485,7 +504,7 @@ func (c *realtimeConnection) handleSubscribe(msg realtimeClientMessage) {
 
 func (c *realtimeConnection) handleUnsubscribe(msg realtimeClientMessage) {
 	for _, topic := range msg.Topics {
-		if topic == fmt.Sprintf("user:%d", c.userID) {
+		if topic == realtimeUserTopic(c.userID) || topic == realtimeRoleTopic(c.role) || topic == realtimeRoleTopic(string(actions.RoleAll)) {
 			continue
 		}
 		delete(c.topics, topic)
@@ -494,8 +513,7 @@ func (c *realtimeConnection) handleUnsubscribe(msg realtimeClientMessage) {
 }
 
 func (c *realtimeConnection) canSubscribe(topic string) bool {
-	own := fmt.Sprintf("user:%d", c.userID)
-	if topic == own {
+	if topic == realtimeUserTopic(c.userID) || topic == realtimeRoleTopic(c.role) || topic == realtimeRoleTopic(string(actions.RoleAll)) {
 		return true
 	}
 	return false

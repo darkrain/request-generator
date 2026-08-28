@@ -117,6 +117,9 @@ func (r Universal) Validate() error {
 					return err
 				}
 			}
+			if err := validateMediaGalleryItems(fmt.Sprintf("form section %q", section.ID), section.MediaItems); err != nil {
+				return err
+			}
 			if section.Collection == nil {
 				if err := validateMediaActions(section.MediaActions); err != nil {
 					return err
@@ -195,12 +198,27 @@ func validateRecordComponents(page *RecordPage) error {
 			if err := component.Validate(); err != nil {
 				return fmt.Errorf("renderer.Universal: record section %q component %q: %w", section.ID, component.ID, err)
 			}
+			if component.ActionID != "" && !recordPageHasAction(page, component.ActionID) {
+				return fmt.Errorf("renderer.Universal: record section %q component %q action_id %q is not declared in record page actions", section.ID, component.ID, component.ActionID)
+			}
 		}
 	}
 	return nil
 }
 
+func recordPageHasAction(page *RecordPage, id string) bool {
+	for index := range page.Actions {
+		if page.Actions[index].ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 func (component DisplayComponent) Validate() error {
+	if err := validateMediaGalleryItems(fmt.Sprintf("display component %q", component.ID), component.MediaItems); err != nil {
+		return err
+	}
 	if component.Type == DisplayStatusTimeline && len(component.Fields) != 1 {
 		return fmt.Errorf("status timeline requires exactly one field")
 	}
@@ -673,6 +691,15 @@ func validateMediaActions(actions *MediaGalleryActions) error {
 		"media recenter": actions.Recenter, "media crop": actions.Crop, "media remove": actions.Remove,
 	} {
 		if err := validateAction(scope, action); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateMediaGalleryItems(scope string, items []MediaGalleryItem) error {
+	for index := range items {
+		if err := validateActions(fmt.Sprintf("%s media item %q", scope, items[index].ID), items[index].Actions); err != nil {
 			return err
 		}
 	}
@@ -1337,8 +1364,13 @@ type MediaCropperOutputConfig struct {
 }
 
 func (config *FieldMediaConfig) Validate() error {
-	if config == nil || config.Cropper == nil {
+	if config == nil {
 		return nil
+	}
+	if config.Item != nil {
+		if err := validateMediaGalleryItems("field media", []MediaGalleryItem{*config.Item}); err != nil {
+			return err
+		}
 	}
 	return config.Cropper.Validate()
 }
@@ -1815,6 +1847,11 @@ type MediaGalleryItem struct {
 	SortOrder       int             `json:"sort_order"`
 	Title           string          `json:"title,omitempty"`
 	Description     string          `json:"description,omitempty"`
+	// Badges are server-owned annotations for an individual gallery item. They
+	// are useful for state that must survive reloads, such as a published media
+	// item, without making the browser infer state from a URL or local cache.
+	Badges          []Badge         `json:"badges,omitempty"`
+	Actions         []Action        `json:"actions,omitempty"`
 }
 
 type MediaGalleryLabels struct {
@@ -2004,6 +2041,7 @@ type Stack struct {
 type DisplayComponent struct {
 	ID                  string                   `json:"id,omitempty"`
 	Type                DisplayComponentType     `json:"type,omitempty"`
+	ActionID            string                   `json:"action_id,omitempty"`
 	Fields              []string                 `json:"fields,omitempty"`
 	MediaItems          []MediaGalleryItem       `json:"media_items,omitempty"`
 	Value               interface{}              `json:"value,omitempty"`

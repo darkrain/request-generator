@@ -1555,6 +1555,28 @@ request body не может адресовать событие другому 
 сверяется с `RealtimeEventConfig`. Если transaction откатывается, событие не
 создаётся.
 
+Для общих ресурсов, доступных целой роли, не нужно выбирать всех users и
+строить fan-out в бизнес-операции. `AtomicRealtimePublishConfig.Roles`
+формирует topic `role:{role}`. WebSocket/SSE-соединение получает только topic
+собственной authenticated роли (и `role:all`), поэтому клиент не может
+подписаться на чужую роль. Такой event должен нести только сигнал обновления
+или другой безопасный summary: consumer заново читает данные через обычный
+permission-checked API.
+
+```go
+Publish: []actions.AtomicRealtimePublishConfig{{
+    Roles: []actions.Role{"model", "agency"},
+    Correlation: &actions.AtomicRealtimeCorrelation{
+        Field: "post_id",
+        Source: actions.AtomicValueSource{Scope: actions.AtomicValueSourceResult, Field: "post_id"},
+    },
+    Payload: []actions.AtomicRealtimePayloadField{{
+        Key: "refresh",
+        Source: actions.AtomicValueSource{Scope: actions.AtomicValueSourceResult, Field: "post_id"},
+    }},
+}}
+```
+
 ## Атомарное обновление стандартной записи
 
 Обычный `UpdateModuleAction` остаётся CRUD-операцией одной записи. Если

@@ -61,7 +61,10 @@ func TestMediaCropperConfigValidate(t *testing.T) {
 }
 
 func TestLocalizeFieldMediaCropperClonesAndLocalizes(t *testing.T) {
-	source := &FieldMediaConfig{Cropper: validMediaCropper()}
+	source := &FieldMediaConfig{
+		Item:    &MediaGalleryItem{Actions: []Action{{ID: "publish", Label: "media.publish", Type: ActionEmit}}},
+		Cropper: validMediaCropper(),
+	}
 	translations := map[string]string{
 		"cropper.title":    "Adjust image",
 		"cropper.subtitle": "Move and scale the image",
@@ -70,6 +73,7 @@ func TestLocalizeFieldMediaCropperClonesAndLocalizes(t *testing.T) {
 		"cropper.cancel":   "Cancel",
 		"cropper.confirm":  "Use image",
 		"cropper.close":    "Close",
+		"media.publish":    "Publish",
 	}
 
 	localized := LocalizeFieldMedia(source, func(value, _ string) string {
@@ -85,4 +89,6 @@ func TestLocalizeFieldMediaCropperClonesAndLocalizes(t *testing.T) {
 	require.Equal(t, "cropper.confirm", source.Cropper.ConfirmLabel)
 	require.Equal(t, MediaCropperViewportCircle, localized.Cropper.Viewport.Shape)
 	require.Equal(t, 512, localized.Cropper.Output.Width)
+	require.Equal(t, "Publish", localized.Item.Actions[0].Label)
+	require.Equal(t, "media.publish", source.Item.Actions[0].Label)
 }
