@@ -200,6 +200,8 @@ func atomicValueKind(value actions.AtomicValue) actions.AtomicValueKind {
 		return actions.AtomicValueKindFloat
 	case value.Bool != nil:
 		return actions.AtomicValueKindBool
+	case value.Time != nil:
+		return actions.AtomicValueKindTime
 	case value.Strings != nil:
 		return actions.AtomicValueKindStrings
 	case value.Ints != nil:
@@ -345,6 +347,6 @@ func atomicTypedValue(value actions.AtomicValue) (renderer.TypedValue, error) {
 
 func (generator *Generator) publishAtomicRealtime(c *gin.Context, module *BaseModule, action actions.ModuleActionName, record actions.AtomicRecord, publishes []RealtimePublish) {
 	for _, publish := range publishes {
-		generator.publishRealtimeEvent(c, module, action, record, publish)
+		_, _ = generator.publishRealtimeEvent(c.Request.Context(), module, action, record, publish)
 	}
 }

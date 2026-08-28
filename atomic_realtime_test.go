@@ -3,6 +3,7 @@ package module
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/darkrain/request-generator/actions"
 	"github.com/darkrain/request-generator/fields"
@@ -112,4 +113,10 @@ func TestValidateAtomicResultRequiresDeclaredOutput(t *testing.T) {
 	config := &actions.AtomicAddConfig{ResultFields: []actions.AtomicResultField{{Name: "chat_id", Kind: actions.AtomicValueKindInt}}}
 	err := validateAtomicResult(config, actions.AtomicRecord{Value: 1, PrimaryKey: "id"})
 	require.EqualError(t, err, `atomic result field "chat_id" is missing`)
+}
+
+func TestValidateAtomicResultAcceptsDeclaredTime(t *testing.T) {
+	config := &actions.AtomicAddConfig{ResultFields: []actions.AtomicResultField{{Name: "deadline", Kind: actions.AtomicValueKindTime}}}
+	record := actions.AtomicRecord{Fields: []actions.AtomicField{{Name: "deadline", Value: actions.AtomicTime(time.Now().UTC())}}}
+	require.NoError(t, validateAtomicResult(config, record))
 }

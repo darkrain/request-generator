@@ -2,7 +2,7 @@ package renderer
 
 const (
 	Name    = "UniversalRenderer"
-	Version = "2.5.0"
+	Version = "2.6.0"
 )
 
 type Identity struct {
@@ -249,6 +249,7 @@ const (
 	RendererChipSelect          RendererKey = "chip_select"
 	RendererPrimaryRadio        RendererKey = "primary_radio"
 	RendererRecordSelect        RendererKey = "record_select"
+	RendererDateRange           RendererKey = "date_range"
 )
 
 type RecordSectionRenderer = RendererKey
@@ -368,6 +369,7 @@ const (
 	DisplayText            DisplayComponentType = "text"
 	DisplayBadgeList       DisplayComponentType = "badge_list"
 	DisplayAccordionGroups DisplayComponentType = "accordion_groups"
+	DisplayStatusTimeline  DisplayComponentType = "status_timeline"
 )
 
 type ComponentAction string

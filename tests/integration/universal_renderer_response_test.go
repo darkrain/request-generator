@@ -929,7 +929,13 @@ func TestCheckRequest_ValidatesSubmittedFieldsOutsideActionColumns(t *testing.T)
 		"status": "verified",
 	})
 	require.Equal(t, http.StatusBadRequest, w.Code)
-	assert.Contains(t, w.Body.String(), "status is read-only")
+	var response struct {
+		Message string            `json:"message"`
+		Errors  map[string]string `json:"errors"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+	assert.Equal(t, "status is read-only", response.Message)
+	assert.Equal(t, map[string]string{"status": "status is read-only"}, response.Errors)
 }
 
 func TestUniversalRendererMetadata_ListAndResourceGridAreMutuallyExclusive(t *testing.T) {

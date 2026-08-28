@@ -538,16 +538,39 @@ func (generator *Generator) publishRealtime(c *gin.Context, module *BaseModule, 
 		return
 	}
 	for _, pub := range pubs {
-		generator.publishRealtimeEvent(c, module, action, output, pub)
+		_, _ = generator.publishRealtimeEvent(c.Request.Context(), module, action, output, pub)
 	}
 }
 
-func (generator *Generator) publishRealtimeEvent(c *gin.Context, module *BaseModule, action actions.ModuleActionName, output interface{}, pub RealtimePublish) {
+// PublishCommittedRealtime publishes a typed event after the caller has
+// committed its transaction. It uses the same module/action validation and
+// broker-to-hub delivery path as request-bound actions.
+func (generator *Generator) PublishCommittedRealtime(ctx context.Context, moduleName string, action actions.ModuleActionName, pub RealtimePublish) (RealtimeEvent, error) {
+	if ctx == nil {
+		return RealtimeEvent{}, fmt.Errorf("realtime context is required")
+	}
+	module, ok := generator.moduleByName(moduleName)
+	if !ok {
+		return RealtimeEvent{}, fmt.Errorf("realtime module %q is not registered", moduleName)
+	}
+	return generator.publishRealtimeEvent(ctx, module, action, nil, pub)
+}
+
+func (generator *Generator) publishRealtimeEvent(ctx context.Context, module *BaseModule, action actions.ModuleActionName, output interface{}, pub RealtimePublish) (RealtimeEvent, error) {
+	if !generator.Realtime.Enabled {
+		return RealtimeEvent{}, fmt.Errorf("realtime is disabled")
+	}
+	if generator.Realtime.Broker == nil {
+		return RealtimeEvent{}, fmt.Errorf("realtime broker is not configured")
+	}
+	if generator.realtimeHub == nil {
+		return RealtimeEvent{}, fmt.Errorf("realtime hub is not initialized")
+	}
 	if len(pub.Topics) == 0 {
-		return
+		return RealtimeEvent{}, fmt.Errorf("realtime topics are required")
 	}
 	if err := generator.validateRealtimePublish(module, action, pub); err != nil {
-		return
+		return RealtimeEvent{}, err
 	}
 	event := RealtimeEvent{
 		Type:        "event",
@@ -568,11 +591,12 @@ func (generator *Generator) publishRealtimeEvent(c *gin.Context, module *BaseMod
 			event.RecordID = mapped
 		}
 	}
-	published, err := generator.Realtime.Broker.Publish(c.Request.Context(), event)
+	published, err := generator.Realtime.Broker.Publish(ctx, event)
 	if err != nil {
-		return
+		return RealtimeEvent{}, err
 	}
 	generator.realtimeHub.publish(published)
+	return published, nil
 }
 
 func (generator *Generator) validateRealtimePublish(module *BaseModule, actionName actions.ModuleActionName, pub RealtimePublish) error {
