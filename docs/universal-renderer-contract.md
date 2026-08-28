@@ -1341,8 +1341,12 @@ literal из `By`. `filter` выводит query name как `filter[field]`. `b
 текущем контексте, widget не попадает в config; статическая проверка не ведёт
 собственный дублирующий реестр фильтров.
 
-`surface.kind`: `drawer` или `popup`. `surface.placement`: `shell_start`,
-`shell_end` или `center`; drawer нельзя разместить в `center`.
+`surface.kind`: `drawer`, `popup` или `inline`. `surface.placement`:
+`shell_start`, `shell_end`, `shell_overlay` или `center`; drawer нельзя
+разместить в `center`. Inline widget использует eager loading и может быть
+размещён в `shell_start` (в потоке shell) либо `shell_overlay` (плавающая
+поверхность shell над текущей страницей). Он не имеет trigger и не содержит
+workspace.
 `surface.load_policy`: `on_open` или `eager`. Все перечисления закрыты и
 валидируются генератором.
 
