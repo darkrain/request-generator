@@ -717,15 +717,16 @@ func validateAction(scope string, action *Action) error {
 }
 
 type Layout struct {
-	Type     LayoutType   `json:"type,omitempty"`
-	Mode     string       `json:"mode,omitempty"`
-	Slots    []string     `json:"slots,omitempty"`
-	Left     SizeToken    `json:"left,omitempty"`
-	Center   SizeToken    `json:"center,omitempty"`
-	Right    SizeToken    `json:"right,omitempty"`
-	Align    AlignToken   `json:"align,omitempty"`
-	MaxWidth MaxWidth     `json:"max_width,omitempty"`
-	Gap      SpacingToken `json:"gap,omitempty"`
+	Type        LayoutType   `json:"type,omitempty"`
+	Mode        string       `json:"mode,omitempty"`
+	Slots       []string     `json:"slots,omitempty"`
+	MobileSlots []string     `json:"mobile_slots,omitempty"`
+	Left        SizeToken    `json:"left,omitempty"`
+	Center      SizeToken    `json:"center,omitempty"`
+	Right       SizeToken    `json:"right,omitempty"`
+	Align       AlignToken   `json:"align,omitempty"`
+	MaxWidth    MaxWidth     `json:"max_width,omitempty"`
+	Gap         SpacingToken `json:"gap,omitempty"`
 }
 
 type Filters struct {
@@ -1850,8 +1851,8 @@ type MediaGalleryItem struct {
 	// Badges are server-owned annotations for an individual gallery item. They
 	// are useful for state that must survive reloads, such as a published media
 	// item, without making the browser infer state from a URL or local cache.
-	Badges          []Badge         `json:"badges,omitempty"`
-	Actions         []Action        `json:"actions,omitempty"`
+	Badges  []Badge  `json:"badges,omitempty"`
+	Actions []Action `json:"actions,omitempty"`
 }
 
 type MediaGalleryLabels struct {

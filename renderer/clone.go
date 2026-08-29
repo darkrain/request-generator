@@ -156,6 +156,7 @@ func cloneLayout(v *Layout) *Layout {
 	}
 	cp := *v
 	cp.Slots = cloneSlice(v.Slots)
+	cp.MobileSlots = cloneSlice(v.MobileSlots)
 	return &cp
 }
 

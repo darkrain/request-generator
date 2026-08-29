@@ -644,6 +644,8 @@ presentation. Значения переключателей, availability и upd
       "title": "entities.menu.list",
       "icon": "list",
       "order": 10,
+      "mobile_order": 2,
+      "mobile_title": "Catalog",
       "group": "navigation.main",
       "query": {},
       "data": {}
@@ -656,6 +658,7 @@ presentation. Значения переключателей, availability и upd
       }
     }
   ],
+  "navigation_more_label": "More",
   "widgets": [
     {
       "id": "profile-menu",
@@ -702,6 +705,9 @@ presentation. Значения переключателей, availability и upd
 | `navigation[].target.page_type` | Тип страницы: `list`, `form`, `record`, `resource_grid`. |
 | `navigation[].target.query` | Endpoint и method для загрузки данных page route. |
 | `navigation[].target.children` | Вложенные route configs. |
+| `navigation[].mobile_order` | Порядок в нижней mobile navigation. Положительные значения получают приоритет над пунктами без mobile order. |
+| `navigation[].mobile_title` | Уже локализованная короткая подпись для mobile navigation. Если поле пусто, frontend использует `title`. |
+| `navigation_more_label` | Уже локализованная подпись overflow-кнопки mobile navigation. |
 | `widgets` | Глобальные виджеты, построенные из действий модулей с `WidgetConfig`. |
 | `widgets[].renderer` | Renderer identity/version глобального typed widget contract. |
 | `widgets[].widget` | Typed surface и optional workspace composition. |
@@ -2092,6 +2098,11 @@ Core renderer package owns only stable universal values:
 
 Application-specific values, especially visual color names such as `cyan`, `violet`, `magenta`, shell variants, section IDs, business IDs and translation keys, must be declared by the application as typed constants when reused. The renderer package should not try to maintain every project's color or shell catalog.
 
+`layout.slots` задает порядок колонок на desktop. Если mobile layout должен
+отличаться, producer задает `layout.mobile_slots`; frontend меняет порядок
+универсальных slot containers только на mobile breakpoint. Нельзя решать такой
+порядок через CSS-селекторы конкретного модуля или по именам section.
+
 ## Conditions
 
 `visible_if`, `hidden_if`, `disabled_if` и похожие condition fields используют один grammar.
@@ -2324,7 +2335,11 @@ Generator behavior:
     "badge_tone": "glass-cyan",
     "badge_teleport": "topbar",
     "navigation": {"type": "none", "enabled": false},
-    "layout": {"type": "three_column"},
+    "layout": {
+      "type": "three_column",
+      "slots": ["left", "center", "right"],
+      "mobile_slots": ["center", "left", "right"]
+    },
     "sections": [
       {
         "id": "summary",
