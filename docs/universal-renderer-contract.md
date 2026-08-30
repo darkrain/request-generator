@@ -227,6 +227,12 @@ renderer.FormSection{
             "calendar.july", "calendar.august", "calendar.september",
             "calendar.october", "calendar.november", "calendar.december",
         },
+        FormatMonths: []string{
+            "calendar.format_january", "calendar.format_february", "calendar.format_march",
+            "calendar.format_april", "calendar.format_may", "calendar.format_june",
+            "calendar.format_july", "calendar.format_august", "calendar.format_september",
+            "calendar.format_october", "calendar.format_november", "calendar.format_december",
+        },
         Weekdays: []string{
             "calendar.monday", "calendar.tuesday", "calendar.wednesday",
             "calendar.thursday", "calendar.friday", "calendar.saturday",
@@ -237,8 +243,12 @@ renderer.FormSection{
 ```
 
 Оба field id должны входить и в `form_page.fields`, и в `section.fields`.
-`min`, `max` и `disabled_dates` используют ISO `YYYY-MM-DD`. Месяцы и дни
-недели передаются producer-ом и локализуются обычным renderer localizer.
+`min`, `max` и `disabled_dates` используют ISO `YYYY-MM-DD`. `months` содержит
+формы для заголовка календаря, а необязательный `format_months` — формы для
+полной выбранной даты. Например, русская локаль передаёт `Август` и `августа`,
+чтобы renderer вывел заголовок `Август 2026` и значение `1 августа 2026` без
+языковой логики на клиенте. Месяцы и дни недели передаются producer-ом и
+локализуются обычным renderer localizer.
 
 ### Prompt List Внутри Формы
 

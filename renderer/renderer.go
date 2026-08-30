@@ -1076,6 +1076,7 @@ type DateRangeToolbar struct {
 	PreviousLabel string            `json:"previous_label,omitempty"`
 	NextLabel     string            `json:"next_label,omitempty"`
 	Months        []string          `json:"months,omitempty"`
+	FormatMonths  []string          `json:"format_months,omitempty"`
 	Weekdays      []string          `json:"weekdays,omitempty"`
 }
 
@@ -1149,6 +1150,9 @@ func (toolbar *DateRangeToolbar) Validate(scope string) error {
 	}
 	if len(toolbar.Months) != 0 && len(toolbar.Months) != 12 {
 		return fmt.Errorf("renderer.DateRangeToolbar: %s months must contain 12 values", scope)
+	}
+	if len(toolbar.FormatMonths) != 0 && len(toolbar.FormatMonths) != 12 {
+		return fmt.Errorf("renderer.DateRangeToolbar: %s format_months must contain 12 values", scope)
 	}
 	if len(toolbar.Weekdays) != 0 && len(toolbar.Weekdays) != 7 {
 		return fmt.Errorf("renderer.DateRangeToolbar: %s weekdays must contain 7 values", scope)
@@ -1590,6 +1594,7 @@ type DateRangeConfig struct {
 	PreviousLabel string   `json:"previous_label,omitempty"`
 	NextLabel     string   `json:"next_label,omitempty"`
 	Months        []string `json:"months,omitempty"`
+	FormatMonths  []string `json:"format_months,omitempty"`
 	Weekdays      []string `json:"weekdays,omitempty"`
 }
 
@@ -1625,6 +1630,9 @@ func validateDateRangeSection(page *FormPage, section FormSection) error {
 	}
 	if len(config.Months) != 0 && len(config.Months) != 12 {
 		return fmt.Errorf("renderer.Universal: date range section %q months must contain 12 values", section.ID)
+	}
+	if len(config.FormatMonths) != 0 && len(config.FormatMonths) != 12 {
+		return fmt.Errorf("renderer.Universal: date range section %q format_months must contain 12 values", section.ID)
 	}
 	if len(config.Weekdays) != 0 && len(config.Weekdays) != 7 {
 		return fmt.Errorf("renderer.Universal: date range section %q weekdays must contain 7 values", section.ID)
