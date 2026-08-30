@@ -2143,6 +2143,7 @@ type RecordSection struct {
 	Renderer      RecordSectionRenderer `json:"renderer,omitempty"`
 	LayoutSlot    LayoutSlotToken       `json:"layout_slot,omitempty"`
 	Order         int                   `json:"order,omitempty"`
+	MobileOrder   int                   `json:"mobile_order,omitempty"`
 	Block         *Block                `json:"block,omitempty"`
 	Stack         *Stack                `json:"stack,omitempty"`
 	Components    []DisplayComponent    `json:"components,omitempty"`

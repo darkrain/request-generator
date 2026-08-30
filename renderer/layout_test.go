@@ -26,3 +26,15 @@ func TestLayoutMobileSlotsAreSerializedAndCloned(t *testing.T) {
 		t.Fatalf("clone must not share mobile slots: %#v", layout.MobileSlots)
 	}
 }
+
+func TestRecordSectionMobileOrderIsSerialized(t *testing.T) {
+	section := RecordSection{ID: "summary", MobileOrder: 20}
+
+	encoded, err := json.Marshal(section)
+	if err != nil {
+		t.Fatalf("marshal record section: %v", err)
+	}
+	if got, want := string(encoded), `{"id":"summary","mobile_order":20}`; got != want {
+		t.Fatalf("record section JSON = %s, want %s", got, want)
+	}
+}

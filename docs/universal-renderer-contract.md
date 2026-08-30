@@ -2103,6 +2103,11 @@ Application-specific values, especially visual color names such as `cyan`, `viol
 универсальных slot containers только на mobile breakpoint. Нельзя решать такой
 порядок через CSS-селекторы конкретного модуля или по именам section.
 
+Если на mobile нужно чередовать секции из разных desktop-колонок, producer
+задает `record.sections[].mobile_order`. Renderer сортирует такие секции только
+на mobile breakpoint, не меняя `layout_slot` и desktop-порядок. Значение должно
+быть положительным; секции без `mobile_order` следуют после явно упорядоченных.
+
 ## Conditions
 
 `visible_if`, `hidden_if`, `disabled_if` и похожие condition fields используют один grammar.
