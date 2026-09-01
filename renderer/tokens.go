@@ -177,6 +177,7 @@ type TextFormat string
 
 const (
 	TextFormatRelativeTime TextFormat = "relative_time"
+	TextFormatDate         TextFormat = "date"
 )
 
 type SurfaceVariant string
