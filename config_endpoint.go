@@ -842,6 +842,8 @@ func viewActionPageTypeForContext(action actions.ViewModuleAction, c *gin.Contex
 
 func viewRouteIdentity(render renderer.Universal, pageType renderer.PageType) *renderer.Identity {
 	switch pageType {
+	case renderer.PageTypeList, renderer.PageTypeResourceGrid:
+		return render.ListIdentity()
 	case renderer.PageTypeForm:
 		return render.FormIdentity()
 	case renderer.PageTypeRecord:
@@ -853,6 +855,8 @@ func viewRouteIdentity(render renderer.Universal, pageType renderer.PageType) *r
 
 func viewRoutePageType(render renderer.Universal, pageType renderer.PageType) renderer.PageType {
 	switch pageType {
+	case renderer.PageTypeList, renderer.PageTypeResourceGrid:
+		return render.ListRoutePageType()
 	case renderer.PageTypeForm:
 		return render.FormRoutePageType()
 	case renderer.PageTypeRecord:
@@ -867,7 +871,9 @@ func (generator *Generator) buildAddRoute(module *BaseModule, render renderer.Un
 		Title:    action.Label,
 		Renderer: render.FormIdentity(),
 		PageType: render.FormRoutePageType(),
-		Query:    standardActionRouteQuery(module, action),
+		// Page route загружает описание и начальные значения формы через
+		// defrec. PUT add остаётся transport-ом submit action внутри FormPage.
+		Query: standardActionRouteQuery(module, module.Defrec),
 	}
 }
 
@@ -940,18 +946,43 @@ func (generator *Generator) buildUpdateChild(module *BaseModule, render renderer
 	if !hasPermission(a, role) {
 		return RouteConfig{}, false
 	}
+	// Update является записывающим transport формы и не может загружать её.
+	// Edit-route всегда читает текущую запись через стандартный view action,
+	// сохраняя его permissions и selectors.
+	viewAction, exists := findModuleAction(module, string(actions.ModuleActionNameView))
+	if !exists || !hasPermission(viewAction, role) {
+		return RouteConfig{}, false
+	}
+	var view actions.ViewModuleAction
+	switch value := viewAction.(type) {
+	case actions.ViewModuleAction:
+		view = value
+	case *actions.ViewModuleAction:
+		view = *value
+	default:
+		return RouteConfig{}, false
+	}
+
+	query := standardRecordActionRouteQuery(module, view, view.By)
+	if query == nil {
+		return RouteConfig{}, false
+	}
+	// View endpoint отвечает за загрузку записи. Зарезервированный режим renderer-а
+	// добавляет form contract модуля, а update остаётся только записывающим POST
+	// transport. Handler отдельно проверяет permission на update.
+	query.Url += "?rg_mode=edit"
 
 	return RouteConfig{
 		Title:    a.Label,
 		Renderer: render.FormIdentity(),
 		PageType: render.FormRoutePageType(),
-		Query:    standardRecordActionRouteQuery(module, a, a.By),
+		Query:    query,
 	}, true
 }
 
-// standardRecordActionRouteQuery binds the generated :id child route to the
-// standard selector placeholders. The first allowed selector is used, except
-// that a module primary key wins when it is explicitly allowed.
+// standardRecordActionRouteQuery связывает сгенерированный дочерний :id route
+// со стандартными placeholders selector-а. Используется первый разрешённый
+// selector; первичный ключ модуля имеет приоритет, если он явно разрешён.
 func standardRecordActionRouteQuery(module *BaseModule, action actions.ModuleAction, by []pg.Column) *RouteQuery {
 	query := standardActionRouteQuery(module, action)
 	if query == nil || len(by) == 0 {
@@ -983,6 +1014,6 @@ func (generator *Generator) buildAddChild(module *BaseModule, render renderer.Un
 		Title:    a.Label,
 		Renderer: render.FormIdentity(),
 		PageType: render.FormRoutePageType(),
-		Query:    standardActionRouteQuery(module, a),
+		Query:    standardActionRouteQuery(module, module.Defrec),
 	}, true
 }

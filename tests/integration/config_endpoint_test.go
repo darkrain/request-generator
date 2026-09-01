@@ -162,6 +162,18 @@ func TestConfigEndpoint_ValidToken(t *testing.T) {
 	assert.Contains(t, response, "widgets")
 	assert.Contains(t, response, "role")
 	assert.Equal(t, "admin", response["role"])
+
+	var config module.ConfigResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &config))
+	require.Len(t, config.Navigation, 2)
+	require.NotNil(t, config.Navigation[1].Target.Query)
+	assert.Equal(t, http.MethodGet, config.Navigation[1].Target.Query.Method)
+	assert.Equal(t, "/api/admin/users/defrec/", config.Navigation[1].Target.Query.Url)
+	addChild, ok := config.Navigation[0].Target.Children["add"]
+	require.True(t, ok)
+	require.NotNil(t, addChild.Query)
+	assert.Equal(t, http.MethodGet, addChild.Query.Method)
+	assert.Equal(t, "/api/admin/users/defrec/", addChild.Query.Url)
 }
 
 // TestConfigEndpoint_InvalidToken — 401 при невалидном токене

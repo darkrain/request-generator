@@ -1427,7 +1427,7 @@ func (binding *TextBinding) Validate() error {
 		return nil
 	}
 	switch binding.Format {
-	case "", TextFormatRelativeTime:
+	case "", TextFormatRelativeTime, TextFormatDate:
 		return nil
 	default:
 		return fmt.Errorf("renderer.TextBinding: unsupported format %q", binding.Format)

@@ -708,6 +708,30 @@ presentation. Значения переключателей, availability и upd
 | `widgets[].load` | Generated typed requests для resource либо master/detail. |
 | `role` | Роль текущего пользователя. |
 
+Для стандартной формы создания add-route загружает страницу через
+`GET <module>/defrec/`. Сохранение является отдельным `FormPage.Actions`
+submit-действием на PUT endpoint модуля. Route loader не должен выполнять
+изменяющий запрос и не должен угадывать defrec URL по имени модуля.
+
+Стандартный edit-route загружает существующую запись через разрешённый `view`
+action с query-параметром `rg_mode=edit`. В этом режиме generator прикладывает
+`form_page`, но не меняет транспорт чтения: начальные данные по-прежнему приходят
+через GET, а сохранение выполняется отдельным `update` action. Edit-route не
+публикуется роли, у которой нет одновременно разрешений на `view` и `update`.
+
+### Семантическая проверка исполняемого модуля
+
+`BaseModule.ValidateContract()` выполняет детерминированную проверку связей между
+полями, actions, renderer surfaces, navigation и routes. Метод возвращает
+`ContractReport` со стабильными `code`, `path`, `severity` и русским `message`,
+чтобы builder или CI могли показать все найденные проблемы за один проход.
+
+Проверка не вызывает `RenderFunc`, `ColumnsFunc` и другие runtime callbacks:
+она анализирует статическую декларацию без HTTP-контекста и побочных эффектов.
+Это намеренно отдельный preflight-инструмент; runtime-валидация
+`renderer.Universal.Validate()` продолжает выполняться generator-ом при запуске
+и после динамического `RenderFunc`.
+
 Renderer discovery происходит через `/api/config`: frontend может проверить compatibility с `UniversalRenderer` до загрузки данных страницы. Data responses (`list`, `defrec`, `view`) повторяют `renderer.name/version`, чтобы каждый response был самодостаточным.
 
 ## Field Metadata
@@ -1629,7 +1653,7 @@ request-generator.
 | `card_schema.action_layout` | `inline`, `edge_fill` |
 | `card_schema.media.ratio` | `square`, `portrait`, `landscape`, `wide` |
 | `card_schema.media.size` | `thumb`, `card`, `hero` |
-| `card_schema.meta.format` | `relative_time` |
+| `card_schema.meta.format` | `relative_time`, `date` |
 | `form_page.layout` | `one_column`, `two_column`, `three_column` |
 | `form_page.sections[].block.type` | `none`, `panel`, `card` |
 | `form_page.sections[].block.variant` | `default`, `compact` |
@@ -1859,8 +1883,10 @@ renderer.DisplayComponent{
 `variant: "activity"` предназначен для вертикальных журналов событий и истории
 без привязки к доменному модулю. `icon` выбирает registry icon и tone по значению
 поля строки. `icon.marker` задаёт нетекстовый индикатор и его условие видимости
-относительно текущей строки. `meta` является дополнительным коротким текстом; `relative_time`
-разрешён для date-like значения и форматируется UI kit согласно locale браузера.
+относительно текущей строки. `meta` является дополнительным коротким текстом. Формат
+`relative_time` разрешён для date-like значения и форматируется UI kit согласно locale
+браузера. Формат `date` выводит нейтральную календарную часть `YYYY-MM-DD` и подходит
+для интерфейсов, где клиент не должен локализовывать серверный текст.
 
 `leading_accent` опционально добавляет линию по ведущему краю карточки. `tone`
 передаёт расширяемый presentation token; без `leading_accent` линия не рисуется.
