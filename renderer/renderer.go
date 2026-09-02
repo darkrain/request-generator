@@ -84,6 +84,9 @@ func (r Universal) Validate() error {
 			return err
 		}
 		for _, section := range r.Form.Sections {
+			if err := validateFormSectionActions(r.Form, section); err != nil {
+				return err
+			}
 			if err := validateFormSectionColumns(section); err != nil {
 				return err
 			}
@@ -1543,6 +1546,32 @@ func validateFormWorkflow(page *FormPage) error {
 	return fmt.Errorf("renderer.FormWorkflow: summary submit action %q must reference a form submit action", page.Workflow.Summary.SubmitAction)
 }
 
+func validateFormSectionActions(page *FormPage, section FormSection) error {
+	ids := append([]string{}, section.Action)
+	ids = append(ids, section.Actions...)
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			return fmt.Errorf("renderer.Universal: form section %q action %q is duplicated", section.ID, id)
+		}
+		seen[id] = struct{}{}
+		found := false
+		for _, action := range page.Actions {
+			if action.ID == id {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("renderer.Universal: form section %q action %q is not declared in form page actions", section.ID, id)
+		}
+	}
+	return nil
+}
+
 type FormSection struct {
 	ID           string                 `json:"id,omitempty"`
 	Title        string                 `json:"title,omitempty"`
@@ -1555,6 +1584,7 @@ type FormSection struct {
 	GroupTitle   string                 `json:"group_title,omitempty"`
 	Icon         string                 `json:"icon,omitempty"`
 	Action       string                 `json:"action,omitempty"`
+	Actions      []string               `json:"actions,omitempty"`
 	Mode         string                 `json:"mode,omitempty"`
 	Block        *Block                 `json:"block,omitempty"`
 	Fields       []string               `json:"fields,omitempty"`

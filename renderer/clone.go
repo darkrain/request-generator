@@ -426,6 +426,7 @@ func cloneFormSections(values []FormSection) []FormSection {
 	for i, v := range values {
 		out[i] = v
 		out[i].Block = cloneBlock(v.Block)
+		out[i].Actions = cloneSlice(v.Actions)
 		out[i].Fields = cloneSlice(v.Fields)
 		out[i].Matrix = cloneFieldMatrix(v.Matrix)
 		out[i].ListPage = cloneListPage(v.ListPage)
