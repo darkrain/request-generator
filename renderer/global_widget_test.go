@@ -104,6 +104,22 @@ func TestInlineGlobalWidgetValidateAndSerialize(t *testing.T) {
 }`, string(encoded))
 }
 
+func TestInlineOverlayGlobalWidgetValidateAndSerialize(t *testing.T) {
+	widget := GlobalWidget{Surface: WidgetSurface{
+		Kind:       WidgetSurfaceInline,
+		Placement:  WidgetPlacementShellOverlay,
+		LoadPolicy: WidgetLoadEager,
+		Size:       SizeXS,
+	}}
+	require.NoError(t, widget.Validate())
+
+	encoded, err := json.Marshal(widget)
+	require.NoError(t, err)
+	require.JSONEq(t, `{
+  "surface":{"kind":"inline","placement":"shell_overlay","load_policy":"eager","size":"xs"}
+}`, string(encoded))
+}
+
 func TestInlineGlobalWidgetRejectsInteractiveSurfaceContract(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -130,7 +146,7 @@ func TestInlineGlobalWidgetRejectsInteractiveSurfaceContract(t *testing.T) {
 			widget: GlobalWidget{Surface: WidgetSurface{
 				Kind: WidgetSurfaceInline, Placement: WidgetPlacementShellEnd, LoadPolicy: WidgetLoadEager,
 			}},
-			err: `renderer.GlobalWidget: surface: inline requires placement "shell_start"`,
+			err: `renderer.GlobalWidget: surface: inline requires placement "shell_start" or "shell_overlay"`,
 		},
 		{
 			name: "workspace",
