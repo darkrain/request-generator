@@ -1156,6 +1156,14 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 		}()
 
 		pageType := viewActionPageTypeForContext(action, c)
+		if c.Query("rg_mode") == "edit" {
+			updateAction := findUpdateAction(module)
+			if updateAction == nil || !hasPermission(*updateAction, string(role)) {
+				response.ErrorResponse(l, c, http.StatusForbidden, "Форма редактирования недоступна", nil)
+				return
+			}
+			pageType = renderer.PageTypeForm
+		}
 
 		err := action.BeforeRequest(c)
 		if err != nil {

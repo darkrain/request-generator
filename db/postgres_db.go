@@ -33,9 +33,15 @@ func NewDB(sql *sql.DB) *DB {
 	}
 }
 
-func (db *DB) debugLog(log *log.Entry, args ...interface{}) {
-	if db.Debug {
-		log.Infoln(args...)
+func (db *DB) debugLog(entry *log.Entry, args ...interface{}) {
+	if db.Debug && entry != nil {
+		entry.Infoln(args...)
+	}
+}
+
+func errorLog(entry *log.Entry, args ...interface{}) {
+	if entry != nil {
+		entry.Errorln(args...)
 	}
 }
 
@@ -526,7 +532,7 @@ func (db *DB) List(
 		rows, err = db.sql.Query(query)
 	}
 	if err != nil {
-		log.Errorln("LIST ERR: ", err)
+		errorLog(log, "LIST ERR: ", err)
 		return nil, 0, err
 	}
 	defer rows.Close()
@@ -554,7 +560,7 @@ func (db *DB) List(
 
 		err = rows.Scan(columnValues...)
 		if err != nil {
-			log.Errorln("[DEBUG] SCAN ERR: ", err)
+			errorLog(log, "[DEBUG] SCAN ERR: ", err)
 			continue
 		}
 
@@ -598,7 +604,7 @@ func (db *DB) List(
 			var joinValues [][]interface{}
 			err := json.Unmarshal(*converted, &joinValues)
 			if err != nil {
-				log.Errorln("LIST JOIN ERR: ", err)
+				errorLog(log, "LIST JOIN ERR: ", err)
 				continue
 			}
 
@@ -662,7 +668,7 @@ func (db *DB) List(
 		countResult, err = db.sql.Query(countQuery)
 	}
 	if err != nil {
-		log.Errorln("COUNT ERR: ", err)
+		errorLog(log, "COUNT ERR: ", err)
 		return result, 0, nil
 	}
 	defer countResult.Close()
@@ -775,7 +781,7 @@ func (db *DB) View(
 		rows, err = db.sql.Query(query)
 	}
 	if err != nil {
-		log.Errorln("VIEW ERR: ", err)
+		errorLog(log, "VIEW ERR: ", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -803,7 +809,7 @@ func (db *DB) View(
 
 		err = rows.Scan(columnValues...)
 		if err != nil {
-			log.Errorln("[DEBUG] VIEW SCAN ERR: ", err)
+			errorLog(log, "[DEBUG] VIEW SCAN ERR: ", err)
 			continue
 		}
 
@@ -847,7 +853,7 @@ func (db *DB) View(
 			var joinValues [][]interface{}
 			err := json.Unmarshal(*converted, &joinValues)
 			if err != nil {
-				log.Errorln("VIEW JOIN ERR: ", err)
+				errorLog(log, "VIEW JOIN ERR: ", err)
 				continue
 			}
 
@@ -941,7 +947,7 @@ func (db *DB) Add(log *log.Entry, table pg.Table, primaryKey pg.Column, moduleFi
 
 		err = tx.QueryRow(query, values...).Scan(&output.Value)
 		if err != nil {
-			log.Errorln("ADD ERR: ", err)
+			errorLog(log, "ADD ERR: ", err)
 			return nil, err
 		}
 	} else {
@@ -952,7 +958,7 @@ func (db *DB) Add(log *log.Entry, table pg.Table, primaryKey pg.Column, moduleFi
 		db.debugLog(log, "[DEBUG] ADD QUERY (default): ", query)
 		err = tx.QueryRow(query).Scan(&output.Value)
 		if err != nil {
-			log.Errorln("ADD ERR: ", err)
+			errorLog(log, "ADD ERR: ", err)
 			return nil, err
 		}
 	}
@@ -962,7 +968,7 @@ func (db *DB) Add(log *log.Entry, table pg.Table, primaryKey pg.Column, moduleFi
 	// Insert translations
 	if tc != nil {
 		if err = InsertTranslations(tx, tc, output.Value, moduleFields, input); err != nil {
-			log.Errorln("ADD TRANSLATIONS ERR: ", err)
+			errorLog(log, "ADD TRANSLATIONS ERR: ", err)
 			return nil, err
 		}
 	}
@@ -1059,7 +1065,7 @@ func (db *DB) Update(log *log.Entry, table pg.Table, primaryKey pg.Column, modul
 	// Upsert translations
 	if tc != nil && tc.EntityID != nil {
 		if err = UpsertTranslations(tx, tc, tc.EntityID, moduleFields, input); err != nil {
-			log.Errorln("UPDATE TRANSLATIONS ERR: ", err)
+			errorLog(log, "UPDATE TRANSLATIONS ERR: ", err)
 			return nil, err
 		}
 	}

@@ -112,8 +112,8 @@ func TestActivityListPresentationValidation(t *testing.T) {
 		},
 		{
 			name:  "unsupported text format",
-			value: Universal{List: &ListPage{CardSchema: &CardSchema{Meta: &TextBinding{Field: "created_at", Format: TextFormat("date")}}}},
-			want:  "renderer.TextBinding: unsupported format \"date\"",
+			value: Universal{List: &ListPage{CardSchema: &CardSchema{Meta: &TextBinding{Field: "created_at", Format: TextFormat("clock")}}}},
+			want:  "renderer.TextBinding: unsupported format \"clock\"",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -121,5 +121,15 @@ func TestActivityListPresentationValidation(t *testing.T) {
 				t.Fatalf("Validate() error = %v, want %q", err, test.want)
 			}
 		})
+	}
+}
+
+func TestTextBindingAcceptsNeutralDateFormat(t *testing.T) {
+	value := Universal{List: &ListPage{CardSchema: &CardSchema{
+		Meta: &TextBinding{Field: "created_at", Format: TextFormatDate},
+	}}}
+
+	if err := value.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
 	}
 }

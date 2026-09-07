@@ -35,6 +35,39 @@ func TestRecordChildRouteUsesFirstAllowedSelector(t *testing.T) {
 	require.Equal(t, "{id}", query.Params["value"])
 }
 
+func TestUpdateChildReadsCurrentRecordThroughViewAction(t *testing.T) {
+	id := pg.IntegerColumn("id")
+	name := pg.StringColumn("name")
+	mod := &BaseModule{
+		Name: "records", Path: "/api", PrimaryKey: id,
+		Fields: []fields.ModuleField{{Column: id, Type: fields.ModuleFieldTypeInt}, {Column: name, Type: fields.ModuleFieldTypeString}},
+		Actions: []actions.ModuleAction{
+			actions.ViewModuleAction{Label: "Record", By: []pg.Column{id}, Columns: []pg.Column{id, name}, Permission: []actions.Role{"member"}},
+			actions.UpdateModuleAction{Label: "Record", By: []pg.Column{id}, Columns: []pg.Column{name}, Permission: []actions.Role{"member"}},
+		},
+		Render: renderer.Universal{Form: &renderer.FormPage{ID: "record-form", Fields: []string{"name"}}},
+	}
+	generator := &Generator{}
+	child, ok := generator.buildUpdateChild(mod, mod.Render, mod.Actions[1].(actions.UpdateModuleAction), "member")
+
+	require.True(t, ok)
+	require.NotNil(t, child.Query)
+	require.Equal(t, "GET", child.Query.Method)
+	require.Equal(t, "/api/records/view/:bykey/:value?rg_mode=edit", child.Query.Url)
+	require.Equal(t, "id", child.Query.Params["bykey"])
+	require.Equal(t, "{id}", child.Query.Params["value"])
+}
+
+func TestUpdateChildIsUnavailableWithoutReadableViewAction(t *testing.T) {
+	id := pg.IntegerColumn("id")
+	update := actions.UpdateModuleAction{By: []pg.Column{id}, Permission: []actions.Role{"member"}}
+	mod := &BaseModule{Name: "records", Path: "/api", PrimaryKey: id, Actions: []actions.ModuleAction{update}}
+
+	_, ok := (&Generator{}).buildUpdateChild(mod, renderer.Universal{Form: &renderer.FormPage{ID: "record-form"}}, update, "member")
+
+	require.False(t, ok)
+}
+
 func TestFieldMatrixSourceResolvesStandardListAndDynamicUpdate(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	id := pg.IntegerColumn("id")
