@@ -2370,7 +2370,44 @@ in a producer; older consumers do not implement this presentation.
 
 ## Record Page
 
+### Decorative imagery
+
+`block.decoration` and large (`type: data_list`, `size: lg`) display components
+accept optional typed `decoration: {source, background_source}`. At least one URI
+is required. The foreground uses contain and reserves space beside content;
+the background covers the panel without changing its geometry. Sources are
+decorative, not meaningful media: empty alternative text, no focus or pointer
+events, no viewer/upload action. Meaningful media must use the media contract.
+
+URIs are resolved by the integration's media resolver, never by module/role
+conditions in the kit. URI values are cloned independently and are **not
+localized**. Whitespace/control characters, malformed URIs, protocol-relative
+paths and executable/inline/local-file schemes are rejected. Palette, spacing
+and image geometry belong to the visual library, not producer CSS.
+
+This is additive to the existing 2.x contract: absent decoration serializes as
+before. Consumers must support the new optional capability before producers
+enable it; deploy the supporting kit and asset resolver with the producer.
+
+```json
+{"type":"data_list","size":"lg","fields":["count"],
+ "decoration":{"source":"asset://sample/object.png"}}
+```
+
 `record_page` описывает страницу просмотра записи. В Go API это `renderer.Universal.Record`.
+
+Optional `record_page.hint` describes dismissible explanatory content:
+`{key, title, text, acknowledge, close, icon}`. All fields are optional. Display
+strings are localized, key/icon are not. A nonempty key must not contain control
+characters or surrounding whitespace. Consumers persist dismissal only through
+their injected storage adapter; without key/adapter dismissal is session-local.
+Clones own independent hint objects. Omission preserves existing behavior.
+Record actions with the existing `placement: head` render at the page header;
+there is no `header` placement alias.
+
+`TextBinding.format: short_date` accepts an ISO timestamp and formats day + short
+month using the consumer's locale and timezone. The producer must send the time,
+not a preformatted date string. Invalid dates remain unchanged.
 
 ```json
 {

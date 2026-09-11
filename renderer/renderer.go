@@ -215,6 +215,9 @@ func (r Universal) Validate() error {
 }
 
 func validateRecordComponents(page *RecordPage) error {
+	if err := page.Hint.Validate(); err != nil {
+		return err
+	}
 	for _, section := range page.Sections {
 		if err := section.Block.Validate(); err != nil {
 			return fmt.Errorf("renderer.Universal: record section %q block: %w", section.ID, err)
@@ -241,6 +244,12 @@ func recordPageHasAction(page *RecordPage, id string) bool {
 }
 
 func (component DisplayComponent) Validate() error {
+	if err := component.Decoration.Validate(); err != nil {
+		return err
+	}
+	if component.Decoration != nil && (component.Type != DisplayDataList || component.Size != SizeLG) {
+		return fmt.Errorf("decoration requires a large data_list component")
+	}
 	if err := validateMediaGalleryItems(fmt.Sprintf("display component %q", component.ID), component.MediaItems); err != nil {
 		return err
 	}
@@ -305,6 +314,9 @@ func (component DisplayComponent) Validate() error {
 func (block *Block) Validate() error {
 	if block == nil {
 		return nil
+	}
+	if err := block.Decoration.Validate(); err != nil {
+		return err
 	}
 	seen := make(map[MediaOverlayPosition]struct{}, len(block.Overlays))
 	for _, overlay := range block.Overlays {
@@ -1332,28 +1344,28 @@ type Media struct {
 }
 
 type FieldPresentation struct {
-	Renderer    RendererKey      `json:"renderer,omitempty"`
-	Variant     string           `json:"variant,omitempty"`
-	Style       string           `json:"style,omitempty"`
-	Icon        string           `json:"icon,omitempty"`
-	Size        MediaSize        `json:"size,omitempty"`
-	Ratio       MediaRatio       `json:"ratio,omitempty"`
-	Prefix      string           `json:"prefix,omitempty"`
-	Suffix      string           `json:"suffix,omitempty"`
-	Hint        string           `json:"hint,omitempty"`
+	Renderer RendererKey `json:"renderer,omitempty"`
+	Variant  string      `json:"variant,omitempty"`
+	Style    string      `json:"style,omitempty"`
+	Icon     string      `json:"icon,omitempty"`
+	Size     MediaSize   `json:"size,omitempty"`
+	Ratio    MediaRatio  `json:"ratio,omitempty"`
+	Prefix   string      `json:"prefix,omitempty"`
+	Suffix   string      `json:"suffix,omitempty"`
+	Hint     string      `json:"hint,omitempty"`
 	// Placeholder is the empty-state copy shown inside the control. A rule the
 	// control already enforces - an accepted range, an expected format - belongs
 	// here rather than on a line of its own under the field.
-	Placeholder string           `json:"placeholder,omitempty"`
-	Description string           `json:"description,omitempty"`
-	Rows        uint8            `json:"rows,omitempty"`
-	MaxItems    uint16           `json:"max_items,omitempty"`
-	InputMode   FieldInputMode   `json:"input_mode,omitempty"`
-	VisibleIf   *Condition       `json:"visible_if,omitempty"`
+	Placeholder string         `json:"placeholder,omitempty"`
+	Description string         `json:"description,omitempty"`
+	Rows        uint8          `json:"rows,omitempty"`
+	MaxItems    uint16         `json:"max_items,omitempty"`
+	InputMode   FieldInputMode `json:"input_mode,omitempty"`
+	VisibleIf   *Condition     `json:"visible_if,omitempty"`
 	// RequiredIf marks the control as required only in the state that needs it.
 	// A profile is filled in over several sittings, so a field that review will
 	// not accept empty is still optional while the profile is a draft.
-	RequiredIf *Condition `json:"required_if,omitempty"`
+	RequiredIf  *Condition       `json:"required_if,omitempty"`
 	ToneByValue []FieldValueTone `json:"tone_by_value,omitempty"`
 }
 
@@ -1493,7 +1505,7 @@ func (binding *TextBinding) Validate() error {
 		return nil
 	}
 	switch binding.Format {
-	case "", TextFormatRelativeTime:
+	case "", TextFormatRelativeTime, TextFormatShortDate:
 		return nil
 	default:
 		return fmt.Errorf("renderer.TextBinding: unsupported format %q", binding.Format)
@@ -1696,9 +1708,9 @@ type FormSection struct {
 	// moved between. A gallery that declares none is read-only in that
 	// respect, as every gallery was before.
 	MediaVisibilityStates []MediaVisibilityOption `json:"media_visibility_states,omitempty"`
-	MediaPresets *MediaPresetsConfig    `json:"media_presets,omitempty"`
-	Prompts      *PromptList            `json:"prompts,omitempty"`
-	DateRange    *DateRangeConfig       `json:"date_range,omitempty"`
+	MediaPresets          *MediaPresetsConfig     `json:"media_presets,omitempty"`
+	Prompts               *PromptList             `json:"prompts,omitempty"`
+	DateRange             *DateRangeConfig        `json:"date_range,omitempty"`
 	// Resource declares another standard module action rendered inside this
 	// section. It stays server-side: Generator resolves it to Load per request.
 	Resource *Resource `json:"-"`
@@ -2186,6 +2198,7 @@ type CollectionModal struct {
 }
 
 type Block struct {
+	Decoration     *Decoration     `json:"decoration,omitempty"`
 	Type           BlockType       `json:"type,omitempty"`
 	Variant        BlockVariant    `json:"variant,omitempty"`
 	TitleDecor     TitleDecorToken `json:"title_decor,omitempty"`
@@ -2220,30 +2233,31 @@ type Stack struct {
 }
 
 type DisplayComponent struct {
-	ID                  string                   `json:"id,omitempty"`
-	Type                DisplayComponentType     `json:"type,omitempty"`
-	ActionID            string                   `json:"action_id,omitempty"`
-	Fields              []string                 `json:"fields,omitempty"`
-	MediaItems          []MediaGalleryItem       `json:"media_items,omitempty"`
-	Value               interface{}              `json:"value,omitempty"`
-	Default             interface{}              `json:"default,omitempty"`
-	Visible             *bool                    `json:"visible,omitempty"`
-	UpdateAction        ComponentAction          `json:"update_action,omitempty"`
-	MainRatio           ComponentRatio           `json:"main_ratio,omitempty"`
-	MainRadius          ComponentRadiusToken     `json:"main_radius,omitempty"`
-	MainRadiusToken     ComponentRadiusToken     `json:"main_radius_token,omitempty"`
-	ThumbRatio          ComponentRatio           `json:"thumb_ratio,omitempty"`
-	ThumbsInset         InsetToken               `json:"thumbs_inset,omitempty"`
-	ThumbsInsetToken    SpacingToken             `json:"thumbs_inset_token,omitempty"`
-	VideoControls       *bool                    `json:"video_controls,omitempty"`
-	Size                SizeToken                `json:"size,omitempty"`
-	Wrap                *bool                    `json:"wrap,omitempty"`
-	Gap                 SpacingToken             `json:"gap,omitempty"`
-	Direction           DirectionToken           `json:"direction,omitempty"`
-	Justify             JustifyToken             `json:"justify,omitempty"`
-	Align               AlignToken               `json:"align,omitempty"`
-	Inset               InsetToken               `json:"inset,omitempty"`
-	Compact             bool                     `json:"compact,omitempty"`
+	Decoration       *Decoration          `json:"decoration,omitempty"`
+	ID               string               `json:"id,omitempty"`
+	Type             DisplayComponentType `json:"type,omitempty"`
+	ActionID         string               `json:"action_id,omitempty"`
+	Fields           []string             `json:"fields,omitempty"`
+	MediaItems       []MediaGalleryItem   `json:"media_items,omitempty"`
+	Value            interface{}          `json:"value,omitempty"`
+	Default          interface{}          `json:"default,omitempty"`
+	Visible          *bool                `json:"visible,omitempty"`
+	UpdateAction     ComponentAction      `json:"update_action,omitempty"`
+	MainRatio        ComponentRatio       `json:"main_ratio,omitempty"`
+	MainRadius       ComponentRadiusToken `json:"main_radius,omitempty"`
+	MainRadiusToken  ComponentRadiusToken `json:"main_radius_token,omitempty"`
+	ThumbRatio       ComponentRatio       `json:"thumb_ratio,omitempty"`
+	ThumbsInset      InsetToken           `json:"thumbs_inset,omitempty"`
+	ThumbsInsetToken SpacingToken         `json:"thumbs_inset_token,omitempty"`
+	VideoControls    *bool                `json:"video_controls,omitempty"`
+	Size             SizeToken            `json:"size,omitempty"`
+	Wrap             *bool                `json:"wrap,omitempty"`
+	Gap              SpacingToken         `json:"gap,omitempty"`
+	Direction        DirectionToken       `json:"direction,omitempty"`
+	Justify          JustifyToken         `json:"justify,omitempty"`
+	Align            AlignToken           `json:"align,omitempty"`
+	Inset            InsetToken           `json:"inset,omitempty"`
+	Compact          bool                 `json:"compact,omitempty"`
 	// ShowEmpty keeps a block's declared fields on screen even when the record
 	// has no value for them yet. A page meant to be filled in reads as a frame
 	// with blanks rather than as whatever happens to be filled already.
@@ -2290,6 +2304,7 @@ type DisplayCollectionGroups struct {
 }
 
 type RecordPage struct {
+	Hint          *PageHint         `json:"hint,omitempty"`
 	ID            string            `json:"id,omitempty"`
 	Title         string            `json:"title,omitempty"`
 	Subtitle      string            `json:"subtitle,omitempty"`
@@ -2389,11 +2404,11 @@ type ActionPresentation struct {
 	// ActiveIf marks the action as the current choice. Active names a truthy
 	// field, which cannot express "this option equals the record's value", so a
 	// set of mutually exclusive actions states the match as a condition.
-	ActiveIf *Condition `json:"active_if,omitempty"`
-	Block            *bool            `json:"block,omitempty"`
-	VisibleIf        *Condition       `json:"visible_if,omitempty"`
-	HiddenIf         *Condition       `json:"hidden_if,omitempty"`
-	DisabledIf       *Condition       `json:"disabled_if,omitempty"`
+	ActiveIf   *Condition `json:"active_if,omitempty"`
+	Block      *bool      `json:"block,omitempty"`
+	VisibleIf  *Condition `json:"visible_if,omitempty"`
+	HiddenIf   *Condition `json:"hidden_if,omitempty"`
+	DisabledIf *Condition `json:"disabled_if,omitempty"`
 }
 
 func (presentation ActionPresentation) Validate() error {

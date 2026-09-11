@@ -402,6 +402,9 @@ func (localizer textLocalizer) localizeCollection(collection *CollectionConfig) 
 }
 
 func (localizer textLocalizer) localizeRecordPage(page *RecordPage) {
+	if page.Hint != nil {
+		localizer.localizeTextFields(&page.Hint.Title, &page.Hint.Text, &page.Hint.Acknowledge, &page.Hint.Close)
+	}
 	localizer.localizeTextFields(&page.Title, &page.Subtitle, &page.Badge)
 	for i := range page.Actions {
 		localizer.localizeRendererAction(&page.Actions[i])
