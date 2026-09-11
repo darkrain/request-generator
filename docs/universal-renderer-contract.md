@@ -1807,6 +1807,8 @@ A record summary may carry the existing `date_range` and `range_action_id`.
 The latter must reference a declared page action. The control executes that
 action with its field/value in the action record, allowing normal route-query
 bindings. It invents no endpoint, query key, units, labels or business logic.
+`date_range.value_field` binds the selected `YYYY-MM-DD..YYYY-MM-DD` value
+from summary data (empty means all time), so reloads preserve custom ranges.
 This is additive; existing compact/list summaries retain their shape.
 
 ### Status Timeline

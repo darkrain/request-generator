@@ -1137,6 +1137,8 @@ type SummaryTrendSeries struct {
 // Field is sent as filter[field]=YYYY-MM-DD..YYYY-MM-DD. A preset with Days=0
 // clears that filter and therefore represents the complete period.
 type DateRangeToolbar struct {
+	// ValueField optionally binds the selected canonical range in summary data.
+	ValueField    string            `json:"value_field,omitempty"`
 	Field         string            `json:"field"`
 	DefaultPreset string            `json:"default_preset,omitempty"`
 	Presets       []DateRangePreset `json:"presets,omitempty"`

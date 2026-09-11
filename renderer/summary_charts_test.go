@@ -42,3 +42,15 @@ func TestSummaryChartInvalidContracts(t *testing.T) {
 	value := Universal{Record: &RecordPage{Sections: []RecordSection{{Summary: &Summary{DateRange: &DateRangeToolbar{Field: "range"}, RangeActionID: "missing"}}}}}
 	require.Error(t, value.Validate())
 }
+
+func TestSummarySelectedRangeBindingSurvivesCloneAndLocalization(t *testing.T) {
+	value := Universal{Record: &RecordPage{Sections: []RecordSection{{Summary: &Summary{DateRange: &DateRangeToolbar{Field: "range", ValueField: "metrics.range"}}}}}}
+	require.NoError(t, value.Validate())
+	clone := value.Clone()
+	clone.Record.Sections[0].Summary.DateRange.ValueField = "other.range"
+	require.Equal(t, "metrics.range", value.Record.Sections[0].Summary.DateRange.ValueField)
+	localized := Localize(value, func(value, key string) string { return value })
+	data, err := json.Marshal(localized)
+	require.NoError(t, err)
+	require.Contains(t, string(data), `"value_field":"metrics.range"`)
+}
