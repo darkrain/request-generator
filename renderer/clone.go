@@ -289,6 +289,8 @@ func cloneSummary(v *Summary) *Summary {
 	}
 	cp := *v
 	cp.Items = cloneSlice(v.Items)
+	cp.Collapsible = clonePtr(v.Collapsible)
+	cp.DateRange = cloneDateRangeToolbar(v.DateRange)
 	cp.ShowOnline = clonePtr(v.ShowOnline)
 	cp.ShowAction = clonePtr(v.ShowAction)
 	cp.Resource = cloneResource(v.Resource)
@@ -628,6 +630,7 @@ func cloneRecordSections(values []RecordSection) []RecordSection {
 		out[i].Block = cloneBlock(v.Block)
 		out[i].Stack = cloneStack(v.Stack)
 		out[i].Components = cloneDisplayComponents(v.Components)
+		out[i].Summary = cloneSummary(v.Summary)
 	}
 	return out
 }
