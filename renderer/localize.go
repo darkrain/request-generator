@@ -95,6 +95,8 @@ func (localizer textLocalizer) localizeListPage(page *ListPage) {
 		localizer.localizeFilterRangePresets(page.Filters.RangePresets)
 	}
 	if page.Summary != nil {
+		localizer.localizeTextFields(&page.Summary.EmptyLabel)
+		localizer.localizeDateRangeToolbar(page.Summary.DateRange)
 		localizer.localizeTextFields(&page.Summary.Title, &page.Summary.TitleFallback)
 		for i := range page.Summary.Items {
 			page.Summary.Items[i].Label = localizer.localizeRendererText(page.Summary.Items[i].Label, page.Summary.Items[i].LabelKey)
@@ -409,6 +411,9 @@ func (localizer textLocalizer) localizeRecordPage(page *RecordPage) {
 	for i := range page.Sections {
 		section := &page.Sections[i]
 		localizer.localizeTextFields(&section.Title, &section.TitleFallback, &section.LoadingLabel, &section.RetryLabel)
+		if section.Summary != nil {
+			localizer.localizeListPage(&ListPage{Summary: section.Summary})
+		}
 		localizer.localizeBlock(section.Block)
 		for j := range section.Components {
 			component := &section.Components[j]

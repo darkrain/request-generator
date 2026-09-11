@@ -1786,6 +1786,31 @@ Producer отдаёт уже рассчитанные и отформатиро�
 `presentation: "compact"` сохраняет обычную строку счётчиков, а `dashboard`
 включает плитки и trend-композицию. Пустое значение эквивалентно `compact`.
 
+### Record summaries and chart variants
+
+`record_page.sections[].summary` reuses `Summary` against the containing
+record (field wrappers are unwrapped). It does not accept `resource`/`load`;
+use the existing section resource mechanism for independent resources.
+`columns` is 1–4, `collapsible:false` keeps the summary open, `caption_field`
+binds freshness/methodology text, and `empty_label` represents an unavailable
+value. Missing values are not converted into numeric zero.
+
+Items optionally bind `detail_field` and `points_field` (a compact sparkline).
+`trend.type` accepts `line` (also the omitted default), `bar`, `donut`, `gauge`.
+Only bars accept `horizontal:true`; circular charts require one series.
+`center_field` binds a preformatted central label. Points are server-prepared
+`{label,value,formatted?,tone?}` records; unavailable observations are omitted,
+not replaced with zero. For circular charts each point is a segment; the
+producer supplies both the numerator and remainder for a gauge.
+
+A record summary may carry the existing `date_range` and `range_action_id`.
+The latter must reference a declared page action. The control executes that
+action with its field/value in the action record, allowing normal route-query
+bindings. It invents no endpoint, query key, units, labels or business logic.
+`date_range.value_field` binds the selected `YYYY-MM-DD..YYYY-MM-DD` value
+from summary data (empty means all time), so reloads preserve custom ranges.
+This is additive; existing compact/list summaries retain their shape.
+
 ### Status Timeline
 
 `DisplayStatusTimeline` размещает общий timeline внутри обычного
