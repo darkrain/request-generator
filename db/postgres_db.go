@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
@@ -30,10 +31,13 @@ func SafeSQLIdentifier(name string) bool {
 }
 
 type DB struct {
+	readContext context.Context
 	DBExecutor
-	sql           *sql.DB
-	Debug         bool
-	preparedViews *preparedViewCache
+	sql             *sql.DB
+	Debug           bool
+	preparedViews   *preparedViewCache
+	prepareLists    bool
+	listSelectCache *listSelectCache
 }
 type Tx struct {
 	sql *sql.Tx
@@ -537,12 +541,7 @@ func (db *DB) List(
 	db.debugLog(log, "[DEBUG] LIST COUNT QUERY: ", interpolateQuery(countQuery, countArgs))
 
 	// Execute main query
-	var rows *sql.Rows
-	if len(args) > 0 {
-		rows, err = db.sql.Query(query, args...)
-	} else {
-		rows, err = db.sql.Query(query)
-	}
+	rows, err := db.queryList(query, args...)
 	if err != nil {
 		log.Errorln("LIST ERR: ", err)
 		return nil, 0, err
@@ -670,18 +669,16 @@ func (db *DB) List(
 		results = append(results, currentResult)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
 	result = append(result, results...)
 
 	// Execute count query
-	var countResult *sql.Rows
-	if len(countArgs) > 0 {
-		countResult, err = db.sql.Query(countQuery, countArgs...)
-	} else {
-		countResult, err = db.sql.Query(countQuery)
-	}
+	countResult, err := db.queryList(countQuery, countArgs...)
 	if err != nil {
 		log.Errorln("COUNT ERR: ", err)
-		return result, 0, nil
+		return nil, 0, err
 	}
 	defer countResult.Close()
 
@@ -694,6 +691,9 @@ func (db *DB) List(
 		}
 	}
 
+	if err := countResult.Err(); err != nil {
+		return nil, 0, err
+	}
 	return result, count, nil
 }
 
@@ -894,6 +894,9 @@ func (db *DB) View(
 		results = append(results, currentResult)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	if len(results) > 0 {
 		return results[0], nil
 	}
