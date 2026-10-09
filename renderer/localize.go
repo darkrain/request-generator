@@ -78,12 +78,13 @@ func (localizer textLocalizer) localizeRendererAction(action *Action) {
 	action.TitleKey = ""
 	localizer.localizeTextField(&action.Description, action.DescriptionKey)
 	action.DescriptionKey = ""
+	localizer.localizeInfoHint(action.Info)
 	localizer.localizeTextFields(&action.SavingLabel, &action.SavedLabel)
 	if action.Modal != nil {
 		localizer.localizeTextFields(&action.Modal.Title)
 	}
-	if action.Confirm != nil {
-		localizer.localizeTextFields(&action.Confirm.Title, &action.Confirm.Message, &action.Confirm.CancelLabel, &action.Confirm.ConfirmLabel)
+	for confirm := action.Confirm; confirm != nil; confirm = confirm.Next {
+		localizer.localizeTextFields(&confirm.Title, &confirm.Message, &confirm.CancelLabel, &confirm.ConfirmLabel)
 	}
 	if action.AfterFailure != nil {
 		localizer.localizeTextFields(&action.AfterFailure.Title, &action.AfterFailure.CancelLabel, &action.AfterFailure.ConfirmLabel)
@@ -125,6 +126,7 @@ func LocalizeFieldMedia(value *FieldMediaConfig, resolve TextResolver) *FieldMed
 	localizer.localizeMediaActions(localized.Actions)
 	localizer.localizeMediaGalleryItem(localized.Item)
 	localizer.localizeMediaCropper(localized.Cropper)
+	localizer.localizeMediaCapture(localized.Capture)
 	return localized
 }
 
@@ -146,6 +148,8 @@ func (localizer textLocalizer) localizeRenderer(render Universal) Universal {
 
 func (localizer textLocalizer) localizeListPage(page *ListPage) {
 	localizer.localizeTextFields(&page.Title, &page.Subtitle)
+	localizer.localizeTips(page.Tips)
+	localizer.localizeInfoHint(page.Info)
 	for i := range page.Actions {
 		localizer.localizeRendererAction(&page.Actions[i])
 	}
@@ -155,6 +159,9 @@ func (localizer textLocalizer) localizeListPage(page *ListPage) {
 		localizer.localizeFilterGroups(page.Filters.Groups)
 		localizer.localizeFilterText(page.Filters.Text)
 		localizer.localizeFilterRangePresets(page.Filters.RangePresets)
+		if page.Filters.Disclosure != nil {
+			localizer.localizeTextFields(&page.Filters.Disclosure.Label)
+		}
 	}
 	if page.Summary != nil {
 		localizer.localizeTextFields(&page.Summary.Title, &page.Summary.TitleFallback)
@@ -272,6 +279,12 @@ func (localizer textLocalizer) localizeCardSchema(schema *CardSchema) {
 		localizer.localizeRendererAction(&schema.Actions[i])
 	}
 	localizer.localizeStatusBinding(schema.Status)
+	if schema.Segments != nil {
+		localizer.localizeTextField(&schema.Segments.Label, "")
+	}
+	if schema.Chips != nil {
+		localizer.localizeTextField(&schema.Chips.Label, "")
+	}
 }
 
 // The status chip names its states the same way a badge does, so its words go
@@ -298,9 +311,11 @@ func (localizer textLocalizer) localizeBadge(badge *Badge) {
 		localizer.localizeTextField(&badge.Else.Label, badge.Else.LabelKey)
 		badge.Else.LabelKey = ""
 	}
+	localizer.localizeRendererAction(badge.Action)
 }
 
 func (localizer textLocalizer) localizeFormPage(page *FormPage) {
+	localizer.localizeTips(page.Tips)
 	localizer.localizeTextFields(&page.Title, &page.Subtitle)
 	if page.Workflow != nil {
 		localizer.localizeTextFields(&page.Workflow.PreviousLabel, &page.Workflow.NextLabel)
@@ -319,6 +334,7 @@ func (localizer textLocalizer) localizeFormPage(page *FormPage) {
 
 func (localizer textLocalizer) localizeFormSection(section *FormSection) {
 	localizer.localizeTextFields(&section.Title, &section.StepHint, &section.PanelTitle, &section.Subtitle, &section.LoadingLabel, &section.GroupTitle)
+	localizer.localizeInfoHint(section.Info)
 	localizer.localizePromptList(section.Prompts)
 	localizer.localizeFieldMatrix(section.Matrix)
 	if section.ListPage != nil {
@@ -345,7 +361,7 @@ func (localizer textLocalizer) localizeDateRange(config *DateRangeConfig) {
 	if config == nil {
 		return
 	}
-	localizer.localizeTextFields(&config.Placeholder, &config.ApplyLabel, &config.CancelLabel, &config.StartLabel, &config.EndLabel, &config.EmptyLabel, &config.DialogLabel, &config.PreviousLabel, &config.NextLabel, &config.MinDaysLabel)
+	localizer.localizeTextFields(&config.Placeholder, &config.ApplyLabel, &config.CancelLabel, &config.StartLabel, &config.EndLabel, &config.EmptyLabel, &config.DialogLabel, &config.PreviousLabel, &config.NextLabel, &config.MinDaysLabel, &config.OpenEndLabel, &config.OpenEndHint)
 	for index := range config.Months {
 		localizer.localizeTextField(&config.Months[index], "")
 	}
@@ -413,6 +429,10 @@ func (localizer textLocalizer) localizeMediaActions(actions *MediaGalleryActions
 		localizer.localizeRendererAction(actions.Recenter)
 		localizer.localizeRendererAction(actions.Crop)
 		localizer.localizeRendererAction(actions.Remove)
+		localizer.localizeRendererAction(actions.Open)
+		for i := range actions.Under {
+			localizer.localizeRendererAction(&actions.Under[i])
+		}
 	}
 }
 
@@ -439,6 +459,16 @@ func (localizer textLocalizer) localizeMediaCropper(cropper *MediaCropperConfig)
 	localizer.localizeTextFields(&cropper.Title, &cropper.Subtitle, &cropper.Hint, &cropper.ChooseLabel, &cropper.CancelLabel, &cropper.ConfirmLabel, &cropper.CloseLabel)
 }
 
+func (localizer textLocalizer) localizeMediaCapture(capture *MediaCaptureConfig) {
+	if capture == nil {
+		return
+	}
+	localizer.localizeTextFields(&capture.OpenLabel, &capture.Title, &capture.Hint, &capture.ShootLabel, &capture.StopLabel, &capture.RetakeLabel, &capture.UseLabel, &capture.SwitchLabel, &capture.TimerLabel, &capture.CloseLabel, &capture.DeniedText, &capture.PhoneLabel, &capture.PhoneTitle, &capture.PhoneText, &capture.StepLabel, &capture.NextStepLabel, &capture.DoneTitle, &capture.DoneText, &capture.PermissionTitle, &capture.PermissionText, &capture.PermissionLabel, &capture.RetryLabel, &capture.SoundLabel)
+	for index := range capture.Steps {
+		localizer.localizeTextFields(&capture.Steps[index].Hint, &capture.Steps[index].Intro, &capture.Steps[index].ConfirmLabel)
+	}
+}
+
 func (localizer textLocalizer) localizeCollection(collection *CollectionConfig) {
 	if collection == nil {
 		return
@@ -461,16 +491,18 @@ func (localizer textLocalizer) localizeCollection(collection *CollectionConfig) 
 
 func (localizer textLocalizer) localizeRecordPage(page *RecordPage) {
 	localizer.localizeTextFields(&page.Title, &page.Subtitle, &page.Badge)
+	localizer.localizeTips(page.Tips)
 	for i := range page.Actions {
 		localizer.localizeRendererAction(&page.Actions[i])
 	}
 	for i := range page.Sections {
 		section := &page.Sections[i]
-		localizer.localizeTextFields(&section.Title, &section.TitleFallback, &section.Subtitle, &section.LoadingLabel, &section.RetryLabel)
+		localizer.localizeTextFields(&section.Title, &section.TitleFallback, &section.Subtitle, &section.LoadingLabel, &section.RetryLabel, &section.MobileFold)
 		localizer.localizeBlock(section.Block)
+		localizer.localizeInfoHint(section.Info)
 		for j := range section.Components {
 			component := &section.Components[j]
-			localizer.localizeTextFields(&component.ValueLabel, &component.ValueFallback, &component.MatrixLabel, &component.Title, &component.TitleFallback, &component.Subtitle, &component.SubtitleFallback)
+			localizer.localizeTextFields(&component.ValueLabel, &component.ValueFallback, &component.MatrixLabel, &component.Title, &component.TitleFallback, &component.Subtitle, &component.SubtitleFallback, &component.HiddenShowLabel, &component.HiddenHideLabel)
 			for index := range component.Items {
 				item := &component.Items[index]
 				localizer.localizeFallbackField(&item.Label, item.LabelFallback)
@@ -495,6 +527,7 @@ func (localizer textLocalizer) localizeRecordPage(page *RecordPage) {
 			}
 			localizer.localizeMediaGalleryItems(component.MediaItems)
 			localizer.localizePromptList(component.Prompts)
+			localizer.localizeInfoHint(component.Info)
 		}
 	}
 }
@@ -507,6 +540,7 @@ func (localizer textLocalizer) localizeBlock(block *Block) {
 		for badgeIndex := range block.Overlays[overlayIndex].Badges {
 			localizer.localizeBadge(&block.Overlays[overlayIndex].Badges[badgeIndex])
 		}
+		localizer.localizeInfoHint(block.Overlays[overlayIndex].Info)
 	}
 }
 
@@ -539,4 +573,5 @@ func (localizer textLocalizer) localizeResourceGridPage(page *ResourceGridPage) 
 		localizer.localizeCardSchema(page.Card)
 	}
 	localizer.localizeTextMap(&page.Text)
+	localizer.localizeTips(page.Tips)
 }

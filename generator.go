@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/darkrain/request-generator/actions"
 	"github.com/darkrain/request-generator/db"
@@ -38,6 +40,10 @@ type Generator struct {
 	Locales              []locale.Lang
 	DefaultLocale        locale.Lang
 	translations         map[locale.Lang]map[string]string
+	// translationOverrides are words the application replaces while it runs,
+	// read before the files; see SetTranslationOverrides.
+	translationOverrides atomic.Value
+	overridesMu          sync.Mutex
 	EnableOpenAPI        bool
 	GroupTitles          map[string]string
 	IconMap              map[string]string
@@ -46,6 +52,7 @@ type Generator struct {
 	// AccessGate lets the application close a destination for the current
 	// actor without removing it from the configuration.
 	AccessGate       AccessGate
+	AccessGateAction AccessGateAction
 	NavigationHidden NavigationHidden
 }
 
@@ -517,6 +524,47 @@ func validateModuleVirtualFilterOptionsSources(module *BaseModule) error {
 	return nil
 }
 
+// fieldPresentationFor is how the field is shown for this request: its own
+// presentation unless the module adjusts it per request.
+// fieldTitleFor names a field for the request at hand: what TitleFunc answers,
+// else the field's own title. A record read by a form carries the same name
+// the field list gives - the view used to skip TitleFunc, so a settings form
+// named a TopMember's switch as a model's (theGHub1/api#367).
+func fieldTitleFor(c *gin.Context, field fields.ModuleField) string {
+	if field.TitleFunc != nil {
+		if title := field.TitleFunc(c); title != "" {
+			return title
+		}
+	}
+	return field.Title
+}
+
+func fieldPresentationFor(c *gin.Context, field fields.ModuleField) *renderer.FieldPresentation {
+	if field.PresentationFunc == nil {
+		return field.Presentation
+	}
+	base := renderer.FieldPresentation{}
+	if field.Presentation != nil {
+		base = *field.Presentation
+	}
+	if presentation := field.PresentationFunc(c, base); presentation != nil {
+		return presentation
+	}
+	return field.Presentation
+}
+
+// fieldMediaFor is the media control of the field for this request: its own
+// unless the module adjusts it per request.
+func fieldMediaFor(c *gin.Context, field fields.ModuleField) *renderer.FieldMediaConfig {
+	if field.MediaFunc == nil || field.Media == nil {
+		return field.Media
+	}
+	if media := field.MediaFunc(c, *field.Media); media != nil {
+		return media
+	}
+	return field.Media
+}
+
 func (generator *Generator) fieldOptions(c *gin.Context, field fields.ModuleField, role string, lang locale.Lang) []fields.ModuleFieldOptions {
 	options := make([]fields.ModuleFieldOptions, 0, len(field.Options))
 	options = append(options, field.Options...)
@@ -535,6 +583,7 @@ func (generator *Generator) fieldOptions(c *gin.Context, field fields.ModuleFiel
 		options[i].Badge = generator.Translate(lang, options[i].Badge)
 		options[i].Note = generator.Translate(lang, options[i].Note)
 		options[i].TrailingNote = generator.Translate(lang, options[i].TrailingNote)
+		options[i].Group = generator.Translate(lang, options[i].Group)
 	}
 	return options
 }
@@ -558,6 +607,11 @@ func validateListFilterAvailability(page *renderer.ListPage, filters map[string]
 	for _, group := range page.Filters.Groups {
 		if err := validateFilterGroupAvailability(group, filters); err != nil {
 			return err
+		}
+	}
+	for field := range page.Filters.Defaults {
+		if _, ok := filters[field]; !ok {
+			return fmt.Errorf("renderer filter default %q is not available for the current request", field)
 		}
 	}
 	return nil
@@ -636,7 +690,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 
 		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
 			if err := hook(c); err != nil {
-				response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+				response.ErrorResponse(l, c, actions.ErrorStatus(err, http.StatusBadRequest), err.Error(), nil)
 				return
 			}
 		}
@@ -648,7 +702,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 
 		err := action.BeforeRequest(c)
 		if err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			response.ErrorResponse(l, c, actions.ErrorStatus(err, http.StatusBadRequest), err.Error(), nil)
 			return
 		}
 
@@ -911,7 +965,7 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 		if action.Mode != actions.AddModeAtomic {
 			if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
 				if err := hook(c); err != nil {
-					response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+					response.ErrorResponse(l, c, actions.ErrorStatus(err, http.StatusBadRequest), err.Error(), nil)
 					return
 				}
 			}
@@ -924,7 +978,7 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 			err := action.BeforeRequest(c)
 			if err != nil {
 				if !c.Writer.Written() {
-					response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), []string{
+					response.ErrorResponse(l, c, actions.ErrorStatus(err, http.StatusBadRequest), err.Error(), []string{
 						err.Error(),
 					})
 				}
@@ -1093,7 +1147,7 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 
 		err := module.Defrec.BeforeRequest(c)
 		if err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			response.ErrorResponse(l, c, actions.ErrorStatus(err, http.StatusBadRequest), err.Error(), nil)
 			return
 		}
 
@@ -1136,16 +1190,11 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 				}
 			}
 
-			if field.TitleFunc != nil {
-				if title := field.TitleFunc(c); title != "" {
-					field.Title = title
-				}
-			}
-			field.Title = generator.Translate(lang, field.Title)
+			field.Title = generator.Translate(lang, fieldTitleFor(c, field))
 			field.Options = optionItems
 			field.Check = checkItems
-			field.Presentation = generator.localizeFieldPresentation(lang, field.Presentation)
-			field.Media = generator.localizeFieldMedia(lang, field.Media, nil)
+			field.Presentation = generator.localizeFieldPresentation(lang, fieldPresentationFor(c, field))
+			field.Media = generator.localizeFieldMedia(lang, fieldMediaFor(c, field), nil)
 
 			if field.RoleSection != nil {
 				if s, ok := field.RoleSection[role]; ok {
@@ -1185,7 +1234,7 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 
 		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
 			if err := hook(c); err != nil {
-				response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+				response.ErrorResponse(l, c, actions.ErrorStatus(err, http.StatusBadRequest), err.Error(), nil)
 				return
 			}
 		}
@@ -1199,7 +1248,7 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 
 		err := action.BeforeRequest(c)
 		if err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			response.ErrorResponse(l, c, actions.ErrorStatus(err, http.StatusBadRequest), err.Error(), nil)
 			return
 		}
 
@@ -1292,18 +1341,18 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			value := resultMap[fieldKey]
 
 			fieldItem := map[string]interface{}{
-				"title":     generator.Translate(lang, field.Title),
+				"title":     generator.Translate(lang, fieldTitleFor(c, field)),
 				"type":      string(field.Type),
 				"form_type": string(fieldFormTypeForRole(field, roleStr)),
 				"value":     value,
 				"edit":      containsColumn(editableColumns, field.Column),
 			}
 
-			if field.Presentation != nil {
-				fieldItem["presentation"] = generator.localizeFieldPresentation(lang, field.Presentation)
+			if presentation := fieldPresentationFor(c, field); presentation != nil {
+				fieldItem["presentation"] = generator.localizeFieldPresentation(lang, presentation)
 			}
 			if field.Media != nil {
-				fieldItem["media"] = generator.localizeFieldMedia(lang, field.Media, value)
+				fieldItem["media"] = generator.localizeFieldMedia(lang, fieldMediaFor(c, field), value)
 			}
 
 			if field.OptionsSource != nil {
@@ -1364,7 +1413,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 		if action.Mode != actions.UpdateModeAtomic {
 			if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
 				if err := hook(c); err != nil {
-					response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+					response.ErrorResponse(l, c, actions.ErrorStatus(err, http.StatusBadRequest), err.Error(), nil)
 					return
 				}
 			}
@@ -1377,7 +1426,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 			err = action.BeforeRequest(c)
 			if err != nil {
 				if !c.Writer.Written() {
-					response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), []string{err.Error()})
+					response.ErrorResponse(l, c, actions.ErrorStatus(err, http.StatusBadRequest), err.Error(), []string{err.Error()})
 				}
 				return
 			}
@@ -1602,10 +1651,13 @@ func (generator *Generator) actionDelete(module *BaseModule, action actions.Dele
 		ctx := c.Request.Context()
 		l, _ := icontext.GetLogger(ctx)
 		role := actions.GetRoleFromContext(c)
+		// A refusal says why in the language of the request, as every other
+		// action does (theGHub1/api#449).
+		generator.setTranslationContext(c, generator.getLang(c))
 
 		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
 			if err := hook(c); err != nil {
-				response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+				response.ErrorResponse(l, c, actions.ErrorStatus(err, http.StatusBadRequest), err.Error(), nil)
 				return
 			}
 		}
@@ -1617,7 +1669,7 @@ func (generator *Generator) actionDelete(module *BaseModule, action actions.Dele
 
 		err := action.BeforeRequest(c)
 		if err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), []string{err.Error()})
+			response.ErrorResponse(l, c, actions.ErrorStatus(err, http.StatusBadRequest), err.Error(), []string{err.Error()})
 			return
 		}
 

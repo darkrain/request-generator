@@ -75,3 +75,49 @@ func containsJSONFragment(value, fragment string) bool {
 	}
 	return false
 }
+
+// A list may hold one action in sight under its filters (theGHub1/api#429).
+func TestActionPlacementStickyIsValid(t *testing.T) {
+	action := Action{ID: "give_order", Type: ActionRoute, Label: "Order", ActionPresentation: ActionPresentation{Placement: ActionPlacementSticky}, Route: RouteAction{Path: "/orders/create"}}
+	if err := action.Validate(); err != nil {
+		t.Fatalf("validate sticky action: %v", err)
+	}
+	payload, err := json.Marshal(action)
+	if err != nil {
+		t.Fatalf("marshal action: %v", err)
+	}
+	if !containsJSONFragment(string(payload), `"placement":"sticky"`) {
+		t.Fatalf("expected the sticky placement in %s", payload)
+	}
+	if !ActionPlacementSticky.Valid() || ActionPlacement("floating").Valid() {
+		t.Fatal("only the declared placements are valid")
+	}
+}
+
+// A list's one action may float in the corner of the screen
+// (theGHub1/api#440).
+func TestActionPlacementCornerIsValid(t *testing.T) {
+	action := Action{ID: "give_order", Type: ActionRoute, Label: "Order", ActionPresentation: ActionPresentation{Placement: ActionPlacementCorner, Icon: "plus"}, Route: RouteAction{Path: "/orders/create"}}
+	if err := action.Validate(); err != nil {
+		t.Fatalf("validate corner action: %v", err)
+	}
+	payload, err := json.Marshal(action)
+	if err != nil {
+		t.Fatalf("marshal action: %v", err)
+	}
+	if !containsJSONFragment(string(payload), `"placement":"corner"`) {
+		t.Fatalf("expected the corner placement in %s", payload)
+	}
+}
+
+// An item that cannot be removed says why (theGHub1/api#449).
+func TestMediaGalleryItemCarriesItsRemoveRefusal(t *testing.T) {
+	plain, _ := json.Marshal(MediaGalleryItem{ID: "a"})
+	if containsJSONFragment(string(plain), `"remove_refusal"`) {
+		t.Fatalf("an item that can be removed says nothing: %s", plain)
+	}
+	kept, _ := json.Marshal(MediaGalleryItem{ID: "b", Cover: true, RemoveRefusal: "Replace it first"})
+	if !containsJSONFragment(string(kept), `"remove_refusal":"Replace it first"`) {
+		t.Fatalf("expected the refusal in %s", kept)
+	}
+}

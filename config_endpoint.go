@@ -47,12 +47,20 @@ type ConfigNavigationEntry struct {
 	Group       string               `json:"group,omitempty"`
 	GroupTitle  string               `json:"group_title,omitempty"`
 	// Home marks the entry the brand leads to for this actor.
-	Home  bool                   `json:"home,omitempty"`
-	Query map[string]interface{} `json:"query,omitempty"`
+	Home bool `json:"home,omitempty"`
+	// Account marks the entry to the actor's own profile, drawn on a phone
+	// as the account itself.
+	Account bool `json:"account,omitempty"`
+	// Floating marks the entry a wide screen draws as a corner button.
+	Floating bool                   `json:"floating,omitempty"`
+	Query    map[string]interface{} `json:"query,omitempty"`
 	// A destination can exist for an actor and still be closed to them right
 	// now. The entry stays in the menu and says so instead of disappearing.
 	Locked     bool   `json:"locked,omitempty"`
 	LockReason string `json:"lock_reason,omitempty"`
+	// LockAction is the step that opens a closed destination - verification,
+	// a profile to finish - offered when the closed entry is chosen.
+	LockAction *renderer.Action `json:"lock_action,omitempty"`
 }
 
 type NavigationPageTarget struct {
@@ -85,6 +93,11 @@ type AccessTarget struct {
 // AccessGate answers whether a destination is closed to the current actor and
 // why. It is owned by the application: the generator only asks.
 type AccessGate func(c *gin.Context, target AccessTarget) (bool, string)
+
+// AccessGateAction names the step that opens a destination the access gate
+// closed, or nil when there is nothing the actor can do but wait. Its texts
+// are final: the application translates them.
+type AccessGateAction func(c *gin.Context, target AccessTarget) *renderer.Action
 
 // NavigationHidden answers whether a destination does not exist for the current
 // actor, so the menu leaves it out instead of showing it closed.
@@ -312,6 +325,8 @@ func (generator *Generator) buildNavigation(c *gin.Context, role string, lang lo
 				MobileOrder: entry.MobileOrder,
 				MobileTitle: generator.TranslateWithFallback(lang, entry.MobileTitle, ""),
 				Home:        entry.Home,
+				Account:     entry.Account,
+				Floating:    entry.Floating,
 				Target:      target,
 				Query:       entry.Query,
 			}
@@ -325,7 +340,11 @@ func (generator *Generator) buildNavigation(c *gin.Context, role string, lang lo
 				continue
 			}
 			if generator.AccessGate != nil {
-				configEntry.Locked, configEntry.LockReason = generator.AccessGate(c, AccessTarget{Kind: "navigation", ID: configEntry.ID, Path: configEntry.Path})
+				target := AccessTarget{Kind: "navigation", ID: configEntry.ID, Path: configEntry.Path}
+				configEntry.Locked, configEntry.LockReason = generator.AccessGate(c, target)
+				if configEntry.Locked && generator.AccessGateAction != nil {
+					configEntry.LockAction = generator.AccessGateAction(c, target)
+				}
 			}
 			result = append(result, configEntry)
 		}
@@ -577,6 +596,25 @@ func (generator *Generator) buildWidgetLoad(c *gin.Context, owner *BaseModule, a
 	if err != nil || !available {
 		return renderer.WidgetLoad{}, available, err
 	}
+	var variants []renderer.WorkspaceMasterVariantLoad
+	for _, variant := range workspace.MasterVariants {
+		load, available, err := generator.buildReferencedResourceLoad(c, variant.Master, role, nil)
+		if err != nil {
+			return renderer.WidgetLoad{}, false, err
+		}
+		if !available {
+			continue
+		}
+		variants = append(variants, renderer.WorkspaceMasterVariantLoad{Key: variant.Key, Val: variant.Val, Master: load})
+	}
+	var threads *renderer.ResourceLoad
+	if workspace.Threads != nil {
+		resource, available, err := generator.buildReferencedResourceLoad(c, workspace.Threads.Resource, role, &selection)
+		if err != nil || !available {
+			return renderer.WidgetLoad{}, available, err
+		}
+		threads = &resource
+	}
 	detail, available, err := generator.buildReferencedResourceLoad(c, workspace.Detail, role, &selection)
 	if err != nil || !available {
 		return renderer.WidgetLoad{}, available, err
@@ -585,7 +623,7 @@ func (generator *Generator) buildWidgetLoad(c *gin.Context, owner *BaseModule, a
 	if err != nil {
 		return renderer.WidgetLoad{}, false, err
 	}
-	return renderer.WidgetLoad{Summary: summary, Master: &master, Detail: &detail, Commands: commands}, true, nil
+	return renderer.WidgetLoad{Summary: summary, Master: &master, MasterVariants: variants, Threads: threads, Detail: &detail, Commands: commands}, true, nil
 }
 
 func (generator *Generator) buildWorkspaceCommandLoads(c *gin.Context, commands []renderer.WorkspaceCommand, role string, selection *widgetSelectionScope) ([]renderer.WorkspaceCommandLoad, error) {

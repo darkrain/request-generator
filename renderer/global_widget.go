@@ -51,6 +51,17 @@ func LocalizeGlobalWidget(widget GlobalWidget, resolve TextResolver) GlobalWidge
 			localizer := textLocalizer{resolve: resolve}
 			localizer.localizeTextFields(&confirm.Title, &confirm.Message, &confirm.CancelLabel, &confirm.ConfirmLabel)
 		}
+		if label := localized.Workspace.Commands[index].MultiLabel; label != "" {
+			localized.Workspace.Commands[index].MultiLabel = resolve(label, "")
+		}
+		if presentation := localized.Workspace.Commands[index].Presentation; presentation != nil {
+			localizer := textLocalizer{resolve: resolve}
+			localizer.localizeInfoHint(presentation.Info)
+		}
+		if confirm := localized.Workspace.Commands[index].MultiConfirm; confirm != nil {
+			localizer := textLocalizer{resolve: resolve}
+			localizer.localizeTextFields(&confirm.Title, &confirm.Message, &confirm.CancelLabel, &confirm.ConfirmLabel)
+		}
 	}
 	localizer := textLocalizer{resolve: resolve}
 	for index := range localized.Workspace.ComposerActions {
@@ -63,6 +74,18 @@ func LocalizeGlobalWidget(widget GlobalWidget, resolve TextResolver) GlobalWidge
 		localizer.localizeBadge(&localized.Workspace.ComposerBadges[index])
 	}
 	localized.Workspace.RetryLabel = resolve(localized.Workspace.RetryLabel, "")
+	if localized.Workspace.Threads != nil {
+		for index := range localized.Workspace.Threads.Groups {
+			group := &localized.Workspace.Threads.Groups[index]
+			group.Label = resolve(group.Label, "")
+			if group.EmptyLabel != "" {
+				group.EmptyLabel = resolve(group.EmptyLabel, "")
+			}
+		}
+		for index := range localized.Workspace.Threads.Badges {
+			localizer.localizeBadge(&localized.Workspace.Threads.Badges[index])
+		}
+	}
 	return localized
 }
 
@@ -118,6 +141,10 @@ type WidgetSurface struct {
 	// Badge binds to the widget summary record, so the consumer never has to
 	// infer a domain-specific counter.
 	Trigger *WidgetTrigger `json:"trigger,omitempty"`
+	// PinnedRoutes names the route paths on which the widget stays: it cannot
+	// be closed there and shows even after it was closed elsewhere. A path
+	// ending in "*" matches every route that starts with the rest.
+	PinnedRoutes []string `json:"pinned_routes,omitempty"`
 }
 
 // WidgetTrigger is a compact, typed shell control for a global widget. Label
@@ -188,12 +215,22 @@ func (surface WidgetSurface) Validate() error {
 // WorkspaceWidget composes server resources into a generic master-detail
 // shell surface. Resources remain normal module actions.
 type WorkspaceWidget struct {
-	Selection       WorkspaceSelection `json:"selection"`
-	Mode            WorkspaceMode      `json:"mode,omitempty"`
-	Summary         *Resource          `json:"summary,omitempty"`
-	Master          Resource           `json:"master"`
-	Detail          Resource           `json:"detail"`
-	ComposerActions []Action           `json:"composer_actions,omitempty"`
+	Selection WorkspaceSelection `json:"selection"`
+	Mode      WorkspaceMode      `json:"mode,omitempty"`
+	Summary   *Resource          `json:"summary,omitempty"`
+	Master    Resource           `json:"master"`
+	// MasterVariants are lists of the master of their own that a pill of the
+	// master switches to: with that pill on, the rows are what the pill is
+	// about - the orders or the tours themselves rather than the people - and
+	// a row holding several threads unfolds into them. A variant's rows carry
+	// the selection field too, so what is open is read the same way.
+	MasterVariants []WorkspaceMasterVariant `json:"master_variants,omitempty"`
+	// Threads split the selected master row into the records it holds. When
+	// present, the detail, the composer and the commands read the thread that
+	// is open: its fields are merged over the selected row.
+	Threads         *WorkspaceThreads `json:"threads,omitempty"`
+	Detail          Resource          `json:"detail"`
+	ComposerActions []Action          `json:"composer_actions,omitempty"`
 	// ComposerBadges stand above the composer and say what the conversation is
 	// about right now - the state of the work it belongs to and who it names -
 	// so the reader can act on it without leaving the thread.
@@ -219,6 +256,20 @@ func (workspace WorkspaceWidget) Validate() error {
 	if err := workspace.Master.Validate("master"); err != nil {
 		return err
 	}
+	seenVariants := make(map[string]struct{}, len(workspace.MasterVariants))
+	for index, variant := range workspace.MasterVariants {
+		if variant.Key == "" {
+			return fmt.Errorf("master variant %d: key is required", index)
+		}
+		if err := variant.Master.Validate(fmt.Sprintf("master variant %d", index)); err != nil {
+			return err
+		}
+		pill := variant.Key + "=" + variant.Val
+		if _, exists := seenVariants[pill]; exists {
+			return fmt.Errorf("master variant %q is duplicated", pill)
+		}
+		seenVariants[pill] = struct{}{}
+	}
 	if workspace.Summary != nil {
 		if err := workspace.Summary.Validate("summary"); err != nil {
 			return err
@@ -227,7 +278,14 @@ func (workspace WorkspaceWidget) Validate() error {
 	if err := workspace.Detail.Validate("detail"); err != nil {
 		return err
 	}
-	if !workspace.Detail.hasSelectionBinding(workspace.Selection.Field) {
+	if workspace.Threads != nil {
+		if err := workspace.Threads.Validate(workspace.Selection.Field); err != nil {
+			return fmt.Errorf("threads: %w", err)
+		}
+		if !workspace.Detail.hasSelectionBinding(workspace.Threads.Field) {
+			return fmt.Errorf("detail must bind thread field %q", workspace.Threads.Field)
+		}
+	} else if !workspace.Detail.hasSelectionBinding(workspace.Selection.Field) {
 		return fmt.Errorf("detail must bind selection field %q", workspace.Selection.Field)
 	}
 	seenComposerActions := make(map[string]struct{}, len(workspace.ComposerActions))
@@ -322,6 +380,89 @@ func (mode WorkspaceMode) Validate() error {
 	}
 }
 
+// WorkspaceThreads lists the threads held under one master row and sorts them
+// into the groups the reader switches between.
+type WorkspaceThreads struct {
+	// Resource is a list action. Its bindings read the selected master row.
+	Resource Resource `json:"resource"`
+	// Field identifies a thread row. The detail binds it.
+	Field string `json:"field"`
+	// GroupField names the group a thread row belongs to.
+	GroupField string                 `json:"group_field"`
+	Groups     []WorkspaceThreadGroup `json:"groups"`
+	// LabelField and SubtitleField name a thread in the chooser of a group
+	// that holds several; AccentField colours a thread that is still live and
+	// CountField carries its unread count.
+	LabelField    string `json:"label_field,omitempty"`
+	SubtitleField string `json:"subtitle_field,omitempty"`
+	AccentField   string `json:"accent_field,omitempty"`
+	CountField    string `json:"count_field,omitempty"`
+	// A thread asked for by its own key - one opened from somewhere else - is
+	// found through the master row that holds it: LookupField lists the
+	// keys a master row holds, LookupFilter asks the master list for the row
+	// holding one key.
+	LookupField  string `json:"lookup_field,omitempty"`
+	LookupFilter string `json:"lookup_filter,omitempty"`
+	// Badges stand inside a thread's chip and read the thread row: the state
+	// of the work the thread belongs to, in that state's colour.
+	Badges []Badge `json:"badges,omitempty"`
+}
+
+// WorkspaceThreadGroup is one kind of thread held under the selected row.
+type WorkspaceThreadGroup struct {
+	Value string `json:"value"`
+	// Label is a producer translation key.
+	Label string `json:"label"`
+	Icon  string `json:"icon,omitempty"`
+	// Single groups hold one thread and show no chooser.
+	Single bool `json:"single,omitempty"`
+	// EmptyLabel says why the group has nothing to open. A translation key.
+	EmptyLabel string     `json:"empty_label,omitempty"`
+	VisibleIf  *Condition `json:"visible_if,omitempty"`
+}
+
+func (threads WorkspaceThreads) Validate(selectionField string) error {
+	if err := threads.Resource.Validate("threads"); err != nil {
+		return err
+	}
+	if !threads.Resource.hasSelectionBinding(selectionField) {
+		return fmt.Errorf("resource must bind selection field %q", selectionField)
+	}
+	if threads.Field == "" {
+		return fmt.Errorf("field is required")
+	}
+	if threads.GroupField == "" {
+		return fmt.Errorf("group field is required")
+	}
+	if len(threads.Groups) == 0 {
+		return fmt.Errorf("groups are required")
+	}
+	seen := make(map[string]struct{}, len(threads.Groups))
+	for index, group := range threads.Groups {
+		if group.Value == "" {
+			return fmt.Errorf("group %d: value is required", index)
+		}
+		if group.Label == "" {
+			return fmt.Errorf("group %q: label is required", group.Value)
+		}
+		if _, exists := seen[group.Value]; exists {
+			return fmt.Errorf("group %q is duplicated", group.Value)
+		}
+		seen[group.Value] = struct{}{}
+	}
+	seenBadges := make(map[string]struct{}, len(threads.Badges))
+	for index, badge := range threads.Badges {
+		if badge.ID == "" {
+			return fmt.Errorf("badge %d: id is required", index)
+		}
+		if _, exists := seenBadges[badge.ID]; exists {
+			return fmt.Errorf("badge %q is duplicated", badge.ID)
+		}
+		seenBadges[badge.ID] = struct{}{}
+	}
+	return nil
+}
+
 type WorkspaceSelection struct {
 	// Field identifies the current master row. Bindings may read this field or
 	// another declared scalar field from that same selected row.
@@ -398,6 +539,16 @@ type WorkspaceCommand struct {
 	// The renderer offers a selection of rows and runs the command for each of
 	// them; a row the command is not visible for is not offered.
 	Multi bool `json:"multi,omitempty"`
+	// MultiLabel names the command on the bar of several picked rows, where
+	// the bar already says what is picked: "Delete" beside "Chats selected",
+	// not "Delete chat". A producer translation key; empty keeps Label.
+	MultiLabel string `json:"multi_label,omitempty"`
+	// MultiConfirm is asked once before the command runs for several rows.
+	// Its texts may carry {count}, the number of rows, and
+	// {plural:form|form|...}, the form that agrees with that number by the
+	// page language's plural rules (one|other, or one|few|many). Without it
+	// the single-row Confirm is asked.
+	MultiConfirm *Confirm `json:"multi_confirm,omitempty"`
 	Resource
 	Refresh []WorkspaceRefreshTarget `json:"refresh"`
 }
@@ -432,6 +583,19 @@ func (command WorkspaceCommand) Validate() error {
 	if command.Confirm != nil {
 		if err := command.Confirm.Validate(); err != nil {
 			return fmt.Errorf("confirm: %w", err)
+		}
+	}
+	if !command.Multi && (command.MultiLabel != "" || command.MultiConfirm != nil) {
+		return fmt.Errorf("multi_label and multi_confirm need a multi command")
+	}
+	if command.Presentation != nil {
+		if err := command.Presentation.Info.Validate(); err != nil {
+			return fmt.Errorf("presentation: %w", err)
+		}
+	}
+	if command.MultiConfirm != nil {
+		if err := command.MultiConfirm.Validate(); err != nil {
+			return fmt.Errorf("multi_confirm: %w", err)
 		}
 	}
 	if err := command.Resource.Validate("resource"); err != nil {
@@ -904,12 +1068,36 @@ type WorkspaceCommandInputLoad struct {
 	Definition ResourceLoad `json:"definition"`
 }
 
+// WorkspaceMasterVariant is a list of the master that the pill Key=Val
+// switches to. Unfold names the field of a row that lists the threads it
+// holds, each with its id, title, avatar, status, unread_count,
+// last_message_time, preview and path (where the face of the person leads):
+// a row with one thread opens it, a row with more unfolds into them. A
+// thread opened from a row is one talk: the row names it, and there is no
+// other thread beside it to switch to.
+type WorkspaceMasterVariant struct {
+	Key    string   `json:"key"`
+	Val    string   `json:"val"`
+	Master Resource `json:"master"`
+	Unfold string   `json:"unfold,omitempty"`
+}
+
+// WorkspaceMasterVariantLoad is how a variant's list is asked for.
+type WorkspaceMasterVariantLoad struct {
+	Key    string       `json:"key"`
+	Val    string       `json:"val"`
+	Master ResourceLoad `json:"master"`
+}
+
 type WidgetLoad struct {
-	Resource *ResourceLoad          `json:"resource,omitempty"`
-	Summary  *ResourceLoad          `json:"summary,omitempty"`
-	Master   *ResourceLoad          `json:"master,omitempty"`
-	Detail   *ResourceLoad          `json:"detail,omitempty"`
-	Commands []WorkspaceCommandLoad `json:"commands,omitempty"`
+	Resource *ResourceLoad `json:"resource,omitempty"`
+	Summary  *ResourceLoad `json:"summary,omitempty"`
+	Master   *ResourceLoad `json:"master,omitempty"`
+	// MasterVariants are the lists a pill of the master switches to.
+	MasterVariants []WorkspaceMasterVariantLoad `json:"master_variants,omitempty"`
+	Threads        *ResourceLoad                `json:"threads,omitempty"`
+	Detail         *ResourceLoad                `json:"detail,omitempty"`
+	Commands       []WorkspaceCommandLoad       `json:"commands,omitempty"`
 }
 
 func cloneWorkspaceWidget(value *WorkspaceWidget) *WorkspaceWidget {
@@ -923,6 +1111,20 @@ func cloneWorkspaceWidget(value *WorkspaceWidget) *WorkspaceWidget {
 		cloned.Summary = &summary
 	}
 	cloned.Master.Bindings = cloneRequestBindings(value.Master.Bindings)
+	if value.MasterVariants != nil {
+		cloned.MasterVariants = make([]WorkspaceMasterVariant, len(value.MasterVariants))
+		for index, variant := range value.MasterVariants {
+			variant.Master.Bindings = cloneRequestBindings(variant.Master.Bindings)
+			cloned.MasterVariants[index] = variant
+		}
+	}
+	if value.Threads != nil {
+		threads := *value.Threads
+		threads.Resource.Bindings = cloneRequestBindings(value.Threads.Resource.Bindings)
+		threads.Groups = append([]WorkspaceThreadGroup(nil), value.Threads.Groups...)
+		threads.Badges = cloneBadges(value.Threads.Badges)
+		cloned.Threads = &threads
+	}
 	cloned.Detail.Bindings = cloneRequestBindings(value.Detail.Bindings)
 	cloned.ComposerActions = cloneActions(value.ComposerActions)
 	// The badges were left sharing their slice, and with it the maps inside it.
@@ -976,6 +1178,10 @@ func cloneWorkspaceCommands(values []WorkspaceCommand) []WorkspaceCommand {
 		if value.Confirm != nil {
 			confirm := *value.Confirm
 			cloned[index].Confirm = &confirm
+		}
+		if value.MultiConfirm != nil {
+			confirm := *value.MultiConfirm
+			cloned[index].MultiConfirm = &confirm
 		}
 		cloned[index].Bindings = cloneRequestBindings(value.Bindings)
 		cloned[index].Refresh = cloneSlice(value.Refresh)
@@ -1093,6 +1299,7 @@ func (value WidgetLoad) Clone() WidgetLoad {
 		Resource: cloneResourceLoad(value.Resource),
 		Summary:  cloneResourceLoad(value.Summary),
 		Master:   cloneResourceLoad(value.Master),
+		Threads:  cloneResourceLoad(value.Threads),
 		Detail:   cloneResourceLoad(value.Detail),
 		Commands: cloneWorkspaceCommandLoads(value.Commands),
 	}

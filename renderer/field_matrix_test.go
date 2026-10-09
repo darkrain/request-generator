@@ -8,6 +8,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// A list says how many of its items stand in a row on a phone, within what a
+// row can hold, and the reader gets the word.
+func TestFieldMatrixListMobileColumns(t *testing.T) {
+	list := func(mobile int) *FieldMatrix {
+		return &FieldMatrix{Type: FieldMatrixTypeList, List: &FieldMatrixList{Fields: []string{"since"}, Columns: FieldMatrixColumnsThree, MobileColumns: mobile}}
+	}
+	require.NoError(t, list(0).Validate("timing"))
+	require.NoError(t, list(1).Validate("timing"))
+	require.EqualError(t, list(5).Validate("timing"), `renderer.Universal: matrix section "timing" list mobile columns must be 0-4`)
+	require.EqualError(t, list(-1).Validate("timing"), `renderer.Universal: matrix section "timing" list mobile columns must be 0-4`)
+	raw, err := json.Marshal(list(1).List)
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), `"mobile_columns":1`)
+	raw, err = json.Marshal(list(0).List)
+	require.NoError(t, err)
+	assert.NotContains(t, string(raw), "mobile_columns")
+	copied := cloneFieldMatrix(list(1))
+	assert.Equal(t, 1, copied.List.MobileColumns)
+}
+
 func TestFieldMatrixValidate(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -253,4 +273,60 @@ func TestFieldMatrixSourceCloneAndJSON(t *testing.T) {
 	cloned.Form.Sections[0].Matrix.Table.Rows[0].Description = "changed"
 	require.Equal(t, "/api/groups/:bykey/:value", source.Form.Sections[0].Matrix.Table.Source.Load.Update.Request.Endpoint)
 	require.Equal(t, "Messages", source.Form.Sections[0].Matrix.Table.Rows[0].Description)
+}
+
+func TestFieldMatrixCellEnabledIf(t *testing.T) {
+	on := true
+	source := Universal{Form: &FormPage{Sections: []FormSection{{
+		ID: "notifications",
+		Matrix: &FieldMatrix{Type: FieldMatrixTypeTable, Table: &FieldMatrixTable{
+			Heads: []string{"Type", "Push"},
+			Source: &FieldMatrixDataSource{
+				IDField: "id", KeyField: "group_code",
+				List: ActionResource{Module: "groups", Action: "list"}, Update: ActionResource{Module: "groups", Action: "update"},
+				Row: &FieldMatrixDataRow{LabelField: "label_key", Cells: []FieldMatrixCell{{
+					Field: "push_enabled", AvailableField: "push_available",
+					EnabledIf: &Condition{Path: "record.push_enabled", Truthy: &on},
+				}}},
+			},
+		}},
+	}}}}
+
+	encoded, err := json.Marshal(source.Form.Sections[0].Matrix.Table.Source.Row.Cells[0])
+	require.NoError(t, err)
+	require.JSONEq(t, `{"field":"push_enabled","available_field":"push_available","enabled_if":{"path":"record.push_enabled","truthy":true}}`, string(encoded))
+
+	cloned := source.Clone()
+	cloned.Form.Sections[0].Matrix.Table.Source.Row.Cells[0].EnabledIf.Path = "record.changed"
+	require.Equal(t, "record.push_enabled", source.Form.Sections[0].Matrix.Table.Source.Row.Cells[0].EnabledIf.Path)
+
+	// A condition is about a cell's value, so a text cell may not carry one.
+	err = validateFieldMatrixCells("notifications", 0, 2, true, []FieldMatrixCell{{Text: "matrix.note", EnabledIf: &Condition{Path: "record.push_enabled", Truthy: &on}}})
+	require.ErrorContains(t, err, "enabled condition requires field")
+}
+
+func TestCardMediaPreviewIsSaid(t *testing.T) {
+	encoded, err := json.Marshal(Media{Field: "identity_video_media", Size: MediaSizeThumb, Preview: true})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"field":"identity_video_media","size":"thumb","preview":true}`, string(encoded))
+	encoded, err = json.Marshal(Media{Field: "avatar"})
+	require.NoError(t, err)
+	require.JSONEq(t, `{"field":"avatar"}`, string(encoded))
+}
+
+func TestFieldPresentationCalendarMarks(t *testing.T) {
+	presentation := &FieldPresentation{Renderer: RendererKey("calendar"), CalendarMarks: []CalendarMark{
+		{Field: "expected_arrival_date", Label: "tours.calendar.expected_arrival", Tone: "cyan"},
+		{Field: "other_tour_starts", Label: "tours.calendar.other_tours", Tone: "amber"},
+	}}
+	require.NoError(t, presentation.Validate())
+	encoded, err := json.Marshal(presentation)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"renderer":"calendar","calendar_marks":[{"field":"expected_arrival_date","label":"tours.calendar.expected_arrival","tone":"cyan"},{"field":"other_tour_starts","label":"tours.calendar.other_tours","tone":"amber"}]}`, string(encoded))
+
+	cloned := CloneFieldPresentation(presentation)
+	cloned.CalendarMarks[0].Label = "changed"
+	require.Equal(t, "tours.calendar.expected_arrival", presentation.CalendarMarks[0].Label)
+
+	require.ErrorContains(t, (&FieldPresentation{CalendarMarks: []CalendarMark{{Label: "x"}}}).Validate(), "calendar mark 0 needs a field")
 }

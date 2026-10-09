@@ -177,6 +177,10 @@ type TextFormat string
 
 const (
 	TextFormatRelativeTime TextFormat = "relative_time"
+	// TextFormatHandle says the text is a handle - the @name of an account -
+	// so the client reads it as one: in the colour a handle is read in, and
+	// copied by a tap, the way a profile page reads it.
+	TextFormatHandle TextFormat = "handle"
 )
 
 type SurfaceVariant string
@@ -259,6 +263,12 @@ const (
 	RendererPrimaryRadio        RendererKey = "primary_radio"
 	RendererRecordSelect        RendererKey = "record_select"
 	RendererDateRange           RendererKey = "date_range"
+	// A choice of several drawn as one switch per option, for a short list
+	// of things each turned on or off on its own.
+	RendererSwitchList RendererKey = "switch_list"
+	// A single choice between a few modes drawn as a strip of segments, the
+	// way a page's tabs are.
+	RendererSegmented RendererKey = "segmented"
 )
 
 type RecordSectionRenderer = RendererKey
@@ -320,11 +330,28 @@ const (
 	ActionPlacementBadge        ActionPlacement = "badge"
 	ActionPlacementHead         ActionPlacement = "head"
 	ActionPlacementMenu         ActionPlacement = "menu"
+	// In place of a workspace's composer: a command that has to be answered
+	// before anything can be written - unblocking the person - stands where
+	// the text would be typed, and the composer is not offered meanwhile.
+	ActionPlacementComposer ActionPlacement = "composer"
+	// Beside the open thread of a workspace whose rows hold threads: a
+	// command about the one thread being read - removing it - stands in the
+	// strip that chooses threads, and acts on the thread that is open.
+	ActionPlacementThread ActionPlacement = "thread"
+	// Held over a list under its filters, staying in sight while the list
+	// scrolls: the one thing the page is for, within reach from any row of
+	// it - an order, from the catalogue of whom to order (theGHub1/api#429).
+	ActionPlacementSticky ActionPlacement = "sticky"
+	// Floating in the bottom right corner of the screen over a list: on a
+	// phone a large round button with the action's icon, on a wide screen a
+	// button with its words - the one thing the page is for, the way the
+	// feed's «+» publishes (theGHub1/api#440).
+	ActionPlacementCorner ActionPlacement = "corner"
 )
 
 func (placement ActionPlacement) Valid() bool {
 	switch placement {
-	case "", ActionPlacementFull, ActionPlacementHalf, ActionPlacementFilterFooter, ActionPlacementBadge, ActionPlacementHead, ActionPlacementMenu:
+	case "", ActionPlacementFull, ActionPlacementHalf, ActionPlacementFilterFooter, ActionPlacementBadge, ActionPlacementHead, ActionPlacementMenu, ActionPlacementComposer, ActionPlacementThread, ActionPlacementSticky, ActionPlacementCorner:
 		return true
 	default:
 		return false
@@ -412,6 +439,19 @@ const (
 	// A run of steps can be numbered and joined by arrows, which reads as an
 	// order to follow rather than a history that happened.
 	ComponentDisplayFlowSteps ComponentDisplayType = "flow_steps"
+	// The same set can read as a list of what is and is not included - a mark
+	// and a line each, one under the other - where nothing happens in order
+	// and the rail between the marks would say there is a sequence.
+	ComponentDisplayCheckList ComponentDisplayType = "check_list"
+	// A run of steps can read on a phone as one line of marks with the step
+	// it has reached named under it, where every step on its own line would
+	// stand taller than the screen. A wide screen still reads every step.
+	ComponentDisplayProgress ComponentDisplayType = "progress"
+	// A plan is read as a card of its own: the kind it is, its name, the price
+	// as one large figure with what it buys beside it, the line that says how
+	// it is paid, what it includes and leaves out, and the one step across the
+	// foot. The card is the surface, so it stands in a section with no panel.
+	ComponentDisplayPlanCard ComponentDisplayType = "plan_card"
 	// A set of records can read as a strip of narrow cards that scrolls
 	// sideways, where showing many at once matters more than showing one well.
 	ComponentDisplayCardRail ComponentDisplayType = "card_rail"
@@ -425,6 +465,12 @@ const (
 	// now, and whether it is met. A timeline would say these happen one after
 	// another, and a table would say they are records.
 	ComponentDisplayReadinessRows ComponentDisplayType = "readiness_rows"
+	// A set of records each on its own way through the same run of steps
+	// reads as rows of them: the record, where it stands now, a line of what
+	// that means in days and dates, and a bar of the steps lit as far as it
+	// has come - the step it is on lit in part as far as it has gone into
+	// it. A step the reader can take for the record stands at the row's end.
+	ComponentDisplayProgressRows ComponentDisplayType = "progress_rows"
 	// A balance can be a card of its own: the mark and the name of the balance
 	// over a hairline, the figures under it beside the picture of what each
 	// one counts, and the light of the balance's colour in the corner. It
@@ -442,6 +488,9 @@ type ComponentRatio string
 const (
 	ComponentRatioSquare   ComponentRatio = "square"
 	ComponentRatioPortrait ComponentRatio = "portrait"
+	// A picture framed wider than tall, three by two - a tour's cover is cut
+	// to that shape when it is chosen - is shown whole.
+	ComponentRatioLandscape ComponentRatio = "landscape"
 	// A grid of pictures is read as columns of tall tiles, whatever shape the
 	// pictures inside them were published in.
 	ComponentRatioTall ComponentRatio = "tall"

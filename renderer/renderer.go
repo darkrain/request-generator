@@ -73,6 +73,9 @@ func (r Universal) IsZero() bool {
 }
 
 func (r Universal) Validate() error {
+	if err := r.validateTips(); err != nil {
+		return fmt.Errorf("renderer.Universal: %w", err)
+	}
 	if r.Record != nil {
 		for _, section := range r.Record.Sections {
 			if section.Resource == nil {
@@ -108,6 +111,9 @@ func (r Universal) Validate() error {
 		for _, section := range r.Form.Sections {
 			if err := validateFormSectionActions(r.Form, section); err != nil {
 				return err
+			}
+			if err := section.Info.Validate(); err != nil {
+				return fmt.Errorf("renderer.Universal: form section %q: %w", section.ID, err)
 			}
 			if err := validateFormSectionColumns(section); err != nil {
 				return err
@@ -228,6 +234,9 @@ func validateRecordComponents(page *RecordPage) error {
 		if err := section.Block.Validate(); err != nil {
 			return fmt.Errorf("renderer.Universal: record section %q block: %w", section.ID, err)
 		}
+		if err := section.Info.Validate(); err != nil {
+			return fmt.Errorf("renderer.Universal: record section %q: %w", section.ID, err)
+		}
 		for _, component := range section.Components {
 			if err := component.Validate(); err != nil {
 				return fmt.Errorf("renderer.Universal: record section %q component %q: %w", section.ID, component.ID, err)
@@ -243,6 +252,11 @@ func validateRecordComponents(page *RecordPage) error {
 			for _, actionID := range component.FootActions {
 				if !recordPageHasAction(page, actionID) {
 					return fmt.Errorf("renderer.Universal: record section %q component %q foot action %q is not declared in record page actions", section.ID, component.ID, actionID)
+				}
+			}
+			for _, actionID := range component.HeadActions {
+				if !recordPageHasAction(page, actionID) {
+					return fmt.Errorf("renderer.Universal: record section %q component %q head action %q is not declared in record page actions", section.ID, component.ID, actionID)
 				}
 			}
 			if component.ActionID != "" && !recordPageHasAction(page, component.ActionID) {
@@ -337,6 +351,9 @@ func (filter *ItemFilter) Validate() error {
 }
 
 func (component DisplayComponent) Validate() error {
+	if err := component.Info.Validate(); err != nil {
+		return fmt.Errorf("display component %q: %w", component.ID, err)
+	}
 	if err := component.ItemFilter.Validate(); err != nil {
 		return fmt.Errorf("display component %q: %w", component.ID, err)
 	}
@@ -348,6 +365,9 @@ func (component DisplayComponent) Validate() error {
 	}
 	if component.Type == DisplayStatusTimeline && len(component.Fields) != 1 {
 		return fmt.Errorf("status timeline requires exactly one field")
+	}
+	if component.MobileColumns < 0 || component.MobileColumns > 4 {
+		return fmt.Errorf("display component %q: mobile columns must be between 0 and 4", component.ID)
 	}
 	if component.Type == DisplayPrompts && (component.Prompts == nil || len(component.Prompts.Items) == 0) {
 		return fmt.Errorf("display component %q: prompts require at least one item", component.ID)
@@ -370,9 +390,13 @@ func (component DisplayComponent) Validate() error {
 			ComponentDisplayBalanceCard:   DisplayDataList,
 			ComponentDisplayActionRows:    DisplayActions,
 			ComponentDisplayFlowSteps:     DisplayStatusTimeline,
+			ComponentDisplayCheckList:     DisplayStatusTimeline,
+			ComponentDisplayProgress:      DisplayStatusTimeline,
+			ComponentDisplayPlanCard:      DisplayDataList,
 			ComponentDisplayFlowCard:      DisplayStatusTimeline,
 			ComponentDisplayCardRail:      DisplayRecordCarousel,
 			ComponentDisplayReadinessRows: DisplayRecordCarousel,
+			ComponentDisplayProgressRows:  DisplayRecordCarousel,
 		}
 		expected, known := owner[component.DisplayType]
 		if !known {
@@ -463,6 +487,9 @@ func (block *Block) Validate() error {
 		if len(overlay.Badges) == 0 {
 			return fmt.Errorf("block overlay %q badges are required", overlay.Position)
 		}
+		if err := overlay.Info.Validate(); err != nil {
+			return fmt.Errorf("block overlay %q: %w", overlay.Position, err)
+		}
 	}
 	return nil
 }
@@ -487,7 +514,9 @@ func hasCondition(condition *Condition) bool {
 		condition.Empty != nil ||
 		condition.NotEmpty != nil ||
 		condition.Truthy != nil ||
-		condition.Falsy != nil
+		condition.Falsy != nil ||
+		condition.Future != nil ||
+		condition.Past != nil
 	if hasDirectPredicate && condition.Path == "" {
 		return false
 	}
@@ -526,6 +555,9 @@ func hasCondition(condition *Condition) bool {
 func validateListPage(scope string, page *ListPage) error {
 	if page == nil {
 		return nil
+	}
+	if err := page.Info.Validate(); err != nil {
+		return fmt.Errorf("renderer.Universal: %s: %w", scope, err)
 	}
 	if err := page.Grid.Validate(); err != nil {
 		return fmt.Errorf("renderer.Universal: %s: %w", scope, err)
@@ -864,6 +896,11 @@ func validateMediaActions(actions *MediaGalleryActions) error {
 			return err
 		}
 	}
+	for i := range actions.Under {
+		if err := validateAction("media under", &actions.Under[i]); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -953,6 +990,20 @@ type Filters struct {
 	Text              *FilterText          `json:"text,omitempty"`
 	RangePresets      []FilterRangePresets `json:"range_presets,omitempty"`
 	DateRange         *DateRangeToolbar    `json:"date_range,omitempty"`
+	// Defaults are the filters a list opens with when the reader has none of
+	// their own: a starting point shown in the controls that the reader can
+	// change or clear, not a condition they cannot remove.
+	Defaults map[string]interface{} `json:"defaults,omitempty"`
+	// Disclosure folds every filter control under one heading, so a list whose
+	// filters are many opens on its records rather than on rows of controls.
+	Disclosure *FilterDisclosure `json:"disclosure,omitempty"`
+}
+
+// FilterDisclosure names the heading the filters fold under and says
+// whether it starts open.
+type FilterDisclosure struct {
+	Label string `json:"label"`
+	Open  bool   `json:"open,omitempty"`
 }
 
 // FilterPresentation selects a reusable arrangement of the controls declared
@@ -1006,6 +1057,11 @@ type FilterGroup struct {
 	Fields       []string                `json:"fields,omitempty"`
 	Sections     []FilterGroupSection    `json:"sections,omitempty"`
 	Items        []FilterGroupItem       `json:"items,omitempty"`
+	// VisibleIf offers the group only while the list is asked for what the
+	// group narrows: the filters of one kind of result stand in the row only
+	// while a pill has switched the list to that kind. The condition reads
+	// the active filters as "filters.<key>".
+	VisibleIf *Condition `json:"visible_if,omitempty"`
 }
 
 // FilterGroupSection describes an ordered typed section inside a presented group.
@@ -1064,6 +1120,9 @@ type FilterPill struct {
 	Dot           bool                   `json:"dot,omitempty"`
 	Presentation  FilterPillPresentation `json:"presentation,omitempty"`
 	Tone          string                 `json:"tone,omitempty"`
+	// Icon marks a pill that switches the list to a kind of result of its
+	// own, set apart from the plain choices beside it.
+	Icon string `json:"icon,omitempty"`
 }
 
 // FilterPillPresentation describes the visual control for an existing filter
@@ -1153,6 +1212,11 @@ type ListPage struct {
 	Selection  *ListSelection         `json:"selection,omitempty"`
 	Context    map[string]interface{} `json:"context,omitempty"`
 	Actions    []Action               `json:"actions,omitempty"`
+	// Tips are the temporary hints the page tells its reader.
+	Tips []Tip `json:"tips,omitempty"`
+	// Info is the lasting explanation of the whole page, opened beside its
+	// title: the rules a reader of this page lives by.
+	Info *InfoHint `json:"info,omitempty"`
 }
 
 // ListSelection declares server-owned selection for a list of cards. The
@@ -1424,6 +1488,35 @@ type CardSchema struct {
 	Badges           []Badge          `json:"badges,omitempty"`
 	Stats            []Badge          `json:"stats,omitempty"`
 	Actions          []Action         `json:"actions,omitempty"`
+	// Segments lays a row of equal marks along the bottom edge of the card.
+	Segments *CardSegments `json:"segments,omitempty"`
+	Chips    *CardChips    `json:"chips,omitempty"`
+}
+
+// CardChips is a set of short values on a line of their own under the
+// subtitle - the countries a profile works in, say - read as one group: the
+// first chip carries the icon, the rest continue it. The card shows
+// MaxVisible of them (fewer where it is narrow) and names the others by their
+// count, which opens the whole set on a hover or a press.
+type CardChips struct {
+	// Field holds the values: a list of words, or a JSON text of one.
+	Field      string `json:"field"`
+	Icon       string `json:"icon,omitempty"`
+	Tone       string `json:"tone,omitempty"`
+	MaxVisible int    `json:"max_visible,omitempty"`
+	// Label names the set for a screen reader and heads the list of all.
+	Label string `json:"label,omitempty"`
+}
+
+// CardSegments draws one mark per item of a list field along the bottom edge
+// of a card, each in the tone ToneMap gives its value: how many tries are
+// spent and how many are left, say. A value named in Pulse is the one under
+// way. Label says what the marks count, for a reader that cannot see them.
+type CardSegments struct {
+	Field   string            `json:"field"`
+	ToneMap map[string]string `json:"tone_map,omitempty"`
+	Pulse   []string          `json:"pulse,omitempty"`
+	Label   string            `json:"label,omitempty"`
 }
 
 func (schema *CardSchema) Validate() error {
@@ -1434,6 +1527,15 @@ func (schema *CardSchema) Validate() error {
 	case "", CardActionLayoutInline, CardActionLayoutEdgeFill, CardActionLayoutMenu:
 	default:
 		return fmt.Errorf("renderer.CardSchema: unsupported action layout %q", schema.ActionLayout)
+	}
+	if schema.Segments != nil && schema.Segments.Field == "" {
+		return fmt.Errorf("renderer.CardSchema: segments field is required")
+	}
+	if schema.Chips != nil && schema.Chips.Field == "" {
+		return fmt.Errorf("renderer.CardSchema: chips field is required")
+	}
+	if schema.Chips != nil && schema.Chips.MaxVisible < 0 {
+		return fmt.Errorf("renderer.CardSchema: chips max_visible cannot be negative")
 	}
 	if schema.LeadingAccent != nil && schema.LeadingAccent.Tone == "" {
 		return fmt.Errorf("renderer.CardSchema: leading_accent tone is required")
@@ -1450,9 +1552,13 @@ func (schema *CardSchema) Validate() error {
 }
 
 // CardEdgeAccent adds an opt-in visual line to the leading edge of a card.
-// Tone is an extensible presentation token interpreted by the consuming UI.
+// Tone is an extensible presentation token interpreted by the consuming UI;
+// it may bind a row value ("{{field}}"), and a row whose value is empty then
+// carries no accent. Wash also tints the card from that edge, for rows that
+// have to stand out from their neighbours rather than merely be marked.
 type CardEdgeAccent struct {
 	Tone ToneToken `json:"tone"`
+	Wash bool      `json:"wash,omitempty"`
 }
 
 // IconBinding resolves an icon and its visual tone from a row. IconField and
@@ -1488,6 +1594,9 @@ type Media struct {
 	// CountField names a number the picture carries on its rim - unread
 	// messages, say - opposite the status dot.
 	CountField string `json:"count_field,omitempty"`
+	// MoreField names how many more there are than the pictures of a row of
+	// faces shows, said as "+N" at its end.
+	MoreField string `json:"more_field,omitempty"`
 	// A picture can carry one small mark in its corner - pinned, locked, the
 	// state that belongs to the thing pictured rather than to a row of chips
 	// beside it. MarkerField names the truth, MarkerIcon what to draw.
@@ -1497,18 +1606,40 @@ type Media struct {
 	// FallbackField names a value on the record that stands in for a missing
 	// picture, so a card without one can still show what kind of profile it is.
 	FallbackField string `json:"fallback_field,omitempty"`
+	// Preview opens the picture or video, and the others of its field, in a
+	// viewer when it is pressed, whatever the card itself opens: a moderator
+	// watches a verification from its card (theGHub1/api#409).
+	Preview bool `json:"preview,omitempty"`
+}
+
+// FieldSuggest names where a field's value can be proposed from the values of
+// other fields of the same form: an address asked with those values, and the
+// field of its answer that holds the proposal. A proposal fills the field while
+// the person has not written a value of their own; an answer without one
+// leaves the field to them.
+type FieldSuggest struct {
+	Endpoint string `json:"endpoint"`
+	// Params maps a query parameter to the form field whose value it carries.
+	Params map[string]string `json:"params"`
+	// Optional names the parameters the proposal is asked for without: an
+	// empty one is left out of the query instead of holding the question
+	// back. Every other parameter has to be filled first.
+	Optional   []string `json:"optional,omitempty"`
+	ValueField string   `json:"value_field,omitempty"`
 }
 
 type FieldPresentation struct {
 	Renderer RendererKey `json:"renderer,omitempty"`
-	Variant  string      `json:"variant,omitempty"`
-	Style    string      `json:"style,omitempty"`
-	Icon     string      `json:"icon,omitempty"`
-	Size     MediaSize   `json:"size,omitempty"`
-	Ratio    MediaRatio  `json:"ratio,omitempty"`
-	Prefix   string      `json:"prefix,omitempty"`
-	Suffix   string      `json:"suffix,omitempty"`
-	Hint     string      `json:"hint,omitempty"`
+	// Suggest proposes the value from other fields of the form.
+	Suggest *FieldSuggest `json:"suggest,omitempty"`
+	Variant string        `json:"variant,omitempty"`
+	Style   string        `json:"style,omitempty"`
+	Icon    string        `json:"icon,omitempty"`
+	Size    MediaSize     `json:"size,omitempty"`
+	Ratio   MediaRatio    `json:"ratio,omitempty"`
+	Prefix  string        `json:"prefix,omitempty"`
+	Suffix  string        `json:"suffix,omitempty"`
+	Hint    string        `json:"hint,omitempty"`
 	// Placeholder is the empty-state copy shown inside the control. A rule the
 	// control already enforces - an accepted range, an expected format - belongs
 	// here rather than on a line of its own under the field.
@@ -1530,6 +1661,34 @@ type FieldPresentation struct {
 	// NoticeByValue tells the person, the moment they choose a value, what
 	// that choice brings with it.
 	NoticeByValue []FieldValueNotice `json:"notice_by_value,omitempty"`
+	// MinField and MaxField tie a number to another field of the same form:
+	// the two ends of one range. The upper end names its lower end in
+	// MinField and cannot be set below it; the lower end names its upper end
+	// in MaxField and cannot be set above it. The control holds a value
+	// inside that bound as it holds one inside its own accepted range.
+	MinField string `json:"min_field,omitempty"`
+	MaxField string `json:"max_field,omitempty"`
+	// MinFieldNotice is said under a number the control raised to its
+	// MinField: the person wrote less, and the form changed it - an order's
+	// price lifted to the rate of its models. {value} is the number it was
+	// raised to.
+	MinFieldNotice string `json:"min_field_notice,omitempty"`
+	// Info is the lasting explanation a reader opens beside the field's
+	// label, wherever the field is read: in a form and in a record.
+	Info *InfoHint `json:"info,omitempty"`
+	// CalendarMarks set days apart on a calendar control, each kind in its
+	// own colour and named in a legend under it: the arrival a model is
+	// expected on circled, the starts of her other tours in another colour
+	// (theGHub1/api#411).
+	CalendarMarks []CalendarMark `json:"calendar_marks,omitempty"`
+}
+
+// CalendarMark is one kind of marked day: the field of the record that holds
+// a date or a list of dates, the legend's words for them and their colour.
+type CalendarMark struct {
+	Field string `json:"field"`
+	Label string `json:"label,omitempty"`
+	Tone  string `json:"tone,omitempty"`
 }
 
 // FieldInputMode hints which virtual keyboard a text control should open.
@@ -1560,8 +1719,16 @@ func (presentation *FieldPresentation) Validate() error {
 	if presentation == nil {
 		return nil
 	}
+	for index, mark := range presentation.CalendarMarks {
+		if strings.TrimSpace(mark.Field) == "" {
+			return fmt.Errorf("renderer.FieldPresentation: calendar mark %d needs a field", index)
+		}
+	}
 	if !presentation.InputMode.Valid() {
 		return fmt.Errorf("renderer.FieldPresentation: unsupported input mode %q", presentation.InputMode)
+	}
+	if err := presentation.Info.Validate(); err != nil {
+		return fmt.Errorf("renderer.FieldPresentation: %w", err)
 	}
 	return nil
 }
@@ -1586,7 +1753,130 @@ type FieldMediaConfig struct {
 	Labels  *MediaGalleryLabels  `json:"labels,omitempty"`
 	Actions *MediaGalleryActions `json:"actions,omitempty"`
 	Cropper *MediaCropperConfig  `json:"cropper,omitempty"`
+	Capture *MediaCaptureConfig  `json:"capture,omitempty"`
 }
+
+// MediaCaptureConfig lets a field take its picture or its video with the
+// device camera, inside an outline that shows where the person has to be,
+// besides picking a file. What the outline is for is the producer's to say;
+// the consumer only draws it. A screen with no camera at hand is also offered
+// to carry on on a phone.
+type MediaCaptureConfig struct {
+	Kind   MediaCaptureKind   `json:"kind"`
+	Frame  MediaCaptureFrame  `json:"frame,omitempty"`
+	Facing MediaCaptureFacing `json:"facing,omitempty"`
+	// TimerSeconds counts down before a photo is taken, so a phone standing on
+	// its own can take a full-length picture; the person can switch it off.
+	// Before a video it always counts down once the recording is asked for.
+	// Zero offers no timer.
+	TimerSeconds int `json:"timer_seconds,omitempty"`
+	// A video can be stopped only after MinDurationSeconds and stops by itself
+	// at MaxDurationSeconds. Zero leaves that end open.
+	MinDurationSeconds int `json:"min_duration_seconds,omitempty"`
+	MaxDurationSeconds int `json:"max_duration_seconds,omitempty"`
+
+	OpenLabel   string `json:"open_label"`
+	Title       string `json:"title"`
+	Hint        string `json:"hint,omitempty"`
+	ShootLabel  string `json:"shoot_label"`
+	StopLabel   string `json:"stop_label,omitempty"`
+	RetakeLabel string `json:"retake_label"`
+	UseLabel    string `json:"use_label"`
+	SwitchLabel string `json:"switch_label,omitempty"`
+	TimerLabel  string `json:"timer_label,omitempty"`
+	CloseLabel  string `json:"close_label"`
+	DeniedText  string `json:"denied_text,omitempty"`
+	// The offer to carry on on a phone: its button, the window it opens and
+	// the words beside the code. Without PhoneLabel it is not made.
+	PhoneLabel string `json:"phone_label,omitempty"`
+	PhoneTitle string `json:"phone_title,omitempty"`
+	PhoneText  string `json:"phone_text,omitempty"`
+	// Steps lead a video through what it has to show, one after another: the
+	// outline and the hint change as the recording runs, and a field that takes
+	// a file draws the same steps as a moving picture beside its drop zone.
+	Steps []MediaCaptureStep `json:"steps,omitempty"`
+	// StepLabel names the step counter, e.g. "Step". NextStepLabel introduces
+	// the step that comes next, shown shortly before it starts, e.g. "Next".
+	StepLabel     string `json:"step_label,omitempty"`
+	NextStepLabel string `json:"next_step_label,omitempty"`
+	// DoneTitle and DoneText are said over what was taken, before it is kept
+	// or taken again, e.g. "Well done. Watch the video and retake it if
+	// needed."
+	DoneTitle string `json:"done_title,omitempty"`
+	DoneText  string `json:"done_text,omitempty"`
+	// SubmitOnUse sends the section the field stands in once what was taken
+	// is kept: UseLabel names that send ("Send for verification"), and after
+	// the file is attached the section's send is pressed for the person, its
+	// confirmation and its checks included.
+	SubmitOnUse bool `json:"submit_on_use,omitempty"`
+	// CountdownSound lets the counts be heard: a short tone each second and
+	// a longer one as the take starts, for a person standing back from the
+	// screen. SoundLabel names the switch that turns it off (theGHub1/api#433).
+	CountdownSound bool   `json:"countdown_sound,omitempty"`
+	SoundLabel     string `json:"sound_label,omitempty"`
+	// The ask before the camera opens: what it is for and the button that
+	// lets the browser ask for it. Without PermissionLabel the camera opens at
+	// once. RetryLabel asks again after a refusal.
+	PermissionTitle string `json:"permission_title,omitempty"`
+	PermissionText  string `json:"permission_text,omitempty"`
+	PermissionLabel string `json:"permission_label,omitempty"`
+	RetryLabel      string `json:"retry_label,omitempty"`
+}
+
+// MediaCaptureStep is one thing a recording has to show, for so many seconds.
+type MediaCaptureStep struct {
+	Frame MediaCaptureFrame `json:"frame,omitempty"`
+	// Props is what the person does besides standing in the outline, one
+	// thing or several at once: holds up a sheet and speaks.
+	Props   []MediaCaptureProp `json:"props,omitempty"`
+	Hint    string             `json:"hint"`
+	Seconds int                `json:"seconds"`
+	// Intro is what the step asks for, said on a card of its own before it
+	// starts: the recording waits, paused, until the person has read it and
+	// pressed ConfirmLabel. A step without it follows the one before at once.
+	Intro        string `json:"intro,omitempty"`
+	ConfirmLabel string `json:"confirm_label,omitempty"`
+	// Countdown is the count before the step is recorded, the time to take
+	// one's place; the recording stays paused through it. Zero counts
+	// nothing, except before the first step, which counts TimerSeconds.
+	Countdown int `json:"countdown,omitempty"`
+}
+
+// MediaCaptureProp is one thing the person does in a step besides standing in
+// the outline: holds up a sheet, or speaks.
+type MediaCaptureProp string
+
+const (
+	MediaCapturePropSign   MediaCaptureProp = "sign"
+	MediaCapturePropSpeech MediaCaptureProp = "speech"
+)
+
+// MediaCaptureKind is what the camera takes.
+type MediaCaptureKind string
+
+const (
+	MediaCaptureKindPhoto MediaCaptureKind = "photo"
+	MediaCaptureKindVideo MediaCaptureKind = "video"
+)
+
+// MediaCaptureFrame is the outline laid over the camera: an oval for a face,
+// a standing figure for a full-length picture, or none.
+type MediaCaptureFrame string
+
+const (
+	MediaCaptureFrameNone MediaCaptureFrame = ""
+	MediaCaptureFrameFace MediaCaptureFrame = "face"
+	MediaCaptureFrameBody MediaCaptureFrame = "body"
+)
+
+// MediaCaptureFacing is the camera the capture opens with; the person can
+// switch to the other one.
+type MediaCaptureFacing string
+
+const (
+	MediaCaptureFacingUser        MediaCaptureFacing = "user"
+	MediaCaptureFacingEnvironment MediaCaptureFacing = "environment"
+)
 
 type MediaCropperConfig struct {
 	Title        string                     `json:"title,omitempty"`
@@ -1622,7 +1912,82 @@ func (config *FieldMediaConfig) Validate() error {
 			return err
 		}
 	}
-	return config.Cropper.Validate()
+	if err := config.Cropper.Validate(); err != nil {
+		return err
+	}
+	return config.Capture.Validate()
+}
+
+func (capture *MediaCaptureConfig) Validate() error {
+	if capture == nil {
+		return nil
+	}
+	switch capture.Kind {
+	case MediaCaptureKindPhoto, MediaCaptureKindVideo:
+	default:
+		return fmt.Errorf("renderer.MediaCaptureConfig: unsupported kind %q", capture.Kind)
+	}
+	switch capture.Frame {
+	case MediaCaptureFrameNone, MediaCaptureFrameFace, MediaCaptureFrameBody:
+	default:
+		return fmt.Errorf("renderer.MediaCaptureConfig: unsupported frame %q", capture.Frame)
+	}
+	switch capture.Facing {
+	case "", MediaCaptureFacingUser, MediaCaptureFacingEnvironment:
+	default:
+		return fmt.Errorf("renderer.MediaCaptureConfig: unsupported facing %q", capture.Facing)
+	}
+	if capture.TimerSeconds < 0 || capture.MinDurationSeconds < 0 || capture.MaxDurationSeconds < 0 {
+		return fmt.Errorf("renderer.MediaCaptureConfig: durations cannot be negative")
+	}
+	if capture.MaxDurationSeconds > 0 && capture.MinDurationSeconds > capture.MaxDurationSeconds {
+		return fmt.Errorf("renderer.MediaCaptureConfig: min duration exceeds max duration")
+	}
+	for _, label := range []struct {
+		name  string
+		value string
+	}{
+		{name: "open label", value: capture.OpenLabel},
+		{name: "title", value: capture.Title},
+		{name: "shoot label", value: capture.ShootLabel},
+		{name: "retake label", value: capture.RetakeLabel},
+		{name: "use label", value: capture.UseLabel},
+		{name: "close label", value: capture.CloseLabel},
+	} {
+		if strings.TrimSpace(label.value) == "" {
+			return fmt.Errorf("renderer.MediaCaptureConfig: %s is required", label.name)
+		}
+	}
+	if capture.CountdownSound && strings.TrimSpace(capture.SoundLabel) == "" {
+		return fmt.Errorf("renderer.MediaCaptureConfig: a heard countdown needs the label of its switch")
+	}
+	if capture.Kind == MediaCaptureKindVideo && strings.TrimSpace(capture.StopLabel) == "" {
+		return fmt.Errorf("renderer.MediaCaptureConfig: stop label is required for a video")
+	}
+	for index, step := range capture.Steps {
+		switch step.Frame {
+		case MediaCaptureFrameNone, MediaCaptureFrameFace, MediaCaptureFrameBody:
+		default:
+			return fmt.Errorf("renderer.MediaCaptureConfig: step %d has unsupported frame %q", index+1, step.Frame)
+		}
+		for _, prop := range step.Props {
+			switch prop {
+			case MediaCapturePropSign, MediaCapturePropSpeech:
+			default:
+				return fmt.Errorf("renderer.MediaCaptureConfig: step %d has unsupported prop %q", index+1, prop)
+			}
+		}
+		if strings.TrimSpace(step.Hint) == "" || step.Seconds <= 0 {
+			return fmt.Errorf("renderer.MediaCaptureConfig: step %d needs a hint and its seconds", index+1)
+		}
+		if step.Countdown < 0 {
+			return fmt.Errorf("renderer.MediaCaptureConfig: step %d counts down a negative time", index+1)
+		}
+		if strings.TrimSpace(step.Intro) != "" && strings.TrimSpace(step.ConfirmLabel) == "" {
+			return fmt.Errorf("renderer.MediaCaptureConfig: step %d says what it asks but has no button to go on", index+1)
+		}
+	}
+	return nil
 }
 
 func (cropper *MediaCropperConfig) Validate() error {
@@ -1677,7 +2042,7 @@ func (binding *TextBinding) Validate() error {
 		return nil
 	}
 	switch binding.Format {
-	case "", TextFormatRelativeTime:
+	case "", TextFormatRelativeTime, TextFormatHandle:
 		return nil
 	default:
 		return fmt.Errorf("renderer.TextBinding: unsupported format %q", binding.Format)
@@ -1722,6 +2087,9 @@ type Badge struct {
 	VisibleIf *Condition        `json:"visible_if,omitempty"`
 	Then      *BadgeState       `json:"then,omitempty"`
 	Else      *BadgeState       `json:"else,omitempty"`
+	// Action is what pressing the badge does, when it does anything: a badge
+	// that names a case can open it.
+	Action *Action `json:"action,omitempty"`
 }
 
 type BadgeState struct {
@@ -1743,6 +2111,8 @@ type FormPage struct {
 	Sections   []FormSection          `json:"sections,omitempty"`
 	Fields     []string               `json:"fields,omitempty"`
 	Context    map[string]interface{} `json:"context,omitempty"`
+	// Tips are the temporary hints the page tells its reader.
+	Tips []Tip `json:"tips,omitempty"`
 }
 
 // FormNavigation opts a form into section tabs without changing field ownership
@@ -1929,6 +2299,12 @@ type FormSection struct {
 	MediaPresets *MediaPresetsConfig `json:"media_presets,omitempty"`
 	Prompts      *PromptList         `json:"prompts,omitempty"`
 	DateRange    *DateRangeConfig    `json:"date_range,omitempty"`
+	// Info explains the section beside its title: what its controls do that
+	// the words on them cannot say.
+	Info *InfoHint `json:"info,omitempty"`
+	// VisibleIf shows the section only while the record matches: a step that
+	// is done, or not yet open, is left out rather than shown empty.
+	VisibleIf *Condition `json:"visible_if,omitempty"`
 	// Resource declares another standard module action rendered inside this
 	// section. It stays server-side: Generator resolves it to Load per request.
 	Resource *Resource `json:"-"`
@@ -1966,6 +2342,13 @@ type DateRangeConfig struct {
 	Months        []string `json:"months,omitempty"`
 	FormatMonths  []string `json:"format_months,omitempty"`
 	Weekdays      []string `json:"weekdays,omitempty"`
+	// OpenEndField names a flag the form sends for a range with no end. The
+	// reader switches the end off, the picker then takes a start alone, and
+	// the end field goes out empty. OpenEndLabel and OpenEndHint name the
+	// localized switch and the line under it.
+	OpenEndField string `json:"open_end_field,omitempty"`
+	OpenEndLabel string `json:"open_end_label,omitempty"`
+	OpenEndHint  string `json:"open_end_hint,omitempty"`
 }
 
 func validateDateRangeSection(page *FormPage, section FormSection) error {
@@ -1990,7 +2373,17 @@ func validateDateRangeSection(page *FormPage, section FormSection) error {
 	for _, field := range section.Fields {
 		sectionFields[field] = struct{}{}
 	}
-	for _, field := range []string{config.StartField, config.EndField} {
+	dateFields := []string{config.StartField, config.EndField}
+	if config.OpenEndField != "" {
+		if config.OpenEndField == config.StartField || config.OpenEndField == config.EndField {
+			return fmt.Errorf("renderer.Universal: date range section %q open end field must differ from its dates", section.ID)
+		}
+		if config.OpenEndLabel == "" {
+			return fmt.Errorf("renderer.Universal: date range section %q open end field needs a label", section.ID)
+		}
+		dateFields = append(dateFields, config.OpenEndField)
+	}
+	for _, field := range dateFields {
 		if _, ok := pageFields[field]; !ok {
 			return fmt.Errorf("renderer.Universal: date range section %q field %q is not declared by the form", section.ID, field)
 		}
@@ -2044,6 +2437,18 @@ type FieldMatrix struct {
 type FieldMatrixList struct {
 	Fields  []string               `json:"fields,omitempty"`
 	Columns FieldMatrixColumnCount `json:"columns,omitempty"`
+	// DisplayType is how the list is read: rows of label and value
+	// (key_value_grid, the default) or a tile for each figure (tile_grid), the
+	// way a page of figures reads them. The client already draws both; the
+	// contract simply had no word for the choice.
+	DisplayType ComponentDisplayType `json:"display_type,omitempty"`
+	// Align sets a tile to be read from its start - the caption over the
+	// figure - rather than centred.
+	Align AlignToken `json:"align,omitempty"`
+	// MobileColumns is how many items a row holds on a phone, from one to
+	// four; zero leaves the consumer's own rule. One lets a lone figure take
+	// the phone's width instead of half of it.
+	MobileColumns int `json:"mobile_columns,omitempty"`
 }
 
 type FieldMatrixTable struct {
@@ -2078,6 +2483,11 @@ type FieldMatrixCell struct {
 	Text           string `json:"text,omitempty"`
 	Icon           string `json:"icon,omitempty"`
 	AvailableField string `json:"available_field,omitempty"`
+	// EnabledIf ties a cell to the form around it: while the condition does
+	// not hold for the form's record as it is being edited, the cell reads off
+	// and cannot be changed. A channel turned off for every notification
+	// reads off in the row of each type at once (theGHub1/api#405).
+	EnabledIf *Condition `json:"enabled_if,omitempty"`
 }
 
 // FieldMatrixDataSource connects a table layout to a standard list/update
@@ -2177,6 +2587,9 @@ func (matrix *FieldMatrix) Validate(sectionID string) error {
 		default:
 			return fmt.Errorf("renderer.Universal: matrix section %q list has unsupported columns", sectionID)
 		}
+		if matrix.List.MobileColumns < 0 || matrix.List.MobileColumns > 4 {
+			return fmt.Errorf("renderer.Universal: matrix section %q list mobile columns must be 0-4", sectionID)
+		}
 	default:
 		return fmt.Errorf("renderer.Universal: matrix section %q has unsupported matrix type %q", sectionID, matrix.Type)
 	}
@@ -2197,6 +2610,9 @@ func validateFieldMatrixCells(sectionID string, rowIndex, heads int, hasLabel bo
 		}
 		if cell.AvailableField != "" && cell.Field == "" {
 			return fmt.Errorf("renderer.Universal: matrix section %q row %d cell %d availability requires field", sectionID, rowIndex, cellIndex)
+		}
+		if cell.EnabledIf != nil && cell.Field == "" {
+			return fmt.Errorf("renderer.Universal: matrix section %q row %d cell %d enabled condition requires field", sectionID, rowIndex, cellIndex)
 		}
 	}
 	return nil
@@ -2241,6 +2657,12 @@ type MediaGalleryItem struct {
 	SortOrder       int             `json:"sort_order"`
 	Title           string          `json:"title,omitempty"`
 	Description     string          `json:"description,omitempty"`
+	// OriginalSrc and OriginalThumbnail are the picture as its owner took it,
+	// given beside Src when Src shows it the way others see it - its face
+	// masked. A consumer that offers its owner both views switches between
+	// them; one that does not shows Src.
+	OriginalSrc       string `json:"original_src,omitempty"`
+	OriginalThumbnail string `json:"original_thumbnail,omitempty"`
 	// Badges are server-owned annotations for an individual gallery item. They
 	// are useful for state that must survive reloads, such as a published media
 	// item, without making the browser infer state from a URL or local cache.
@@ -2253,10 +2675,17 @@ type MediaGalleryItem struct {
 	// Cover marks the picture that stands for the whole set - a profile's
 	// cover. It is shown as the set's face and is not one of its items.
 	Cover bool `json:"cover,omitempty"`
+	// RemoveRefusal is said instead of removing an item that cannot go - the
+	// photo that is a person's face and cover, which is replaced, never taken
+	// away (theGHub1/api#449). Empty means the item is removed as any other.
+	RemoveRefusal string `json:"remove_refusal,omitempty"`
 	// PostCount is how many publications this picture stands in. A picture
 	// that was published has a place of its own - the place its publication
 	// took - so it is not reordered by hand.
 	PostCount int `json:"post_count,omitempty"`
+	// Set is every file of the publication a tile stands for, in the
+	// publication's order, so they can be looked through where the tile is.
+	Set []MediaGalleryItem `json:"set,omitempty"`
 }
 
 type MediaGalleryLabels struct {
@@ -2270,6 +2699,10 @@ type MediaGalleryLabels struct {
 	PrivateHint  string `json:"private_hint,omitempty"`
 	HideFace     string `json:"hide_face,omitempty"`
 	HideFaceHint string `json:"hide_face_hint,omitempty"`
+	// The two views of a gallery whose items carry their originals: the
+	// pictures as their owner sees them, and as everyone else does.
+	ViewMine   string `json:"view_mine,omitempty"`
+	ViewOthers string `json:"view_others,omitempty"`
 	// A gallery large enough to be a page of its own is read in parts. These
 	// name the parts; a consumer that is given none of them shows the gallery
 	// whole, as before.
@@ -2315,6 +2748,13 @@ type MediaGalleryActions struct {
 	// decision: for some profiles the two are one and the same.
 	SetAvatar *Action `json:"set_avatar,omitempty"`
 	SetCover  *Action `json:"set_cover,omitempty"`
+	// Open leads from one picture to the place that holds all of them - from
+	// the face a profile shows to its gallery.
+	Open *Action `json:"open,omitempty"`
+	// Under stands below the way to the gallery: the profile's next step with
+	// what it shows - sending it for review, say - beside the pictures review
+	// looks at (theGHub1/api#427).
+	Under []Action `json:"under,omitempty"`
 }
 
 type CollectionConfig struct {
@@ -2544,6 +2984,8 @@ type BlockOverlay struct {
 	Badges   []Badge              `json:"badges"`
 	Size     SizeToken            `json:"size,omitempty"`
 	Wrap     *bool                `json:"wrap,omitempty"`
+	// Info explains what the badges of the overlay mean, beside them.
+	Info *InfoHint `json:"info,omitempty"`
 }
 
 type Stack struct {
@@ -2598,6 +3040,20 @@ type DisplayComponent struct {
 	Columns         int                  `json:"columns,omitempty"`
 	ReadonlyColumns int                  `json:"readonly_columns,omitempty"`
 	DisplayType     ComponentDisplayType `json:"display_type,omitempty"`
+	// MobileColumns is how many cells a row holds on a phone. Zero leaves it
+	// to the renderer, which folds a wide grid to two; three small figures
+	// read better side by side than two over one.
+	MobileColumns int `json:"mobile_columns,omitempty"`
+	// FormLook reads a filled-in form back the way it was filled: captions
+	// in the tone of the set, values in the colour of text, as in the form's
+	// own fields. A cell with a tone of its own keeps it.
+	FormLook bool `json:"form_look,omitempty"`
+	// MobileFold folds the component on a phone under a head that opens it:
+	// the components next to each other that name the same fold open and
+	// close together, and the head reads the title of the first of them. A
+	// long record then reads on a phone as its headings, each a tap away. A
+	// wide screen shows the components as they are.
+	MobileFold string `json:"mobile_fold,omitempty"`
 	// ItemFilter narrows a set of items inside the component that shows them:
 	// a search over what they are called, and a choice among the states they
 	// declare. It is the producer that says which field holds the state and
@@ -2610,12 +3066,20 @@ type DisplayComponent struct {
 	CollectionGroups    *DisplayCollectionGroups `json:"collection_groups,omitempty"`
 	SeparatorVariant    ToneToken                `json:"separator_variant,omitempty"`
 	SeparatorAppearance SeparatorAppearance      `json:"separator_appearance,omitempty"`
-	MatrixColumns       []map[string]interface{} `json:"matrix_columns,omitempty"`
-	ValueLabel          string                   `json:"value_label,omitempty"`
-	ValueFallback       string                   `json:"value_fallback,omitempty"`
-	MatrixLabel         string                   `json:"matrix_label,omitempty"`
-	MatrixLabelIcon     string                   `json:"matrix_label_icon,omitempty"`
-	Block               *Block                   `json:"block,omitempty"`
+	// Info is the lasting explanation a reader opens beside the component's
+	// title: what its figures or its words mean.
+	Info            *InfoHint                `json:"info,omitempty"`
+	MatrixColumns   []map[string]interface{} `json:"matrix_columns,omitempty"`
+	ValueLabel      string                   `json:"value_label,omitempty"`
+	ValueFallback   string                   `json:"value_fallback,omitempty"`
+	MatrixLabel     string                   `json:"matrix_label,omitempty"`
+	MatrixLabelIcon string                   `json:"matrix_label_icon,omitempty"`
+	// HiddenShowLabel and HiddenHideLabel fold away the items marked hidden:
+	// they stay out of sight until the reader opens them with the first
+	// label, and fold back with the second (theGHub1/api#434).
+	HiddenShowLabel string `json:"hidden_show_label,omitempty"`
+	HiddenHideLabel string `json:"hidden_hide_label,omitempty"`
+	Block           *Block `json:"block,omitempty"`
 	// Preview declares that this component's picture can be opened: it names
 	// the dialog and the page actions that belong to the picture rather than
 	// to the page. A long press is the gesture for it on a touch screen.
@@ -2641,6 +3105,16 @@ type DisplayComponent struct {
 	// panel around it to put buttons in, so the card carries them. The ids
 	// name actions the page already declares.
 	FootActions []string `json:"foot_actions,omitempty"`
+	// HeadActions are the actions such a card draws in its own head, as the
+	// one choice the card is about: the period a plan is paid for, read as a
+	// switch beside the kind of plan it is.
+	HeadActions []string `json:"head_actions,omitempty"`
+	// Kicker is the short word over the name of what the component shows - the
+	// kind of a plan, the state of a set - read before the name.
+	Kicker string `json:"kicker,omitempty"`
+	// Highlight is the one line the component says louder than the rest: what
+	// a year of the plan saves, said where the period is chosen.
+	Highlight string `json:"highlight,omitempty"`
 }
 
 // DisplayPreview is the picture of a component shown at full size, with the
@@ -2705,6 +3179,10 @@ type DisplayFieldRef struct {
 	// beside the figure instead of a glyph. A balance is read faster by what
 	// it is a balance of than by its caption.
 	Art string `json:"art,omitempty"`
+	// Icon is the mark the cell carries in this component, in place of its
+	// field's own: the same field can read as a plain tile of a form in one
+	// place and as a marked line of its own panel in another.
+	Icon string `json:"icon,omitempty"`
 	// BadgeField names another field whose value rides beside this figure as
 	// a small word: a sum that is on its way says so next to the sum, not in
 	// a line of its own below the balance.
@@ -2713,6 +3191,10 @@ type DisplayFieldRef struct {
 	// it, at the width of the figure rather than of the cell: the name of a
 	// plan is long, and its state after it would leave the pair unreadable.
 	BadgeBelow bool `json:"badge_below,omitempty"`
+	// BadgeCorner puts it in the corner of the card instead, on the line of
+	// the captions: the state of a plan belongs to the card rather than to one
+	// figure of it, and beside the name it took room the name needed.
+	BadgeCorner bool `json:"badge_corner,omitempty"`
 }
 
 type DisplayCollectionGroup struct {
@@ -2741,6 +3223,8 @@ type RecordPage struct {
 	Sections      []RecordSection   `json:"sections,omitempty"`
 	Theme         *RecordTheme      `json:"theme,omitempty"`
 	Actions       []Action          `json:"actions,omitempty"`
+	// Tips are the temporary hints the page tells its reader.
+	Tips []Tip `json:"tips,omitempty"`
 }
 
 type RecordNavigation struct {
@@ -2775,9 +3259,16 @@ type RecordSection struct {
 	LayoutSlot  LayoutSlotToken       `json:"layout_slot,omitempty"`
 	Order       int                   `json:"order,omitempty"`
 	MobileOrder int                   `json:"mobile_order,omitempty"`
-	Block       *Block                `json:"block,omitempty"`
-	Stack       *Stack                `json:"stack,omitempty"`
-	Components  []DisplayComponent    `json:"components,omitempty"`
+	// MobileFold folds the section on a phone under a head of that name,
+	// together with every section that names the same fold: the page opens
+	// on what matters most and the rest is a tap away. The head stands where
+	// the first folded section stands. A wide screen shows every section.
+	MobileFold string             `json:"mobile_fold,omitempty"`
+	Block      *Block             `json:"block,omitempty"`
+	Stack      *Stack             `json:"stack,omitempty"`
+	Components []DisplayComponent `json:"components,omitempty"`
+	// Info is the lasting explanation a reader opens beside the title.
+	Info *InfoHint `json:"info,omitempty"`
 }
 
 type ResourceGridPage struct {
@@ -2794,6 +3285,9 @@ type ResourceGridPage struct {
 	Actions     *ResourceGridActionsConfig `json:"actions,omitempty"`
 	Text        map[string]string          `json:"text,omitempty"`
 	Context     map[string]interface{}     `json:"context,omitempty"`
+	// Tips are the temporary hints of the page, as a list page has them: a
+	// grid of cards is a page a reader is walked through too.
+	Tips []Tip `json:"tips,omitempty"`
 }
 
 type ResourceGridListConfig struct {
@@ -2847,17 +3341,40 @@ type ActionPresentation struct {
 	// ValueField names a record field whose value the action carries beside
 	// its label, the way a menu row shows the figure it leads to. ValueIcon is
 	// the mark in front of that figure.
-	ValueField string     `json:"value_field,omitempty"`
-	ValueIcon  string     `json:"value_icon,omitempty"`
-	Block      *bool      `json:"block,omitempty"`
-	VisibleIf  *Condition `json:"visible_if,omitempty"`
-	HiddenIf   *Condition `json:"hidden_if,omitempty"`
+	ValueField string `json:"value_field,omitempty"`
+	// CountdownField names a record field holding a moment; the action shows
+	// the time left until it beside its label, the way ValueField shows a
+	// figure. It says nothing of when the action is shown - VisibleIf does.
+	CountdownField string     `json:"countdown_field,omitempty"`
+	ValueIcon      string     `json:"value_icon,omitempty"`
+	Block          *bool      `json:"block,omitempty"`
+	VisibleIf      *Condition `json:"visible_if,omitempty"`
+	HiddenIf       *Condition `json:"hidden_if,omitempty"`
+	// Screen keeps an action to one kind of screen: "desktop" leaves it out
+	// on a phone, "mobile" leaves it out on a wide screen. Empty is both.
+	Screen     string     `json:"screen,omitempty"`
 	DisabledIf *Condition `json:"disabled_if,omitempty"`
 	// AttentionKey asks for the action to stand out until it is used once.
 	// The renderer remembers under this key that it was used, so the same key
 	// keeps quiet an action that already did its job.
 	AttentionKey string `json:"attention_key,omitempty"`
+	// Control draws the action as something other than a button. "switch" is
+	// a labelled switch that stands on while the field Active names is
+	// truthy; pressing it runs the action. Two actions - one shown while off,
+	// the other while on - make one switch.
+	Control ActionControl `json:"control,omitempty"`
+	// Info explains the action beside it with an «i»: why it waits, what it
+	// will do. It is checked, copied and translated with the action.
+	Info *InfoHint `json:"info,omitempty"`
 }
+
+// ActionControl is the kind of control an action is drawn as.
+type ActionControl string
+
+const (
+	// ActionControlSwitch draws the action as an on/off switch with its label.
+	ActionControlSwitch ActionControl = "switch"
+)
 
 func (presentation ActionPresentation) Validate() error {
 	if !presentation.Placement.Valid() {
@@ -2874,6 +3391,12 @@ func (presentation ActionPresentation) Validate() error {
 	}
 	if presentation.ActiveIf != nil && !hasCondition(presentation.ActiveIf) {
 		return fmt.Errorf("active_if is invalid")
+	}
+	if presentation.Control != "" && presentation.Control != ActionControlSwitch {
+		return fmt.Errorf("unsupported control %q", presentation.Control)
+	}
+	if err := presentation.Info.Validate(); err != nil {
+		return err
 	}
 	return nil
 }
@@ -3056,10 +3579,18 @@ func (list *PromptList) Validate() error {
 }
 
 type Confirm struct {
-	Title        string `json:"title,omitempty"`
-	Message      string `json:"message,omitempty"`
+	Title   string `json:"title,omitempty"`
+	Message string `json:"message,omitempty"`
+	// MessageField names a record field whose text is the question itself,
+	// when the question depends on the record - how many chances are left,
+	// what taking this one costs. Message is said when the field is empty.
+	MessageField string `json:"message_field,omitempty"`
 	CancelLabel  string `json:"cancel_label,omitempty"`
 	ConfirmLabel string `json:"confirm_label,omitempty"`
+	// Next is a second question asked the moment the first one is answered
+	// yes - a model at a tour says she is there, then that she hands her
+	// profile over. The action runs once the last question is answered.
+	Next *Confirm `json:"next,omitempty"`
 }
 
 // ActionFailure is what to offer when an operation is refused: the words of the
@@ -3083,6 +3614,11 @@ func (confirm Confirm) Validate() error {
 	}
 	if confirm.ConfirmLabel == "" {
 		return fmt.Errorf("confirm_label is required")
+	}
+	if confirm.Next != nil {
+		if err := confirm.Next.Validate(); err != nil {
+			return fmt.Errorf("next: %w", err)
+		}
 	}
 	return nil
 }
@@ -3125,4 +3661,9 @@ type Condition struct {
 	All       []Condition   `json:"all,omitempty"`
 	Any       []Condition   `json:"any,omitempty"`
 	Not       interface{}   `json:"not,omitempty"`
+	// Future and Past read the value at Path as a moment and compare it with
+	// the reader's clock, so a condition can turn as time passes: a button
+	// that stands only while a window is open, one that comes once it closes.
+	Future *bool `json:"future,omitempty"`
+	Past   *bool `json:"past,omitempty"`
 }

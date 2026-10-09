@@ -220,6 +220,18 @@ type ModuleField struct {
 	// organisation has a title - and only the module knows which is being
 	// edited. It returns a translation key; an empty result keeps Title.
 	TitleFunc func(c *gin.Context) string `json:"-"`
+	// PresentationFunc shows the field for the request at hand, when how it
+	// is shown depends on who fills the form in - a limit set per role, say.
+	// It gets a copy of Presentation (the zero value when there is none) and
+	// returns what to show; nil keeps Presentation. The copy shares the maps
+	// and slices of Presentation, so only its plain values may change.
+	PresentationFunc func(c *gin.Context, presentation renderer.FieldPresentation) *renderer.FieldPresentation `json:"-"`
+	// MediaFunc adjusts the media control of the field for the request at
+	// hand: the way to a gallery named by whose gallery it is, say. It gets a
+	// copy of Media and returns what to use; nil keeps Media. The copy
+	// shares the pointers and slices of Media, so a change to one of them
+	// replaces it with a new value instead of writing through it.
+	MediaFunc func(c *gin.Context, media renderer.FieldMediaConfig) *renderer.FieldMediaConfig `json:"-"`
 }
 
 // ColumnName returns the database column name from the Jet column.
@@ -323,8 +335,16 @@ type ModuleFieldOptions struct {
 	// its corner, a figure on its trailing side with a note under it, and a
 	// line of emphasis under the description. They are words and figures the
 	// producer has already put together; the application only places them.
-	Badge        string            `json:"badge,omitempty"`
-	BadgeTone    string            `json:"badge_tone,omitempty"`
+	Badge     string `json:"badge,omitempty"`
+	BadgeTone string `json:"badge_tone,omitempty"`
+	// Group names the set an option belongs to in a long list - the ones
+	// most people pick, then the rest. The list heads each set where it
+	// begins; options with no group come first and read as the short list.
+	Group string `json:"group,omitempty"`
+	// Exclusive marks an option that stands for all the others - "any", "no
+	// preference" - in a choice of several: picking it clears the rest, and
+	// picking any other option clears it.
+	Exclusive    bool              `json:"exclusive,omitempty"`
 	Trailing     string            `json:"trailing,omitempty"`
 	TrailingNote string            `json:"trailing_note,omitempty"`
 	Note         string            `json:"note,omitempty"`

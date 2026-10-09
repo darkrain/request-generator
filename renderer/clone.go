@@ -25,6 +25,8 @@ func cloneListPage(v *ListPage) *ListPage {
 	cp.Selection = cloneListSelection(v.Selection)
 	cp.Context = cloneMap(v.Context)
 	cp.Actions = cloneActions(v.Actions)
+	cp.Tips = cloneTips(v.Tips)
+	cp.Info = CloneInfoHint(v.Info)
 	return &cp
 }
 
@@ -53,6 +55,7 @@ func cloneFormPage(v *FormPage) *FormPage {
 	cp.Sections = cloneFormSections(v.Sections)
 	cp.Fields = cloneSlice(v.Fields)
 	cp.Context = cloneMap(v.Context)
+	cp.Tips = cloneTips(v.Tips)
 	return &cp
 }
 
@@ -84,6 +87,7 @@ func cloneRecordPage(v *RecordPage) *RecordPage {
 	cp.Sections = cloneRecordSections(v.Sections)
 	cp.Theme = cloneRecordTheme(v.Theme)
 	cp.Actions = cloneActions(v.Actions)
+	cp.Tips = cloneTips(v.Tips)
 	return &cp
 }
 
@@ -124,6 +128,7 @@ func cloneResourceGridPage(v *ResourceGridPage) *ResourceGridPage {
 	cp.Actions = cloneResourceGridActionsConfig(v.Actions)
 	cp.Text = cloneMap(v.Text)
 	cp.Context = cloneMap(v.Context)
+	cp.Tips = cloneTips(v.Tips)
 	return &cp
 }
 
@@ -183,6 +188,8 @@ func cloneFilters(v *Filters) *Filters {
 	cp.Text = clonePtr(v.Text)
 	cp.RangePresets = cloneFilterRangePresets(v.RangePresets)
 	cp.DateRange = cloneDateRangeToolbar(v.DateRange)
+	cp.Defaults = cloneMap(v.Defaults)
+	cp.Disclosure = clonePtr(v.Disclosure)
 	return &cp
 }
 
@@ -196,6 +203,7 @@ func cloneFilterGroups(values []FilterGroup) []FilterGroup {
 		out[i].Fields = cloneSlice(value.Fields)
 		out[i].Sections = cloneFilterGroupSections(value.Sections)
 		out[i].Items = cloneFilterGroupItems(value.Items)
+		out[i].VisibleIf = cloneCondition(value.VisibleIf)
 	}
 	return out
 }
@@ -328,6 +336,8 @@ func cloneCardSchema(v *CardSchema) *CardSchema {
 	}
 	cp := *v
 	cp.LeadingAccent = cloneCardEdgeAccent(v.LeadingAccent)
+	cp.Segments = cloneCardSegments(v.Segments)
+	cp.Chips = clonePtr(v.Chips)
 	cp.Media = cloneMedia(v.Media)
 	cp.Icon = cloneIconBinding(v.Icon)
 	cp.Title = cloneTextBinding(v.Title)
@@ -338,6 +348,21 @@ func cloneCardSchema(v *CardSchema) *CardSchema {
 	cp.Badges = cloneBadges(v.Badges)
 	cp.Stats = cloneBadges(v.Stats)
 	cp.Actions = cloneActions(v.Actions)
+	return &cp
+}
+
+func cloneCardSegments(v *CardSegments) *CardSegments {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	if v.ToneMap != nil {
+		cp.ToneMap = make(map[string]string, len(v.ToneMap))
+		for key, value := range v.ToneMap {
+			cp.ToneMap[key] = value
+		}
+	}
+	cp.Pulse = append([]string(nil), v.Pulse...)
 	return &cp
 }
 
@@ -400,6 +425,7 @@ func cloneBadges(values []Badge) []Badge {
 		out[i].VisibleIf = cloneCondition(v.VisibleIf)
 		out[i].Then = cloneBadgeState(v.Then)
 		out[i].Else = cloneBadgeState(v.Else)
+		out[i].Action = cloneAction(v.Action)
 	}
 	return out
 }
@@ -432,6 +458,7 @@ func cloneFormSections(values []FormSection) []FormSection {
 	for i, v := range values {
 		out[i] = v
 		out[i].Block = cloneBlock(v.Block)
+		out[i].Info = CloneInfoHint(v.Info)
 		out[i].Actions = cloneSlice(v.Actions)
 		out[i].Fields = cloneSlice(v.Fields)
 		out[i].Matrix = cloneFieldMatrix(v.Matrix)
@@ -443,6 +470,7 @@ func cloneFormSections(values []FormSection) []FormSection {
 		out[i].MediaActions = cloneMediaGalleryActions(v.MediaActions)
 		out[i].Prompts = clonePromptList(v.Prompts)
 		out[i].DateRange = cloneDateRangeConfig(v.DateRange)
+		out[i].VisibleIf = cloneCondition(v.VisibleIf)
 		out[i].Resource = cloneResource(v.Resource)
 		out[i].Load = cloneResourceLoad(v.Load)
 	}
@@ -467,15 +495,29 @@ func cloneFieldMatrix(v *FieldMatrix) *FieldMatrix {
 	}
 	cp := *v
 	if v.List != nil {
-		cp.List = &FieldMatrixList{Fields: cloneSlice(v.List.Fields), Columns: v.List.Columns}
+		list := *v.List
+		list.Fields = cloneSlice(v.List.Fields)
+		cp.List = &list
 	}
 	if v.Table != nil {
 		cp.Table = &FieldMatrixTable{Heads: cloneSlice(v.Table.Heads), Rows: make([]FieldMatrixRow, len(v.Table.Rows)), Presentation: v.Table.Presentation, Source: cloneFieldMatrixDataSource(v.Table.Source)}
 		for i, row := range v.Table.Rows {
-			cp.Table.Rows[i] = FieldMatrixRow{ID: row.ID, Label: row.Label, Description: row.Description, Icon: row.Icon, Tone: row.Tone, Cells: cloneSlice(row.Cells)}
+			cp.Table.Rows[i] = FieldMatrixRow{ID: row.ID, Label: row.Label, Description: row.Description, Icon: row.Icon, Tone: row.Tone, Cells: cloneFieldMatrixCells(row.Cells)}
 		}
 	}
 	return &cp
+}
+
+func cloneFieldMatrixCells(values []FieldMatrixCell) []FieldMatrixCell {
+	if values == nil {
+		return nil
+	}
+	out := make([]FieldMatrixCell, len(values))
+	for i, cell := range values {
+		out[i] = cell
+		out[i].EnabledIf = cloneCondition(cell.EnabledIf)
+	}
+	return out
 }
 
 func cloneFieldMatrixDataSource(v *FieldMatrixDataSource) *FieldMatrixDataSource {
@@ -494,7 +536,7 @@ func cloneFieldMatrixDataSource(v *FieldMatrixDataSource) *FieldMatrixDataSource
 			DescriptionField: v.Row.DescriptionField,
 			IconField:        v.Row.IconField,
 			ToneField:        v.Row.ToneField,
-			Cells:            cloneSlice(v.Row.Cells),
+			Cells:            cloneFieldMatrixCells(v.Row.Cells),
 		}
 	}
 	return &cp
@@ -509,6 +551,16 @@ func CloneFieldPresentation(v *FieldPresentation) *FieldPresentation {
 	cp.RequiredIf = cloneCondition(v.RequiredIf)
 	cp.DisabledIf = cloneCondition(v.DisabledIf)
 	cp.ToneByValue = cloneSlice(v.ToneByValue)
+	cp.CalendarMarks = cloneSlice(v.CalendarMarks)
+	cp.Info = CloneInfoHint(v.Info)
+	if v.Suggest != nil {
+		suggest := *v.Suggest
+		suggest.Params = make(map[string]string, len(v.Suggest.Params))
+		for key, value := range v.Suggest.Params {
+			suggest.Params[key] = value
+		}
+		cp.Suggest = &suggest
+	}
 	return &cp
 }
 
@@ -522,6 +574,22 @@ func CloneFieldMediaConfig(v *FieldMediaConfig) *FieldMediaConfig {
 	cp.Labels = clonePtr(v.Labels)
 	cp.Actions = cloneMediaGalleryActions(v.Actions)
 	cp.Cropper = clonePtr(v.Cropper)
+	cp.Capture = cloneMediaCapture(v.Capture)
+	return &cp
+}
+
+func cloneMediaCapture(v *MediaCaptureConfig) *MediaCaptureConfig {
+	if v == nil {
+		return nil
+	}
+	cp := *v
+	if v.Steps != nil {
+		cp.Steps = make([]MediaCaptureStep, len(v.Steps))
+		for index, step := range v.Steps {
+			step.Props = append([]MediaCaptureProp(nil), step.Props...)
+			cp.Steps[index] = step
+		}
+	}
 	return &cp
 }
 
@@ -537,6 +605,8 @@ func cloneMediaGalleryActions(v *MediaGalleryActions) *MediaGalleryActions {
 	cp.Recenter = cloneAction(v.Recenter)
 	cp.Crop = cloneAction(v.Crop)
 	cp.Remove = cloneAction(v.Remove)
+	cp.Open = cloneAction(v.Open)
+	cp.Under = cloneActions(v.Under)
 	return &cp
 }
 
@@ -632,6 +702,7 @@ func cloneRecordSections(values []RecordSection) []RecordSection {
 		out[i].Block = cloneBlock(v.Block)
 		out[i].Stack = cloneStack(v.Stack)
 		out[i].Components = cloneDisplayComponents(v.Components)
+		out[i].Info = CloneInfoHint(v.Info)
 	}
 	return out
 }
@@ -666,11 +737,19 @@ func cloneDisplayComponents(values []DisplayComponent) []DisplayComponent {
 		out[i] = v
 		out[i].Fields = cloneSlice(v.Fields)
 		out[i].FootActions = cloneSlice(v.FootActions)
+		out[i].HeadActions = cloneSlice(v.HeadActions)
 		out[i].Items = cloneSlice(v.Items)
 		out[i].CollectionGroups = cloneDisplayCollectionGroups(v.CollectionGroups)
 		out[i].Block = cloneBlock(v.Block)
 		out[i].Preview = cloneDisplayPreview(v.Preview)
 		out[i].Prompts = clonePromptList(v.Prompts)
+		out[i].Info = CloneInfoHint(v.Info)
+		// The words of a component's filter, selection and media are
+		// translated in place: shared with the producer's page, the first
+		// reader's language stayed in it for every reader after.
+		out[i].MediaItems = cloneMediaGalleryItems(v.MediaItems)
+		out[i].ItemFilter = cloneItemFilter(v.ItemFilter)
+		out[i].ItemSelection = cloneItemSelection(v.ItemSelection)
 		if v.MediaLabels != nil {
 			labels := *v.MediaLabels
 			out[i].MediaLabels = &labels
@@ -697,6 +776,23 @@ func cloneDisplayComponents(values []DisplayComponent) []DisplayComponent {
 	return out
 }
 
+func cloneItemFilter(value *ItemFilter) *ItemFilter {
+	if value == nil {
+		return nil
+	}
+	cp := *value
+	cp.Options = cloneSlice(value.Options)
+	return &cp
+}
+
+func cloneItemSelection(value *ItemSelection) *ItemSelection {
+	if value == nil {
+		return nil
+	}
+	cp := *value
+	return &cp
+}
+
 func cloneDisplayPreview(value *DisplayPreview) *DisplayPreview {
 	if value == nil {
 		return nil
@@ -715,6 +811,7 @@ func cloneBlockOverlays(values []BlockOverlay) []BlockOverlay {
 		out[index] = overlay
 		out[index].Badges = cloneBadges(overlay.Badges)
 		out[index].Wrap = clonePtr(overlay.Wrap)
+		out[index].Info = CloneInfoHint(overlay.Info)
 	}
 	return out
 }
@@ -811,6 +908,7 @@ func cloneActionPresentation(value ActionPresentation) ActionPresentation {
 	cloned.HiddenIf = cloneCondition(value.HiddenIf)
 	cloned.DisabledIf = cloneCondition(value.DisabledIf)
 	cloned.ActiveIf = cloneCondition(value.ActiveIf)
+	cloned.Info = CloneInfoHint(value.Info)
 	return cloned
 }
 
@@ -871,6 +969,7 @@ func cloneConfirm(v *Confirm) *Confirm {
 		return nil
 	}
 	cp := *v
+	cp.Next = cloneConfirm(v.Next)
 	return &cp
 }
 
@@ -894,6 +993,8 @@ func cloneCondition(v *Condition) *Condition {
 	cp.NotEmpty = clonePtr(v.NotEmpty)
 	cp.Truthy = clonePtr(v.Truthy)
 	cp.Falsy = clonePtr(v.Falsy)
+	cp.Future = clonePtr(v.Future)
+	cp.Past = clonePtr(v.Past)
 	cp.All = cloneConditions(v.All)
 	cp.Any = cloneConditions(v.Any)
 	cp.Not = cloneConditionValue(v.Not)

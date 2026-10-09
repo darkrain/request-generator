@@ -11,8 +11,16 @@ func (generator *Generator) localizeFieldPresentation(lang locale.Lang, value *r
 		return nil
 	}
 	resolver := generator.rendererTextResolver(lang)
-	for _, field := range []*string{&localized.Prefix, &localized.Suffix, &localized.Hint, &localized.Placeholder, &localized.Description} {
+	for _, field := range []*string{&localized.Prefix, &localized.Suffix, &localized.Hint, &localized.Placeholder, &localized.Description, &localized.MinFieldNotice} {
 		*field = resolver(*field, "")
+	}
+	renderer.LocalizeInfoHint(localized.Info, resolver)
+	if len(localized.CalendarMarks) > 0 {
+		marks := append([]renderer.CalendarMark(nil), localized.CalendarMarks...)
+		for index := range marks {
+			marks[index].Label = resolver(marks[index].Label, "")
+		}
+		localized.CalendarMarks = marks
 	}
 	if len(localized.NoticeByValue) > 0 {
 		notices := append([]renderer.FieldValueNotice(nil), localized.NoticeByValue...)
