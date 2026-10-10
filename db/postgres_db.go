@@ -538,13 +538,9 @@ func (db *DB) List(
 	db.debugLog(log, "[DEBUG] LIST QUERY: ", interpolateQuery(query, args))
 	db.debugLog(log, "[DEBUG] LIST COUNT QUERY: ", interpolateQuery(countQuery, countArgs))
 
-	// Execute main query
-	var rows *sql.Rows
-	if len(args) > 0 {
-		rows, err = db.sql.QueryContext(db.queryContext(), query, args...)
-	} else {
-		rows, err = db.sql.QueryContext(db.queryContext(), query)
-	}
+	// Reuse the SQL shape when this executor has a prepared-read cache. Values
+	// and rows remain request-specific; the uncached path is unchanged.
+	rows, err := db.QueryContext(db.queryContext(), query, args...)
 	if err != nil {
 		log.Errorln("LIST ERR: ", err)
 		return nil, 0, err
@@ -679,13 +675,8 @@ func (db *DB) List(
 
 	result = append(result, results...)
 
-	// Execute count query
-	var countResult *sql.Rows
-	if len(countArgs) > 0 {
-		countResult, err = db.sql.QueryContext(db.queryContext(), countQuery, countArgs...)
-	} else {
-		countResult, err = db.sql.QueryContext(db.queryContext(), countQuery)
-	}
+	// COUNT uses the same request context and bounded cache as the list query.
+	countResult, err := db.QueryContext(db.queryContext(), countQuery, countArgs...)
 	if err != nil {
 		log.Errorln("COUNT ERR: ", err)
 		return nil, 0, err
