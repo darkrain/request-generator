@@ -73,7 +73,7 @@ func (c *conn) PrepareContext(ctx context.Context, q string) (driver.Stmt, error
 	if err != nil {
 		return nil, err
 	}
-	return &stmt{Stmt: s, conn: c, query: q, eligible: readOnly(q)}, nil
+	return &stmt{Stmt: s, conn: c, query: q, queryHash: hashSQL(q), eligible: readOnly(q)}, nil
 }
 func (c *conn) Begin() (driver.Tx, error) { return c.BeginTx(context.Background(), driver.TxOptions{}) }
 func (c *conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
@@ -118,6 +118,7 @@ func (t *tx) Commit() error   { defer func() { t.conn.inTx = false }(); return t
 func (t *tx) Rollback() error { defer func() { t.conn.inTx = false }(); return t.Tx.Rollback() }
 
 type stmt struct {
+	queryHash [32]byte
 	driver.Stmt
 	conn     *conn
 	query    string
@@ -128,7 +129,7 @@ func (s *stmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driv
 	if !s.eligible {
 		s.conn.trackSession(s.query)
 	}
-	return s.conn.cache.query(ctx, s.query, args, s.eligible && !s.conn.inTx && !s.conn.sessionChanged, func() (driver.Rows, error) {
+	return s.conn.cache.queryWithHash(ctx, s.query, args, s.eligible && !s.conn.inTx && !s.conn.sessionChanged, &s.queryHash, func() (driver.Rows, error) {
 		if query, ok := s.Stmt.(driver.StmtQueryContext); ok {
 			return query.QueryContext(ctx, args)
 		}

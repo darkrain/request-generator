@@ -173,14 +173,14 @@ func sqlArguments(args []driver.NamedValue) []any {
 	}
 	return values
 }
-func (c *poolConn) query(ctx context.Context, query string, args []driver.NamedValue, prepared *sql.Stmt, eligible bool) (driver.Rows, error) {
+func (c *poolConn) query(ctx context.Context, query string, args []driver.NamedValue, prepared *sql.Stmt, eligible bool, queryHash *[32]byte) (driver.Rows, error) {
 	if !eligible {
 		if err := c.pin(ctx); err != nil {
 			return nil, err
 		}
 		c.track(query)
 	}
-	return c.pool.cache.query(ctx, query, args, eligible && c.pinned == nil && c.tx == nil, func() (driver.Rows, error) {
+	return c.pool.cache.queryWithHash(ctx, query, args, eligible && c.pinned == nil && c.tx == nil, queryHash, func() (driver.Rows, error) {
 		values := sqlArguments(args)
 		var rows *sql.Rows
 		var err error
@@ -201,7 +201,7 @@ func (c *poolConn) query(ctx context.Context, query string, args []driver.NamedV
 	})
 }
 func (c *poolConn) QueryContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Rows, error) {
-	return c.query(ctx, q, args, nil, readOnly(q))
+	return c.query(ctx, q, args, nil, readOnly(q), nil)
 }
 func (c *poolConn) ExecContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Result, error) {
 	if err := c.pin(ctx); err != nil {
@@ -228,12 +228,12 @@ func (c *poolConn) PrepareContext(ctx context.Context, q string) (driver.Stmt, e
 		if err != nil {
 			return nil, err
 		}
-		return &logicalStatement{conn: c, query: q, shared: s, eligible: readOnly(q)}, nil
+		return &logicalStatement{conn: c, query: q, queryHash: hashSQL(q), shared: s, eligible: readOnly(q)}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	return &logicalStatement{conn: c, query: q, owned: stmt, eligible: readOnly(q)}, nil
+	return &logicalStatement{conn: c, query: q, queryHash: hashSQL(q), owned: stmt, eligible: readOnly(q)}, nil
 }
 func (c *poolConn) Begin() (driver.Tx, error) {
 	return c.BeginTx(context.Background(), driver.TxOptions{})
@@ -289,11 +289,12 @@ func (c *poolConn) Ping(ctx context.Context) error {
 func (c *poolConn) CheckNamedValue(*driver.NamedValue) error { return driver.ErrSkip }
 
 type logicalStatement struct {
-	eligible bool
-	conn     *poolConn
-	query    string
-	shared   *poolStatement
-	owned    *sql.Stmt
+	queryHash [32]byte
+	eligible  bool
+	conn      *poolConn
+	query     string
+	shared    *poolStatement
+	owned     *sql.Stmt
 }
 
 func (s *logicalStatement) Close() error {
@@ -318,7 +319,7 @@ func (s *logicalStatement) QueryContext(ctx context.Context, args []driver.Named
 	if s.shared != nil {
 		prepared = s.shared.stmt
 	}
-	return s.conn.query(ctx, s.query, args, prepared, s.eligible)
+	return s.conn.query(ctx, s.query, args, prepared, s.eligible, &s.queryHash)
 }
 func (s *logicalStatement) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
 	return s.conn.ExecContext(ctx, s.query, args)
