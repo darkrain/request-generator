@@ -49,6 +49,7 @@ type flight struct {
 
 // Cache is shared by connections in one pool, never across databases.
 type Cache struct {
+	sqlMetadata                    sqlMetadataCache
 	mu                             sync.RWMutex
 	options                        Options
 	entries                        map[[32]byte]entry
@@ -78,6 +79,10 @@ func (c *Cache) SetTTL(ttl time.Duration) {
 }
 
 func key(query string, args []driver.NamedValue) ([32]byte, error) {
+	return keyWithSQLHash(hashSQL(query), args)
+}
+
+func keyWithSQLHash(queryHash [32]byte, args []driver.NamedValue) ([32]byte, error) {
 	type argument struct {
 		Name, Type string
 		Ordinal    int
@@ -93,7 +98,7 @@ func key(query string, args []driver.NamedValue) ([32]byte, error) {
 	}
 	// Hash exact SQL bytes separately: quoting/escaping a large SQL string as
 	// JSON made every cache hit allocate another copy of the whole statement.
-	queryHash, argsHash := hashSQL(query), sha256.Sum256(encoded)
+	argsHash := sha256.Sum256(encoded)
 	var combined [64]byte
 	copy(combined[:32], queryHash[:])
 	copy(combined[32:], argsHash[:])
@@ -126,7 +131,7 @@ func (c *Cache) query(ctx context.Context, query string, args []driver.NamedValu
 		c.bypassed.Add(1)
 		return run()
 	}
-	k, keyErr := key(query, args)
+	k, keyErr := keyWithSQLHash(c.sqlMetadata.lookup(query).digest, args)
 	if keyErr != nil {
 		c.bypassed.Add(1)
 		return run()

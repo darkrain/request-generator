@@ -201,7 +201,7 @@ func (c *poolConn) query(ctx context.Context, query string, args []driver.NamedV
 	})
 }
 func (c *poolConn) QueryContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Rows, error) {
-	return c.query(ctx, q, args, nil, readOnly(q))
+	return c.query(ctx, q, args, nil, c.pool.cache.sqlMetadata.lookup(q).readOnly)
 }
 func (c *poolConn) ExecContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Result, error) {
 	if err := c.pin(ctx); err != nil {
@@ -228,12 +228,12 @@ func (c *poolConn) PrepareContext(ctx context.Context, q string) (driver.Stmt, e
 		if err != nil {
 			return nil, err
 		}
-		return &logicalStatement{conn: c, query: q, shared: s, eligible: readOnly(q)}, nil
+		return &logicalStatement{conn: c, query: q, shared: s, eligible: c.pool.cache.sqlMetadata.lookup(q).readOnly}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	return &logicalStatement{conn: c, query: q, owned: stmt, eligible: readOnly(q)}, nil
+	return &logicalStatement{conn: c, query: q, owned: stmt, eligible: c.pool.cache.sqlMetadata.lookup(q).readOnly}, nil
 }
 func (c *poolConn) Begin() (driver.Tx, error) {
 	return c.BeginTx(context.Background(), driver.TxOptions{})
