@@ -40,7 +40,7 @@ type conn struct {
 }
 
 func (c *conn) QueryContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Rows, error) {
-	eligible := c.cache.sqlMetadata.lookup(q).readOnly
+	eligible := readOnly(q)
 	if !eligible {
 		c.trackSession(q)
 	}
@@ -73,7 +73,7 @@ func (c *conn) PrepareContext(ctx context.Context, q string) (driver.Stmt, error
 	if err != nil {
 		return nil, err
 	}
-	return &stmt{Stmt: s, conn: c, query: q, eligible: c.cache.sqlMetadata.lookup(q).readOnly}, nil
+	return &stmt{Stmt: s, conn: c, query: q, eligible: readOnly(q)}, nil
 }
 func (c *conn) Begin() (driver.Tx, error) { return c.BeginTx(context.Background(), driver.TxOptions{}) }
 func (c *conn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver.Tx, error) {
