@@ -222,6 +222,8 @@ RenderFunc: func(c *gin.Context, base renderer.Universal) (renderer.Universal, e
 
 `Render` задает базовую статическую схему. `RenderFunc` является optional typed runtime override/merge и вызывается request-generator через `RenderFor(c)` перед построением `/api/config`, list, defrec и view responses. В `RenderFunc` передается deep clone базового `Render`, поэтому producer module может безопасно менять pointer structs, slices, maps и стандартные JSON-like значения внутри `interface{}` (`map[string]interface{}`, `[]interface{}`, `map[string]string`, `[]string` и т.п.) без протекания state в следующие запросы. Произвольные custom objects внутри `interface{}` не клонируются и остаются ответственностью producer module. Результат `RenderFunc` остается `renderer.Universal` и валидируется через `Validate()` уже после runtime изменений.
 
+После проверки всего результата генератор разрешает вложенные ресурсы и локализует только страницы, которые сериализует данный endpoint: `list` — список и resource grid, `defrec` — форму, `view` — форму или карточку согласно `PageType`. Остальные страницы не попадают в ответ и не запускают построение вложенных ресурсов. JSON-контракт не меняется.
+
 Возвращаемое `RenderFunc` дерево принадлежит запросу: callback не должен
 подключать изменяемые глобальные структуры или сохранять результат для других
 запросов. Разрешение ресурсов и локализация выполняются на этом экземпляре.

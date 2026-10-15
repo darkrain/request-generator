@@ -836,11 +836,11 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
+		// RenderFor validates the complete producer result. Only list metadata
+		// is sent here: resolving resources in discarded forms/records can
+		// recursively build unrelated modules on every list request.
+		render = renderer.Universal{List: render.List, ResourceGrid: render.ResourceGrid}
 		if err := generator.resolveListSummaryResource(c, &render, role); err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
-			return
-		}
-		if err := generator.resolveFormSectionResources(c, &render, role); err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
@@ -1220,6 +1220,7 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
+		render = renderer.Universal{Form: render.Form}
 		if err := generator.resolveFormSectionResources(c, &render, actions.GetRoleFromContext(c)); err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
@@ -1389,6 +1390,14 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
+		}
+		switch pageType {
+		case renderer.PageTypeForm:
+			render = renderer.Universal{Form: render.Form}
+		case renderer.PageTypeRecord:
+			render = renderer.Universal{Record: render.Record}
+		default:
+			render = renderer.Universal{}
 		}
 		if err := generator.resolveFormSectionResources(c, &render, role); err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
