@@ -783,7 +783,15 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 
 		tc := generator.buildTranslationContext(module)
 
-		results, count, err := db.WithRequestContext(generator.db(module), c.Request.Context()).List(
+		executor := db.WithRequestContext(generator.db(module), c.Request.Context())
+		if module.ReadCTEs != nil {
+			executor, err = db.WithReadCTEs(executor, module.ReadCTEs(c))
+			if err != nil {
+				response.ErrorResponse(l, c, http.StatusInternalServerError, err.Error(), nil)
+				return
+			}
+		}
+		results, count, err := executor.List(
 			l,
 			module.Table,
 			module.PrimaryKey,
@@ -1310,7 +1318,16 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 
 		tc := generator.buildTranslationContext(module)
 
-		result, err := db.WithRequestContext(generator.db(module), c.Request.Context()).View(l, module.Table, module.PrimaryKey, realFields, where, joins, tc)
+		executor := db.WithRequestContext(generator.db(module), c.Request.Context())
+		if module.ReadCTEs != nil {
+			var err error
+			executor, err = db.WithReadCTEs(executor, module.ReadCTEs(c))
+			if err != nil {
+				response.ErrorResponse(l, c, http.StatusInternalServerError, err.Error(), nil)
+				return
+			}
+		}
+		result, err := executor.View(l, module.Table, module.PrimaryKey, realFields, where, joins, tc)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
@@ -1601,6 +1618,15 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 			return
 		}
 
+		readExecutor := db.WithRequestContext(generator.db(module), c.Request.Context())
+		if module.ReadCTEs != nil {
+			readExecutor, err = db.WithReadCTEs(readExecutor, module.ReadCTEs(c))
+			if err != nil {
+				response.ErrorResponse(l, c, http.StatusInternalServerError, err.Error(), nil)
+				return
+			}
+		}
+
 		// Return view response if ViewAfterUpdate is enabled (default true) and ViewAction exists
 		useView := action.ViewAfterUpdate == nil || *action.ViewAfterUpdate
 		if useView {
@@ -1623,7 +1649,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 					viewJoins = append(roleJoins, viewJoins...)
 				}
 
-				viewResult, viewErr := generator.db(module).View(l, module.Table, module.PrimaryKey, viewFields, where, viewJoins, tc)
+				viewResult, viewErr := readExecutor.View(l, module.Table, module.PrimaryKey, viewFields, where, viewJoins, tc)
 				if viewErr == nil {
 					response.Response(l, c, viewResult)
 					action.AfterRequest(c)
@@ -1634,7 +1660,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 		}
 
 		// Fallback: re-fetch with update columns
-		fallbackResult, fallbackErr := generator.db(module).View(l, module.Table, module.PrimaryKey, fields.ResolveProjections(c, realFields), where, nil, tc)
+		fallbackResult, fallbackErr := readExecutor.View(l, module.Table, module.PrimaryKey, fields.ResolveProjections(c, realFields), where, nil, tc)
 		if fallbackErr != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, nil)
 			return

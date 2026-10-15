@@ -37,6 +37,7 @@ type DB struct {
 	preparedViews   *preparedViewCache
 	listSelectCache *listSelectCache
 	readContext     context.Context
+	readCTEs        []pg.CommonTableExpression
 }
 type Tx struct {
 	sql *sql.Tx
@@ -541,8 +542,8 @@ func (db *DB) List(
 		countStmt = countStmt.WHERE(pg.AND(conditions...))
 	}
 
-	query, args := stmt.Sql()
-	countQuery, countArgs := countStmt.Sql()
+	query, args := db.readSQL(stmt)
+	countQuery, countArgs := db.readSQL(countStmt)
 
 	db.debugQuery(log, "[DEBUG] LIST QUERY: ", query, args)
 	db.debugQuery(log, "[DEBUG] LIST COUNT QUERY: ", countQuery, countArgs)
@@ -793,7 +794,7 @@ func (db *DB) View(
 	}
 	stmt = stmt.GROUP_BY(groupByPrimaryAndJoinedFields(primaryKey, moduleFields, tableRef)...).LIMIT(1)
 
-	query, args := stmt.Sql()
+	query, args := db.readSQL(stmt)
 	db.debugQuery(log, "[DEBUG] VIEW QUERY: ", query, args)
 
 	rows, err := db.queryView(query, args...)
