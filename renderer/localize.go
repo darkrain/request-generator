@@ -347,6 +347,13 @@ func (localizer textLocalizer) localizeFormSection(section *FormSection) {
 		localizer.localizeTextFields(&section.MediaPresets.Title, &section.MediaPresets.Subtitle, &section.MediaPresets.ShowLabel, &section.MediaPresets.HideLabel, &section.MediaPresets.AddLabel)
 	}
 	localizer.localizeMediaActions(section.MediaActions)
+	localizer.localizeMediaSelection(section.MediaSelection)
+	if filter := section.MediaBadgeFilter; filter != nil {
+		localizer.localizeTextFields(&filter.Label, &filter.AllLabel)
+		for index := range filter.Options {
+			localizer.localizeTextFields(&filter.Options[index].Label)
+		}
+	}
 	localizer.localizeMediaVisibilityStates(section.MediaVisibilityStates)
 	localizer.localizeMediaGalleryItems(section.MediaItems)
 	localizer.localizeDateRange(section.DateRange)
@@ -396,6 +403,12 @@ func (localizer textLocalizer) localizeFieldMatrix(matrix *FieldMatrix) {
 		localizer.localizeTextFields(&row.Label, &row.Description)
 		for j := range row.Cells {
 			localizer.localizeTextFields(&row.Cells[j].Label, &row.Cells[j].Text)
+			localizer.localizeRendererAction(row.Cells[j].ConnectAction)
+		}
+	}
+	if source := matrix.Table.Source; source != nil && source.Row != nil {
+		for j := range source.Row.Cells {
+			localizer.localizeRendererAction(source.Row.Cells[j].ConnectAction)
 		}
 	}
 }
@@ -409,7 +422,7 @@ func (localizer textLocalizer) localizeMediaUpload(upload *MediaUploadConfig) *M
 
 func (localizer textLocalizer) localizeMediaLabels(labels *MediaGalleryLabels) *MediaGalleryLabels {
 	if labels != nil {
-		localizer.localizeTextFields(&labels.Public, &labels.Private, &labels.Empty, &labels.CoverBadge, &labels.Remove, &labels.Reorder, &labels.FirstIsCover, &labels.PrivateHint, &labels.HideFace, &labels.HideFaceHint, &labels.FilterAll, &labels.FilterPublic, &labels.FilterPrivate, &labels.FilterHidden, &labels.FilterVideo, &labels.FilterUnpublished, &labels.Hidden, &labels.HiddenHint)
+		localizer.localizeTextFields(&labels.Public, &labels.Private, &labels.Empty, &labels.CoverBadge, &labels.Remove, &labels.Reorder, &labels.FirstIsCover, &labels.PrivateHint, &labels.HideFace, &labels.HideFaceHint, &labels.FilterAll, &labels.FilterPublic, &labels.FilterPrivate, &labels.FilterHidden, &labels.FilterVideo, &labels.FilterUnpublished, &labels.FilterVisibility, &labels.FilterType, &labels.FilterPhoto, &labels.Hidden, &labels.HiddenHint)
 	}
 	return labels
 }
@@ -433,6 +446,16 @@ func (localizer textLocalizer) localizeMediaActions(actions *MediaGalleryActions
 		for i := range actions.Under {
 			localizer.localizeRendererAction(&actions.Under[i])
 		}
+	}
+}
+
+func (localizer textLocalizer) localizeMediaSelection(selection *MediaGallerySelection) {
+	if selection == nil {
+		return
+	}
+	localizer.localizeTextFields(&selection.StartLabel, &selection.CancelLabel, &selection.CountLabel, &selection.LimitLabel, &selection.Note)
+	for index := range selection.Actions {
+		localizer.localizeRendererAction(&selection.Actions[index])
 	}
 }
 
