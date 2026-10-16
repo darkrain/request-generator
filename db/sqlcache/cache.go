@@ -214,6 +214,17 @@ retry:
 	delete(c.flights, k)
 	f.data, f.err = data, err
 	f.canceled = err != nil && ctx.Err() != nil
+	var fallback driver.Rows
+	if err != nil && !f.canceled && c.options.TTL > 0 {
+		if previous, ok := c.entries[k]; ok && previous.usable(time.Now(), c.options.TTL) {
+			// An opportunistic refresh failure must not break a still-valid hit
+			// or trigger retries on every request. Keep the original deadline;
+			// after it passes the ordinary miss/error behavior applies.
+			previous.refreshAt = previous.expires
+			c.entries[k] = previous
+			fallback = previous.data.reader()
+		}
+	}
 	if err == nil && data != nil {
 		entries, retained := len(c.entries), c.bytes
 		if previous, ok := c.entries[k]; ok {
@@ -239,6 +250,9 @@ retry:
 	// Waking a large group can reschedule the leader. Unrelated cache hits
 	// must be able to proceed while the waiters become runnable.
 	close(f.done)
+	if fallback != nil {
+		return fallback, nil
+	}
 	return rows, err
 }
 

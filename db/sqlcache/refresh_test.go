@@ -91,10 +91,19 @@ func TestFailedRefreshNeverExtendsTTL(t *testing.T) {
 	c := testCache()
 	k := primeRefresh(t, c)
 	before := c.entries[k]
-	_, err := c.query(context.Background(), "SELECT value", nil, true, func() (driver.Rows, error) { return nil, io.ErrUnexpectedEOF })
-	if !errors.Is(err, io.ErrUnexpectedEOF) {
+	rows, err := c.query(context.Background(), "SELECT value", nil, true, func() (driver.Rows, error) { return nil, io.ErrUnexpectedEOF })
+	if err != nil {
 		t.Fatal(err)
 	}
+	rows.Close()
+	rows, err = c.query(context.Background(), "SELECT value", nil, true, func() (driver.Rows, error) {
+		t.Fatal("failed refresh retried before original expiry")
+		return nil, io.ErrUnexpectedEOF
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows.Close()
 	after := c.entries[k]
 	if after.expires != before.expires || after.data != before.data {
 		t.Fatal("failed refresh changed old snapshot")
@@ -102,7 +111,7 @@ func TestFailedRefreshNeverExtendsTTL(t *testing.T) {
 	// A global TTL reduction is applied even to an entry scheduled for refresh.
 	c.SetTTL(time.Nanosecond)
 	var calls int
-	rows, err := c.query(context.Background(), "SELECT value", nil, true, func() (driver.Rows, error) { calls++; return &testRows{n: 2}, nil })
+	rows, err = c.query(context.Background(), "SELECT value", nil, true, func() (driver.Rows, error) { calls++; return &testRows{n: 2}, nil })
 	if err != nil {
 		t.Fatal(err)
 	}
