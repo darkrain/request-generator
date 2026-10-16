@@ -37,9 +37,15 @@ func WithoutCache(ctx context.Context) context.Context {
 }
 
 type entry struct {
-	data    *snapshot
-	expires time.Time
+	data      *snapshot
+	expires   time.Time
+	refreshAt time.Time
 }
+
+func (e entry) usable(now time.Time, ttl time.Duration) bool {
+	return now.Before(e.expires) && now.Before(e.data.completed.Add(ttl))
+}
+
 type flight struct {
 	done     chan struct{}
 	data     *snapshot
@@ -142,7 +148,7 @@ retry:
 	if opts.TTL > 0 {
 		if e, ok := c.entries[k]; ok {
 			now := time.Now()
-			if now.Before(e.expires) && now.Before(e.data.completed.Add(opts.TTL)) {
+			if e.usable(now, opts.TTL) && (now.Before(e.refreshAt) || c.flights[k] != nil) {
 				c.hits.Add(1)
 				c.mu.RUnlock()
 				return e.data.reader(), nil
@@ -167,7 +173,7 @@ retry:
 		return run()
 	}
 	now := time.Now()
-	if e, ok := c.entries[k]; ok && now.Before(e.expires) && now.Before(e.data.completed.Add(opts.TTL)) {
+	if e, ok := c.entries[k]; ok && e.usable(now, opts.TTL) && (now.Before(e.refreshAt) || c.flights[k] != nil) {
 		c.hits.Add(1)
 		c.mu.Unlock()
 		return e.data.reader(), nil
@@ -198,6 +204,7 @@ retry:
 	c.flights[k] = f
 	c.misses.Add(1)
 	c.mu.Unlock()
+	started := time.Now()
 	rows, err := run()
 	var data *snapshot
 	if err == nil {
@@ -208,9 +215,20 @@ retry:
 	f.data, f.err = data, err
 	f.canceled = err != nil && ctx.Err() != nil
 	if err == nil && data != nil {
-		if len(c.entries) < opts.MaxEntries && c.bytes+data.bytes <= opts.MaxBytes {
-			c.entries[k] = entry{data, data.completed.Add(opts.TTL)}
-			c.bytes += data.bytes
+		entries, retained := len(c.entries), c.bytes
+		if previous, ok := c.entries[k]; ok {
+			entries--
+			retained -= previous.data.bytes
+		}
+		if entries < opts.MaxEntries && retained+data.bytes <= opts.MaxBytes {
+			// One foreground caller refreshes shortly before expiry. Concurrent
+			// callers may still read the OLD result only inside its original TTL.
+			// No driver connection escapes the caller and no stale window is added.
+			// Base the head start on observed read cost, capped at 1/4 of the TTL.
+			expires := data.completed.Add(opts.TTL)
+			ahead := min(2*data.completed.Sub(started), opts.TTL/4)
+			c.entries[k] = entry{data: data, expires: expires, refreshAt: expires.Add(-ahead)}
+			c.bytes = retained + data.bytes
 		} else {
 			c.bypassed.Add(1)
 		}
