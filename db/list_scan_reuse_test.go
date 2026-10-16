@@ -2,6 +2,8 @@ package db
 
 import (
 	"database/sql"
+	"database/sql/driver"
+	"fmt"
 	"testing"
 	"time"
 
@@ -55,6 +57,48 @@ func TestListScanDestinationsKeepRowsIndependent(t *testing.T) {
 		"custom": &sql.NullString{String: "custom-last", Valid: true},
 	}, result[2])
 	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func BenchmarkListScanRows(b *testing.B) {
+	pool, mock, err := sqlmock.New()
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer pool.Close()
+	id := pg.IntegerColumn("id")
+	table := pg.NewTable("", "records", "", id)
+	columns := []string{"id"}
+	var fieldList []fields.ModuleField
+	for i := 0; i < 20; i++ {
+		name := fmt.Sprintf("value_%d", i)
+		columns = append(columns, name)
+		fieldList = append(fieldList, fields.ModuleField{Column: pg.StringColumn(name)})
+	}
+	executor, entry := NewDB(pool), log.NewEntry(log.New())
+	b.ReportAllocs()
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		b.StopTimer()
+		rows := sqlmock.NewRows(columns)
+		for i := 0; i < 100; i++ {
+			values := make([]driver.Value, len(columns))
+			values[0] = int64(i)
+			for j := 1; j < len(values); j++ {
+				values[j] = "record value"
+			}
+			rows.AddRow(values...)
+		}
+		mock.ExpectQuery("SELECT").WillReturnRows(rows)
+		mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(100))
+		b.StartTimer()
+		result, count, err := executor.List(entry, table, id, fieldList, nil, 0, 100, nil, "", nil, nil, nil, nil, nil)
+		if err != nil || count != 100 || len(result) != 100 {
+			b.Fatalf("unexpected list: count=%d, rows=%d, error=%v", count, len(result), err)
+		}
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		b.Fatal(err)
+	}
 }
 
 func TestListScanReuseKeepsTranslationsAndJoinsIndependent(t *testing.T) {
