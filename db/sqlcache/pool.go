@@ -40,13 +40,10 @@ const maxIdlePoolStatements = 64
 
 type poolStatement struct {
 	ready chan struct{}
-	// Immutable digest belongs to the prepared SQL and follows its lifetime.
-	// Cache hits do not rehash the full query or use another global SQL map.
-	queryHash [32]byte
-	stmt      *sql.Stmt
-	err       error
-	refs      int
-	idle      *list.Element
+	stmt  *sql.Stmt
+	err   error
+	refs  int
+	idle  *list.Element
 }
 
 func (p *poolConnector) Connect(ctx context.Context) (driver.Conn, error) {
@@ -88,8 +85,6 @@ func (p *poolConnector) prepare(ctx context.Context, query string) (*poolStateme
 	s := &poolStatement{ready: make(chan struct{}), refs: 1}
 	p.statements[query] = s
 	p.mu.Unlock()
-	// Waiters observe this only after ready is closed below.
-	s.queryHash = hashSQL(query)
 	stmt, err := p.backend.PrepareContext(ctx, query)
 	p.mu.Lock()
 	s.stmt, s.err = stmt, err
@@ -178,14 +173,14 @@ func sqlArguments(args []driver.NamedValue) []any {
 	}
 	return values
 }
-func (c *poolConn) query(ctx context.Context, query string, args []driver.NamedValue, prepared *sql.Stmt, queryHash *[32]byte, eligible bool) (driver.Rows, error) {
+func (c *poolConn) query(ctx context.Context, query string, args []driver.NamedValue, prepared *sql.Stmt, eligible bool) (driver.Rows, error) {
 	if !eligible {
 		if err := c.pin(ctx); err != nil {
 			return nil, err
 		}
 		c.track(query)
 	}
-	return c.pool.cache.queryWithSQLHash(ctx, query, queryHash, args, eligible && c.pinned == nil && c.tx == nil, func() (driver.Rows, error) {
+	return c.pool.cache.query(ctx, query, args, eligible && c.pinned == nil && c.tx == nil, func() (driver.Rows, error) {
 		values := sqlArguments(args)
 		var rows *sql.Rows
 		var err error
@@ -206,7 +201,7 @@ func (c *poolConn) query(ctx context.Context, query string, args []driver.NamedV
 	})
 }
 func (c *poolConn) QueryContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Rows, error) {
-	return c.query(ctx, q, args, nil, nil, readOnly(q))
+	return c.query(ctx, q, args, nil, readOnly(q))
 }
 func (c *poolConn) ExecContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Result, error) {
 	if err := c.pin(ctx); err != nil {
@@ -320,12 +315,10 @@ func (s *logicalStatement) Exec(args []driver.Value) (driver.Result, error) {
 }
 func (s *logicalStatement) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
 	var prepared *sql.Stmt
-	var queryHash *[32]byte
 	if s.shared != nil {
 		prepared = s.shared.stmt
-		queryHash = &s.shared.queryHash
 	}
-	return s.conn.query(ctx, s.query, args, prepared, queryHash, s.eligible)
+	return s.conn.query(ctx, s.query, args, prepared, s.eligible)
 }
 func (s *logicalStatement) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
 	return s.conn.ExecContext(ctx, s.query, args)
