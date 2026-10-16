@@ -557,9 +557,17 @@ func (db *DB) List(
 	}
 	defer rows.Close()
 
+	// Scan destinations and result keys are known before reading the rows.
+	// Reserve their final capacity instead of repeatedly growing each row.
+	columnCount := 1 + len(metas)
+	for _, join := range joins {
+		if len(join.Columns) != 0 {
+			columnCount++
+		}
+	}
 	results := make([]interface{}, 0, 10)
 	for rows.Next() {
-		columnValues := make([]interface{}, 0, 10)
+		columnValues := make([]interface{}, 0, columnCount)
 		var primaryValue interface{}
 		columnValues = append(columnValues, &primaryValue)
 
@@ -584,7 +592,7 @@ func (db *DB) List(
 			return nil, 0, err
 		}
 
-		currentResult := make(map[string]interface{})
+		currentResult := make(map[string]interface{}, columnCount)
 		offset := 1
 		for index, meta := range metas {
 			if meta.translatable {

@@ -725,13 +725,17 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 
 		columns := action.GetColumns(c)
 
-		realFields := make([]fields.ModuleField, 0, 10)
+		// Resolve each request-owned field while collecting it, avoiding a second
+		// full copy of the (large) ModuleField slice.
+		realFields := make([]fields.ModuleField, 0, len(columns))
 		for _, realField := range module.Fields {
 			if containsColumn(columns, realField.Column) {
-				realFields = append(realFields, realField)
+				realFields = append(realFields, realField.ResolveProjection(c))
 			}
 		}
-		realFields = fields.ResolveProjections(c, realFields)
+		if len(realFields) == 0 {
+			realFields = nil
+		}
 
 		var where pg.BoolExpression
 		if whereFn := actions.ResolveRoleWhere(module.RoleWhere, role); whereFn != nil {
@@ -1286,13 +1290,17 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 
 		columns := action.GetColumns(c)
 
-		realFields := make([]fields.ModuleField, 0, 10)
+		// Resolve each request-owned field while collecting it, avoiding a second
+		// full copy of the (large) ModuleField slice.
+		realFields := make([]fields.ModuleField, 0, len(columns))
 		for _, realField := range module.Fields {
 			if containsColumn(columns, realField.Column) {
-				realFields = append(realFields, realField)
+				realFields = append(realFields, realField.ResolveProjection(c))
 			}
 		}
-		realFields = fields.ResolveProjections(c, realFields)
+		if len(realFields) == 0 {
+			realFields = nil
+		}
 
 		pkWhere := pg.RawBool(
 			fmt.Sprintf(`%s."%s" = #val`, module.Table.Alias(), whereKey),
