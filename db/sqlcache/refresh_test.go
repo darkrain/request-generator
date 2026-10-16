@@ -111,3 +111,47 @@ func TestFailedRefreshNeverExtendsTTL(t *testing.T) {
 		t.Fatal("shorter global TTL ignored")
 	}
 }
+
+func TestPoolRefreshDoesNotBlockFreshHitsOnBackendPool(t *testing.T) {
+	c, front, backend := postgresPool(t, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var value int
+	if err := front.QueryRowContext(ctx, "SELECT 42").Scan(&value); err != nil {
+		t.Fatal(err)
+	}
+	key, _ := key("SELECT 42", nil)
+	held, err := backend.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	c.mu.Lock()
+	e := c.entries[key]
+	e.refreshAt = time.Now().Add(-time.Millisecond)
+	c.entries[key] = e
+	c.mu.Unlock()
+	leader, cancelLeader := context.WithCancel(ctx)
+	defer cancelLeader()
+	done := make(chan error, 1)
+	go func() { var value int; done <- front.QueryRowContext(leader, "SELECT 42").Scan(&value) }()
+	deadline := time.Now().Add(time.Second)
+	for backend.Stats().WaitCount == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if backend.Stats().WaitCount == 0 {
+		t.Fatal("refresh did not acquire backend")
+	}
+	short, stop := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer stop()
+	if err := front.QueryRowContext(short, "SELECT 42").Scan(&value); err != nil || value != 42 {
+		t.Fatalf("fresh hit blocked behind refresh: %d %v", value, err)
+	}
+	cancelLeader()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("refresh cancellation: %v", err)
+	}
+	if c.entries[key].expires != e.expires {
+		t.Fatal("canceled refresh extended TTL")
+	}
+}
