@@ -79,24 +79,27 @@ type ModuleRelation struct {
 }
 
 type BaseModule struct {
-	Name           string                     `json:"name"`
-	Label          string                     `json:"label"`
-	Labels         map[string]string          `json:"-"`
-	Table          pg.Table                   `json:"-"`
-	PrimaryKey     pg.Column                  `json:"-"`
-	Path           string                     `json:"path"`
-	Fields         []fields.ModuleField       `json:"fields"`
-	Defrec         actions.DefrecModuleAction `json:"defrec"`
-	Actions        []actions.ModuleAction     `json:"actions"`
-	RoleWhere      []actions.RoleWhere        `json:"-"`
-	RoleJoin       []actions.RoleJoin         `json:"-"`
-	RoleBeforeHook []actions.RoleHook         `json:"-"`
-	RoleAfterHook  []actions.RoleAfterHook    `json:"-"`
-	EntityName     string                     `json:"-"`
-	Navigation     []NavigationEntry          `json:"navigation,omitempty"`
-	Routes         []RoutablePage             `json:"routes,omitempty"`
-	Render         renderer.Universal         `json:"-"`
-	RenderFunc     RenderFunc                 `json:"-"`
+	Name       string                     `json:"name"`
+	Label      string                     `json:"label"`
+	Labels     map[string]string          `json:"-"`
+	Table      pg.Table                   `json:"-"`
+	PrimaryKey pg.Column                  `json:"-"`
+	Path       string                     `json:"path"`
+	Fields     []fields.ModuleField       `json:"fields"`
+	Defrec     actions.DefrecModuleAction `json:"defrec"`
+	Actions    []actions.ModuleAction     `json:"actions"`
+	RoleWhere  []actions.RoleWhere        `json:"-"`
+	RoleJoin   []actions.RoleJoin         `json:"-"`
+	// ReadCTEs supplies request-scoped, read-only common table expressions for
+	// list, list count and view queries. It does not replace access predicates.
+	ReadCTEs       func(*gin.Context) []pg.CommonTableExpression `json:"-"`
+	RoleBeforeHook []actions.RoleHook                            `json:"-"`
+	RoleAfterHook  []actions.RoleAfterHook                       `json:"-"`
+	EntityName     string                                        `json:"-"`
+	Navigation     []NavigationEntry                             `json:"navigation,omitempty"`
+	Routes         []RoutablePage                                `json:"routes,omitempty"`
+	Render         renderer.Universal                            `json:"-"`
+	RenderFunc     RenderFunc                                    `json:"-"`
 	// ConfigRenderFunc describes the page types used by discovery without
 	// loading page content. When nil, discovery uses RenderFunc. Both hooks
 	// receive an isolated clone and their results undergo the same validation.

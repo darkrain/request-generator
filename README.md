@@ -521,6 +521,7 @@ func NewCoursesModule() *module.BaseModule {
 | `EntityName`     | `string`                   | Имя сущности для translations (по умолч. = имя таблицы) |
 | `RoleWhere`      | `[]actions.RoleWhere`      | WHERE-условия по ролям                      |
 | `RoleJoin`       | `[]actions.RoleJoin`       | JOIN-ы по ролям                             |
+| `ReadCTEs`       | `func(*gin.Context) []pg.CommonTableExpression` | Общие SQL-выборки для чтения текущего запроса |
 | `RoleBeforeHook` | `[]actions.RoleHook`       | Хуки до обработки по ролям                  |
 | `RoleAfterHook`  | `[]actions.RoleAfterHook`  | Хуки после обработки по ролям               |
 | `Navigation`     | `[]module.NavigationEntry` | Пункты навигации и frontend page routes для config endpoint |
@@ -1310,6 +1311,35 @@ RoleJoin: []actions.RoleJoin{
     },
 },
 ```
+
+#### ReadCTEs (общие выборки при чтении)
+
+`BaseModule.ReadCTEs` возвращает новые Jet CTE для текущего запроса.
+Генератор добавляет их перед SQL списка, его COUNT, карточки и чтения
+карточки после обновления. Все исходные RoleWhere, фильтры, сортировка
+и пагинация сохраняются. Callback описывает только read-only SELECT;
+операции записи и обращения к БД внутри callback не нужны.
+
+```go
+ReadCTEs: func(c *gin.Context) []pg.CommonTableExpression {
+    tenantID := currentTenantID(c) // приложение проверяет контекст читателя
+    return []pg.CommonTableExpression{
+        pg.CTE("visible_items").AS(pg.RawStatement(
+            "SELECT id FROM items WHERE tenant_id = #tenant",
+            pg.RawArgs{"#tenant": tenantID},
+        )),
+    }
+},
+```
+
+CTE доступны в выражениях полей и предикатах этого модуля; значения передаются
+как SQL-параметры. Не сохраняйте выражения с параметрами пользователя в общем
+модуле и не изменяйте их после возврата callback. Исполнитель PostgreSQL
+создаёт отдельную копию настроек для каждого запроса. Сторонний DBExecutor
+должен реализовать `WithReadCTEs([]pg.CommonTableExpression) DBExecutor`;
+при отсутствии поддержки модуль с CTE возвращает ошибку вместо чтения с
+пропущенным SQL-контекстом. Существующие модули без CTE работают как прежде.
+
 
 #### RoleHook / RoleAfterHook (хуки по ролям)
 

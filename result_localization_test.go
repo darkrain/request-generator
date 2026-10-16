@@ -36,3 +36,36 @@ func TestLocalizeResultListLeavesFieldsWithoutLocalizerUntouched(t *testing.T) {
 	localized := generator.localizeResultList(locale.EN, []fields.ModuleField{{Column: name}}, rows)
 	require.Equal(t, rows, localized)
 }
+
+func TestLocalizeResultListKeepsRequestLanguagesIndependent(t *testing.T) {
+	generator := &Generator{translations: map[locale.Lang]map[string]string{
+		locale.RU: {"label": "Название"},
+		locale.EN: {"label": "Title"},
+	}}
+	columns := []fields.ModuleField{{Column: pg.StringColumn("title"), ResultValueLocalizer: func(value interface{}, translate func(string, string) string) interface{} {
+		return translate("label", value.(string))
+	}}}
+	rows := []interface{}{map[string]interface{}{"title": "original"}, map[string]interface{}{"other": "unchanged"}, nil}
+	ru := generator.localizeResultList(locale.RU, columns, rows)
+	en := generator.localizeResultList(locale.EN, columns, rows)
+	require.Equal(t, "Название", ru[0].(map[string]interface{})["title"])
+	require.Equal(t, "Title", en[0].(map[string]interface{})["title"])
+	require.Equal(t, "original", rows[0].(map[string]interface{})["title"])
+	require.Equal(t, rows[1:], ru[1:])
+}
+
+func BenchmarkResultListWithoutLocalizers(b *testing.B) {
+	generator := &Generator{}
+	columns := []fields.ModuleField{{Column: pg.StringColumn("name")}, {Column: pg.IntegerColumn("id")}}
+	rows := make([]interface{}, 100)
+	for i := range rows {
+		rows[i] = map[string]interface{}{"name": "name", "id": i}
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if len(generator.localizeResultList(locale.EN, columns, rows)) != len(rows) {
+			b.Fatal("lost rows")
+		}
+	}
+}

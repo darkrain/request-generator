@@ -1,6 +1,7 @@
 package sqlcache
 
 import (
+	"container/list"
 	"context"
 	"database/sql"
 	"database/sql/driver"
@@ -28,12 +29,21 @@ type poolConnector struct {
 	cache      *Cache
 	mu         sync.Mutex
 	statements map[string]*poolStatement
+	idle       list.List
+	closed     bool
 }
+
+// Logical cache connections can churn independently of the physical pool.
+// Retain a bounded set of unused statements so that this does not force SQL
+// parsing and planning again. Active references are never evicted.
+const maxIdlePoolStatements = 64
+
 type poolStatement struct {
 	ready chan struct{}
 	stmt  *sql.Stmt
 	err   error
 	refs  int
+	idle  *list.Element
 }
 
 func (p *poolConnector) Connect(ctx context.Context) (driver.Conn, error) {
@@ -54,6 +64,10 @@ func (poolDriver) Open(string) (driver.Conn, error) { return nil, errors.New("sq
 func (p *poolConnector) prepare(ctx context.Context, query string) (*poolStatement, error) {
 	p.mu.Lock()
 	if s := p.statements[query]; s != nil {
+		if s.idle != nil {
+			p.idle.Remove(s.idle)
+			s.idle = nil
+		}
 		s.refs++
 		p.mu.Unlock()
 		select {
@@ -85,14 +99,46 @@ func (p *poolConnector) prepare(ctx context.Context, query string) (*poolStateme
 func (p *poolConnector) release(query string, s *poolStatement) {
 	p.mu.Lock()
 	s.refs--
-	last := s.refs == 0
-	if last && p.statements[query] == s {
-		delete(p.statements, query)
+	var expired *sql.Stmt
+	if s.refs == 0 {
+		if p.closed || s.err != nil {
+			delete(p.statements, query)
+			expired = s.stmt
+		} else {
+			s.idle = p.idle.PushBack(query)
+			if p.idle.Len() > maxIdlePoolStatements {
+				oldest := p.idle.Front()
+				key := oldest.Value.(string)
+				expired = p.statements[key].stmt
+				delete(p.statements, key)
+				p.idle.Remove(oldest)
+			}
+		}
 	}
 	p.mu.Unlock()
-	if last && s.stmt != nil {
-		_ = s.stmt.Close()
+	if expired != nil {
+		_ = expired.Close()
 	}
+}
+
+// database/sql invokes io.Closer on its connector when the logical DB closes.
+// In-flight references finish normally and release their statements afterwards.
+func (p *poolConnector) Close() error {
+	p.mu.Lock()
+	p.closed = true
+	var statements []*sql.Stmt
+	for e := p.idle.Front(); e != nil; e = e.Next() {
+		key := e.Value.(string)
+		statements = append(statements, p.statements[key].stmt)
+		delete(p.statements, key)
+	}
+	p.idle.Init()
+	p.mu.Unlock()
+	var result error
+	for _, stmt := range statements {
+		result = errors.Join(result, stmt.Close())
+	}
+	return result
 }
 
 type poolConn struct {

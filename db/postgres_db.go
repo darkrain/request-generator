@@ -37,6 +37,7 @@ type DB struct {
 	preparedViews   *preparedViewCache
 	listSelectCache *listSelectCache
 	readContext     context.Context
+	readCTEs        []pg.CommonTableExpression
 }
 type Tx struct {
 	sql *sql.Tx
@@ -541,8 +542,8 @@ func (db *DB) List(
 		countStmt = countStmt.WHERE(pg.AND(conditions...))
 	}
 
-	query, args := stmt.Sql()
-	countQuery, countArgs := countStmt.Sql()
+	query, args := db.readSQL(stmt)
+	countQuery, countArgs := db.readSQL(countStmt)
 
 	db.debugQuery(log, "[DEBUG] LIST QUERY: ", query, args)
 	db.debugQuery(log, "[DEBUG] LIST COUNT QUERY: ", countQuery, countArgs)
@@ -556,25 +557,47 @@ func (db *DB) List(
 	}
 	defer rows.Close()
 
+	// Scan destinations and result keys are known before reading the rows.
+	// Reserve their final capacity instead of repeatedly growing each row.
+	columnCount := 1 + len(metas)
+	for _, join := range joins {
+		if len(join.Columns) != 0 {
+			columnCount++
+		}
+	}
 	results := make([]interface{}, 0, 10)
+	var columnValues []interface{}
+	var convertedColumns []int
+	// Built-in nullable scanners overwrite their value on every Scan, and
+	// their Value methods return independent scalars. Parsed JSON, translations
+	// and joins are decoded into fresh results before the next row is read.
 	for rows.Next() {
-		columnValues := make([]interface{}, 0, 10)
-		var primaryValue interface{}
-		columnValues = append(columnValues, &primaryValue)
-
-		for i, meta := range metas {
-			if meta.translatable {
-				columnValues = append(columnValues, &sql.NullString{})
-			} else {
-				columnValues = append(columnValues, moduleFields[i].NewScanValue())
+		if columnValues == nil {
+			// Allocate only when the list has a row, not for empty results.
+			columnValues = make([]interface{}, 0, columnCount)
+			var primaryValue interface{}
+			columnValues = append(columnValues, &primaryValue)
+			for i, meta := range metas {
+				if meta.translatable {
+					columnValues = append(columnValues, &sql.NullString{})
+				} else if moduleFields[i].ResultValueConverter != nil {
+					// A producer converter may retain its destination pointer.
+					// Preserve a fresh value per row for that callback.
+					convertedColumns = append(convertedColumns, i)
+					columnValues = append(columnValues, nil)
+				} else {
+					columnValues = append(columnValues, moduleFields[i].NewScanValue())
+				}
+			}
+			for _, join := range joins {
+				if len(join.Columns) != 0 {
+					var columnValue json.RawMessage
+					columnValues = append(columnValues, &columnValue)
+				}
 			}
 		}
-		for _, join := range joins {
-			if len(join.Columns) == 0 {
-				continue
-			}
-			var columnValue json.RawMessage
-			columnValues = append(columnValues, &columnValue)
+		for _, i := range convertedColumns {
+			columnValues[i+1] = moduleFields[i].NewScanValue()
 		}
 
 		err = rows.Scan(columnValues...)
@@ -583,7 +606,7 @@ func (db *DB) List(
 			return nil, 0, err
 		}
 
-		currentResult := make(map[string]interface{})
+		currentResult := make(map[string]interface{}, columnCount)
 		offset := 1
 		for index, meta := range metas {
 			if meta.translatable {
@@ -793,7 +816,7 @@ func (db *DB) View(
 	}
 	stmt = stmt.GROUP_BY(groupByPrimaryAndJoinedFields(primaryKey, moduleFields, tableRef)...).LIMIT(1)
 
-	query, args := stmt.Sql()
+	query, args := db.readSQL(stmt)
 	db.debugQuery(log, "[DEBUG] VIEW QUERY: ", query, args)
 
 	rows, err := db.queryView(query, args...)

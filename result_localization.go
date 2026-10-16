@@ -14,10 +14,10 @@ func (generator *Generator) localizeResultValue(lang locale.Lang, moduleFields [
 		return value
 	}
 
-	localized := make(map[string]interface{}, len(record))
-	for key, item := range record {
-		localized[key] = item
-	}
+	// Most records have no localized values. Copy only when a callback will
+	// actually replace a field; the input record is never modified here.
+	localized := record
+	copied := false
 	translate := func(key string, fallback string) string {
 		return generator.TranslateWithFallback(lang, key, fallback)
 	}
@@ -31,6 +31,13 @@ func (generator *Generator) localizeResultValue(lang locale.Lang, moduleFields [
 		if !ok {
 			continue
 		}
+		if !copied {
+			localized = make(map[string]interface{}, len(record))
+			for key, value := range record {
+				localized[key] = value
+			}
+			copied = true
+		}
 		localized[key] = field.ResultValueLocalizer(item, translate)
 	}
 	return localized
@@ -38,6 +45,16 @@ func (generator *Generator) localizeResultValue(lang locale.Lang, moduleFields [
 
 func (generator *Generator) localizeResultList(lang locale.Lang, moduleFields []fields.ModuleField, values []interface{}) []interface{} {
 	if len(values) == 0 {
+		return values
+	}
+	needed := false
+	for _, field := range moduleFields {
+		if field.ResultValueLocalizer != nil {
+			needed = true
+			break
+		}
+	}
+	if !needed {
 		return values
 	}
 
