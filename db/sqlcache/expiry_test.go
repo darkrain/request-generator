@@ -92,3 +92,35 @@ func TestExpiryQueueTTLChangeWhileReadInFlight(t *testing.T) {
 		t.Fatal("TTL reduction did not reclaim result")
 	}
 }
+
+func TestExpiryQueueReplacesNonRootEntries(t *testing.T) {
+	c := testCache()
+	c.options.MaxEntries = 8
+	c.SetTTL(time.Hour)
+	for i := 0; i < 1000; i++ {
+		query := fmt.Sprintf("SELECT %d", (i*5)%8)
+		k, _ := key(query, nil)
+		if e, ok := c.entries[k]; ok {
+			e.refreshAt = time.Now().Add(-time.Second)
+			c.entries[k] = e
+		}
+		rows, err := c.query(context.Background(), query, nil, true, func() (driver.Rows, error) { return &testRows{n: 1}, nil })
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows.Close()
+	}
+	if len(c.entries) != 8 || len(c.expirations) != 8 {
+		t.Fatal("replacement grew or lost entries")
+	}
+	var last time.Time
+	for _, e := range c.entries {
+		if last.Before(e.expires) {
+			last = e.expires
+		}
+	}
+	c.reclaimExpired(last)
+	if len(c.entries) != 0 || c.bytes != 0 {
+		t.Fatal("replacement broke expiry ordering")
+	}
+}
