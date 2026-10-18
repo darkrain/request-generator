@@ -113,3 +113,29 @@ func BenchmarkCachedQueryParallel(b *testing.B) {
 		}
 	})
 }
+
+// A miss while the cache contains live results must not scan every live key.
+func BenchmarkMissWithLiveEntries(b *testing.B) {
+	for _, count := range []int{1024, 4096} {
+		b.Run(fmt.Sprint(count), func(b *testing.B) {
+			c := New(Options{TTL: time.Hour, MaxEntries: count, MaxBytes: 32 << 20, MaxResultBytes: 1 << 20})
+			run := func() (driver.Rows, error) { return &testRows{n: 1}, nil }
+			for i := 0; i < count; i++ {
+				rows, err := c.query(context.Background(), fmt.Sprintf("SELECT %d", i), nil, true, run)
+				if err != nil {
+					b.Fatal(err)
+				}
+				rows.Close()
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				rows, err := c.query(context.Background(), "SELECT uncached", nil, true, run)
+				if err != nil {
+					b.Fatal(err)
+				}
+				rows.Close()
+			}
+		})
+	}
+}

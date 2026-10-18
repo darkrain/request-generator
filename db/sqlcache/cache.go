@@ -6,6 +6,7 @@
 package sqlcache
 
 import (
+	"container/heap"
 	"context"
 	"crypto/sha256"
 	"database/sql/driver"
@@ -40,6 +41,7 @@ type entry struct {
 	data      *snapshot
 	expires   time.Time
 	refreshAt time.Time
+	expiry    *expiryItem
 }
 
 func (e entry) usable(now time.Time, ttl time.Duration) bool {
@@ -58,6 +60,7 @@ type Cache struct {
 	mu                             sync.RWMutex
 	options                        Options
 	entries                        map[[32]byte]entry
+	expirations                    expiryQueue
 	flights                        map[[32]byte]*flight
 	hits, misses, shared, bypassed atomic.Uint64
 	bytes                          int64
@@ -79,6 +82,14 @@ func (c *Cache) Stats() Stats {
 // Writes never invalidate entries.
 func (c *Cache) SetTTL(ttl time.Duration) {
 	c.mu.Lock()
+	if c.options.TTL != ttl {
+		// The original deadline never moves. A shorter global TTL additionally
+		// caps every entry's age; rebuilding is needed only on a setting change.
+		for _, e := range c.entries {
+			e.expiry.deadline = minExpiry(e.expires, e.data.completed.Add(ttl))
+		}
+		heap.Init(&c.expirations)
+	}
 	c.options.TTL = ttl
 	c.mu.Unlock()
 }
@@ -187,14 +198,9 @@ retry:
 		}
 		return rows, err
 	}
-	// Reclaim only when starting a real miss. Hundreds of waiters for one
-	// expired key must not each sweep the entire cache under its write lock.
-	for k, e := range c.entries {
-		if !now.Before(e.expires) || !now.Before(e.data.completed.Add(opts.TTL)) {
-			delete(c.entries, k)
-			c.bytes -= e.data.bytes
-		}
-	}
+	// Only expired entries need work. Live entries are not scanned under the
+	// shared write lock on every miss.
+	c.reclaimExpired(now)
 	if len(c.flights) >= opts.MaxEntries {
 		c.bypassed.Add(1)
 		c.mu.Unlock()
@@ -238,7 +244,12 @@ retry:
 			// Base the head start on observed read cost, capped at 1/4 of the TTL.
 			expires := data.completed.Add(opts.TTL)
 			ahead := min(2*data.completed.Sub(started), opts.TTL/4)
-			c.entries[k] = entry{data: data, expires: expires, refreshAt: expires.Add(-ahead)}
+			if previous, ok := c.entries[k]; ok {
+				heap.Remove(&c.expirations, previous.expiry.index)
+			}
+			expiry := &expiryItem{key: k, deadline: minExpiry(expires, data.completed.Add(c.options.TTL))}
+			heap.Push(&c.expirations, expiry)
+			c.entries[k] = entry{data: data, expires: expires, refreshAt: expires.Add(-ahead), expiry: expiry}
 			c.bytes = retained + data.bytes
 		} else {
 			c.bypassed.Add(1)
