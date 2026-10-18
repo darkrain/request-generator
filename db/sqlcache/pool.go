@@ -192,7 +192,16 @@ func (c *poolConn) query(ctx context.Context, query string, args []driver.NamedV
 		case prepared != nil:
 			rows, err = prepared.QueryContext(ctx, values...)
 		default:
-			rows, err = c.pool.backend.QueryContext(ctx, query, values...)
+			// Raw reads use the same bounded server-plan retention as explicitly
+			// prepared reads. A result-cache miss must not parse and plan the
+			// entire statement again. Pinned/session reads and transactions have
+			// already taken their dedicated paths above.
+			statement, prepareErr := c.pool.prepare(ctx, query)
+			if prepareErr != nil {
+				return nil, prepareErr
+			}
+			defer c.pool.release(query, statement)
+			rows, err = statement.stmt.QueryContext(ctx, values...)
 		}
 		if err != nil {
 			return nil, err

@@ -6,6 +6,36 @@ import (
 	"testing"
 )
 
+func TestPoolRawReadsReuseServerPlanAfterResultMiss(t *testing.T) {
+	cache, front, backend := postgresPool(t, 1)
+	front.SetMaxIdleConns(0)
+	if _, err := backend.Exec("SET plan_cache_mode=force_generic_plan"); err != nil {
+		t.Fatal(err)
+	}
+	const query = "SELECT $1::bigint AS raw_plan_probe"
+	for i := int64(0); i < 8; i++ {
+		var got int64
+		// Different parameters force result misses while the SQL plan can
+		// remain shared, even when logical connections are discarded.
+		if err := front.QueryRow(query, i).Scan(&got); err != nil || got != i {
+			t.Fatalf("value=%d err=%v", got, err)
+		}
+	}
+	if cache.Stats().Misses != 8 {
+		t.Fatalf("expected eight result misses: %+v", cache.Stats())
+	}
+	var plans int
+	if err := backend.QueryRow("SELECT COALESCE(SUM(generic_plans),0) FROM pg_prepared_statements WHERE statement=$1", query).Scan(&plans); err != nil || plans != 8 {
+		t.Fatalf("raw plan executions=%d, want 8; err=%v", plans, err)
+	}
+	if err := front.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := backend.QueryRow("SELECT COUNT(*) FROM pg_prepared_statements WHERE statement=$1", query).Scan(&plans); err != nil || plans != 0 {
+		t.Fatalf("raw plan leaked after pool close: count=%d err=%v", plans, err)
+	}
+}
+
 // Logical connections are cheap cache lookups; their turnover must not throw
 // away the server plans owned by the long-lived physical pool.
 func TestPoolPreparedPlanSurvivesLogicalConnectionTurnover(t *testing.T) {
