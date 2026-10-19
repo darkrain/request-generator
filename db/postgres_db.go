@@ -330,7 +330,8 @@ func (db *DB) List(
 	pkName := primaryKey.Name()
 
 	// Build projections: primary key + field columns + join aggregations
-	projections := []pg.Projection{primaryKey}
+	projections := make([]pg.Projection, 1, 1+len(moduleFields)+len(joins))
+	projections[0] = primaryKey
 	metas := make([]fieldMeta, len(moduleFields))
 
 	for i, field := range moduleFields {
@@ -565,7 +566,7 @@ func (db *DB) List(
 			columnCount++
 		}
 	}
-	results := make([]interface{}, 0, 10)
+	results := make([]interface{}, 0, min(max(size, 0), 256))
 	var columnValues []interface{}
 	var convertedColumns []int
 	// Built-in nullable scanners overwrite their value on every Scan, and
@@ -643,55 +644,10 @@ func (db *DB) List(
 				continue
 			}
 
-			var joinValues [][]interface{}
-			err := json.Unmarshal(*converted, &joinValues)
+			joinResultUnique, err := decodeListJoin(*converted, join.Columns)
 			if err != nil {
 				log.Errorln("LIST JOIN ERR: ", err)
 				continue
-			}
-
-			checkString := ""
-			for _, val := range joinValues {
-				if val == nil {
-					continue
-				}
-				for _, v := range val {
-					if v == nil {
-						continue
-					}
-					checkString = fmt.Sprintf("%v%v", checkString, v)
-				}
-			}
-
-			joinResults := make([]map[string]interface{}, 0, 10)
-			if len(checkString) > 0 {
-				for _, joinValue := range joinValues {
-					resultMap := make(map[string]interface{})
-					for idx, col := range join.Columns {
-						resultMap[col.Name()] = joinValue[idx]
-					}
-					joinResults = append(joinResults, resultMap)
-				}
-			}
-
-			joinStringsArray := make([]string, 0, 10)
-			for _, res := range joinResults {
-				jsonRes, err := json.Marshal(res)
-				if err != nil {
-					continue
-				}
-				joinStringsArray = append(joinStringsArray, string(jsonRes))
-			}
-			resultUnique := removeDuplicate(joinStringsArray)
-
-			joinResultUnique := make([]map[string]interface{}, 0, 10)
-			for _, res := range resultUnique {
-				var mapResult map[string]interface{}
-				err := json.Unmarshal([]byte(res), &mapResult)
-				if err != nil {
-					continue
-				}
-				joinResultUnique = append(joinResultUnique, mapResult)
 			}
 
 			currentResult[join.ResultArrayName] = joinResultUnique
@@ -705,7 +661,10 @@ func (db *DB) List(
 	}
 	rows.Close()
 
-	result = append(result, results...)
+	// Keep nil for an empty result, as before, without copying nonempty rows.
+	if len(results) > 0 {
+		result = results
+	}
 
 	// COUNT uses the same request context and bounded cache as the list query.
 	countResult, err := db.queryList(countQuery, countArgs...)
@@ -787,7 +746,8 @@ func (db *DB) View(
 	tableRef := table.TableName()
 	pkName := primaryKey.Name()
 
-	projections := []pg.Projection{primaryKey}
+	projections := make([]pg.Projection, 1, 1+len(moduleFields)+len(joins))
+	projections[0] = primaryKey
 	metas := make([]fieldMeta, len(moduleFields))
 
 	for i, field := range moduleFields {
@@ -1222,16 +1182,4 @@ func (db *DB) RawRequest(log *log.Entry, query string, params ...interface{}) (*
 
 func (db *DB) RawDB() *sql.DB {
 	return db.sql
-}
-
-func removeDuplicate(sliceList []string) []string {
-	allKeys := make(map[string]bool)
-	var list []string
-	for _, item := range sliceList {
-		if _, value := allKeys[item]; !value {
-			allKeys[item] = true
-			list = append(list, item)
-		}
-	}
-	return list
 }
