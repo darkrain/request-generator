@@ -95,6 +95,10 @@ func (c *Cache) SetTTL(ttl time.Duration) {
 }
 
 func key(query string, args []driver.NamedValue) ([32]byte, error) {
+	return keyForSQLHash(hashSQL(query), args)
+}
+
+func keyForSQLHash(queryHash [32]byte, args []driver.NamedValue) ([32]byte, error) {
 	type argument struct {
 		Name, Type string
 		Ordinal    int
@@ -110,7 +114,7 @@ func key(query string, args []driver.NamedValue) ([32]byte, error) {
 	}
 	// Hash exact SQL bytes separately: quoting/escaping a large SQL string as
 	// JSON made every cache hit allocate another copy of the whole statement.
-	queryHash, argsHash := hashSQL(query), sha256.Sum256(encoded)
+	argsHash := sha256.Sum256(encoded)
 	var combined [64]byte
 	copy(combined[:32], queryHash[:])
 	copy(combined[32:], argsHash[:])
@@ -136,6 +140,12 @@ func hashSQL(query string) [32]byte {
 }
 
 func (c *Cache) query(ctx context.Context, query string, args []driver.NamedValue, eligible bool, run func() (driver.Rows, error)) (driver.Rows, error) {
+	return c.queryWithHash(ctx, query, args, eligible, nil, run)
+}
+
+// A prepared statement retains only immutable SQL metadata. Arguments, session
+// state, cancellation and the current global result TTL are checked per call.
+func (c *Cache) queryWithHash(ctx context.Context, query string, args []driver.NamedValue, eligible bool, preparedHash *[32]byte, run func() (driver.Rows, error)) (driver.Rows, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -143,7 +153,13 @@ func (c *Cache) query(ctx context.Context, query string, args []driver.NamedValu
 		c.bypassed.Add(1)
 		return run()
 	}
-	k, keyErr := key(query, args)
+	var queryHash [32]byte
+	if preparedHash == nil {
+		queryHash = hashSQL(query)
+	} else {
+		queryHash = *preparedHash
+	}
+	k, keyErr := keyForSQLHash(queryHash, args)
 	if keyErr != nil {
 		c.bypassed.Add(1)
 		return run()

@@ -86,6 +86,59 @@ func BenchmarkKeyLargeQuery(b *testing.B) {
 	}
 }
 
+func BenchmarkKeyPreparedLargeQuery(b *testing.B) {
+	query := "SELECT " + strings.Repeat(`CASE WHEN "value"=$1 THEN $2 ELSE NULL END, `, 512) + "id FROM records"
+	hash := analyzeStatement(query).hash
+	args := []driver.NamedValue{{Ordinal: 1, Value: int64(1)}, {Ordinal: 2, Value: "value"}}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := keyForSQLHash(hash, args); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func TestPreparedIdentitySharesDirectResultsAndKeepsArgumentsSeparate(t *testing.T) {
+	c := testCache()
+	query := "SELECT $1 /* " + strings.Repeat("long SQL ", 500) + " */"
+	metadata := analyzeStatement(query)
+	if !metadata.eligible {
+		t.Fatal("read rejected")
+	}
+	calls := 0
+	run := func() (driver.Rows, error) { calls++; return &testRows{n: 1}, nil }
+	for _, value := range []driver.Value{int64(1), "1", nil, []byte("1")} {
+		args := []driver.NamedValue{{Ordinal: 1, Value: value}}
+		rows, err := c.query(context.Background(), query, args, true, run)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows.Close()
+		rows, err = c.queryWithHash(context.Background(), query, args, metadata.eligible, &metadata.hash, run)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows.Close()
+	}
+	if calls != 4 || c.Stats().Hits != 4 {
+		t.Fatalf("prepared/direct identity mismatch: calls=%d stats=%+v", calls, c.Stats())
+	}
+	// Reusing a statement's SQL digest does not freeze the result TTL or
+	// override the caller's transaction/session/bypass decision.
+	c.SetTTL(0)
+	for _, eligible := range []bool{true, false} {
+		rows, err := c.queryWithHash(context.Background(), query, nil, eligible, &metadata.hash, run)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows.Close()
+	}
+	if calls != 6 {
+		t.Fatal("prepared metadata retained a result after disabling TTL")
+	}
+}
+
 func BenchmarkCachedQueryParallel(b *testing.B) {
 	c := New(Options{TTL: time.Hour, MaxEntries: 512, MaxBytes: 32 << 20, MaxResultBytes: 1 << 20})
 	queries := make([]string, 128)
