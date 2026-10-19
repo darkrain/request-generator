@@ -98,7 +98,7 @@ func key(query string, args []driver.NamedValue) ([32]byte, error) {
 	return keyForSQLHash(hashSQL(query), args)
 }
 
-func keyForSQLHash(queryHash [32]byte, args []driver.NamedValue) ([32]byte, error) {
+func legacyKeyForSQLHash(queryHash [32]byte, args []driver.NamedValue) ([32]byte, error) {
 	type argument struct {
 		Name, Type string
 		Ordinal    int
