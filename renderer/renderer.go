@@ -2854,6 +2854,13 @@ func (v TypedValue) Validate() error {
 // MarshalJSON keeps a typed zero value on the wire. A plain omitempty tag on
 // Number makes number: 0 indistinguishable from an omitted value to clients.
 func (v TypedValue) MarshalJSON() ([]byte, error) {
+	// Avoid recursively borrowing encoding/json's buffer for plain string
+	// values. Several tiny nested encodes can displace the enclosing page's
+	// large buffer from its pool and make it grow again on every response.
+	// Strings requiring JSON/HTML escaping still use the standard encoder.
+	if v.Type == TypedValueString && plainJSONString(v.String) {
+		return []byte(`{"type":"string","string":"` + v.String + `"}`), nil
+	}
 	type typedValueJSON struct {
 		Type   TypedValueType `json:"type"`
 		String *string        `json:"string,omitempty"`
@@ -2871,6 +2878,19 @@ func (v TypedValue) MarshalJSON() ([]byte, error) {
 		payload.Bool = v.Bool
 	}
 	return json.Marshal(payload)
+}
+
+func plainJSONString(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] > 0x7e {
+			return false
+		}
+		switch s[i] {
+		case '"', '\\', '<', '>', '&':
+			return false
+		}
+	}
+	return true
 }
 
 type CollectionModal struct {
