@@ -65,6 +65,7 @@ func (poolDriver) Open(string) (driver.Conn, error) { return nil, errors.New("sq
 func (p *poolConnector) prepare(ctx context.Context, query string) (*poolStatement, error) {
 	p.mu.Lock()
 	if s := p.statements[query]; s != nil {
+		p.cache.planReuses.Add(1)
 		if s.idle != nil {
 			p.idle.Remove(s.idle)
 			s.idle = nil
@@ -86,7 +87,11 @@ func (p *poolConnector) prepare(ctx context.Context, query string) (*poolStateme
 	s := &poolStatement{ready: make(chan struct{}), refs: 1}
 	p.statements[query] = s
 	p.mu.Unlock()
+	p.cache.planPrepares.Add(1)
 	stmt, err := p.backend.PrepareContext(ctx, query)
+	if err != nil {
+		p.cache.planErrors.Add(1)
+	}
 	metadata := analyzeStatement(query)
 	p.mu.Lock()
 	s.stmt, s.err, s.sql = stmt, err, metadata
@@ -114,6 +119,7 @@ func (p *poolConnector) release(query string, s *poolStatement) {
 				expired = p.statements[key].stmt
 				delete(p.statements, key)
 				p.idle.Remove(oldest)
+				p.cache.planEvictions.Add(1)
 			}
 		}
 	}

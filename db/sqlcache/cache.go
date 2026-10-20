@@ -28,6 +28,11 @@ type Stats struct {
 	Hits, Misses, Shared, Bypassed uint64
 	Entries                        int
 	Bytes                          int64
+	// Plan counters describe WrapDB's shared statement registry, including raw
+	// reads. They are separate from the caller's prepared-read/result caches.
+	// A prepare counts backend.PrepareContext, not PostgreSQL's per-connection
+	// lazy prepares or planner invocations.
+	PlanPrepares, PlanReuses, PlanEvictions, PlanErrors uint64
 }
 
 type bypassKey struct{}
@@ -57,13 +62,14 @@ type flight struct {
 
 // Cache is shared by connections in one pool, never across databases.
 type Cache struct {
-	mu                             sync.RWMutex
-	options                        Options
-	entries                        map[[32]byte]entry
-	expirations                    expiryQueue
-	flights                        map[[32]byte]*flight
-	hits, misses, shared, bypassed atomic.Uint64
-	bytes                          int64
+	mu                                                  sync.RWMutex
+	options                                             Options
+	entries                                             map[[32]byte]entry
+	expirations                                         expiryQueue
+	flights                                             map[[32]byte]*flight
+	hits, misses, shared, bypassed                      atomic.Uint64
+	bytes                                               int64
+	planPrepares, planReuses, planEvictions, planErrors atomic.Uint64
 }
 
 func New(options Options) *Cache {
@@ -74,7 +80,9 @@ func (c *Cache) Stats() Stats {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return Stats{TTL: c.options.TTL, Hits: c.hits.Load(), Misses: c.misses.Load(),
-		Shared: c.shared.Load(), Bypassed: c.bypassed.Load(), Entries: len(c.entries), Bytes: c.bytes}
+		Shared: c.shared.Load(), Bypassed: c.bypassed.Load(), Entries: len(c.entries), Bytes: c.bytes,
+		PlanPrepares: c.planPrepares.Load(), PlanReuses: c.planReuses.Load(),
+		PlanEvictions: c.planEvictions.Load(), PlanErrors: c.planErrors.Load()}
 }
 
 // SetTTL changes the global window. Existing entries keep their original expiry;

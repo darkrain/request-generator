@@ -72,8 +72,8 @@ func TestPoolPreparedPlanSurvivesLogicalConnectionTurnover(t *testing.T) {
 }
 
 func TestPoolPreparedRetentionBoundsIdlePlansAndDrainsActiveReferences(t *testing.T) {
-	_, _, backend := postgresPool(t, 1)
-	p := &poolConnector{backend: backend, statements: make(map[string]*poolStatement)}
+	cache, _, backend := postgresPool(t, 1)
+	p := &poolConnector{backend: backend, cache: cache, statements: make(map[string]*poolStatement)}
 	t.Cleanup(func() { p.Close() })
 	ctx := context.Background()
 	const activeQuery = "SELECT $1::bigint AS retention_active"
