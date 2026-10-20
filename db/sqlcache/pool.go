@@ -175,14 +175,6 @@ func sqlArguments(args []driver.NamedValue) []any {
 	}
 	return values
 }
-
-// This is an admission hint, not a reservation: another request can acquire
-// the connection next. Never knowingly add speculative refresh to a full pool.
-func (p *poolConnector) canRefresh() bool {
-	stats := p.backend.Stats()
-	return stats.Idle > 0 || stats.MaxOpenConnections == 0 || stats.OpenConnections < stats.MaxOpenConnections
-}
-
 func (c *poolConn) query(ctx context.Context, query string, args []driver.NamedValue, prepared *sql.Stmt, eligible bool, preparedHash *[32]byte) (driver.Rows, error) {
 	if !eligible {
 		if err := c.pin(ctx); err != nil {
@@ -190,7 +182,7 @@ func (c *poolConn) query(ctx context.Context, query string, args []driver.NamedV
 		}
 		c.track(query)
 	}
-	return c.pool.cache.queryWithRefreshAdmission(ctx, query, args, eligible && c.pinned == nil && c.tx == nil, preparedHash, c.pool.canRefresh, func() (driver.Rows, error) {
+	return c.pool.cache.queryWithHash(ctx, query, args, eligible && c.pinned == nil && c.tx == nil, preparedHash, func() (driver.Rows, error) {
 		values := sqlArguments(args)
 		var rows *sql.Rows
 		var err error
