@@ -92,18 +92,14 @@ type BaseModule struct {
 	RoleJoin   []actions.RoleJoin         `json:"-"`
 	// ReadCTEs supplies request-scoped, read-only common table expressions for
 	// list, list count and view queries. It does not replace access predicates.
-	ReadCTEs func(*gin.Context) []pg.CommonTableExpression `json:"-"`
-	// ListCountWithRows permits a single statement for a page and total count.
-	// Enable only when PrimaryKey is unique and non-null in the base relation.
-	// Joined lists and empty pages keep a separate count fallback.
-	ListCountWithRows bool                    `json:"-"`
-	RoleBeforeHook    []actions.RoleHook      `json:"-"`
-	RoleAfterHook     []actions.RoleAfterHook `json:"-"`
-	EntityName        string                  `json:"-"`
-	Navigation        []NavigationEntry       `json:"navigation,omitempty"`
-	Routes            []RoutablePage          `json:"routes,omitempty"`
-	Render            renderer.Universal      `json:"-"`
-	RenderFunc        RenderFunc              `json:"-"`
+	ReadCTEs       func(*gin.Context) []pg.CommonTableExpression `json:"-"`
+	RoleBeforeHook []actions.RoleHook                            `json:"-"`
+	RoleAfterHook  []actions.RoleAfterHook                       `json:"-"`
+	EntityName     string                                        `json:"-"`
+	Navigation     []NavigationEntry                             `json:"navigation,omitempty"`
+	Routes         []RoutablePage                                `json:"routes,omitempty"`
+	Render         renderer.Universal                            `json:"-"`
+	RenderFunc     RenderFunc                                    `json:"-"`
 	// ConfigRenderFunc describes the page types used by discovery without
 	// loading page content. When nil, discovery uses RenderFunc. Both hooks
 	// receive an isolated clone and their results undergo the same validation.

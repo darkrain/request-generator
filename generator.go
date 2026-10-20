@@ -795,9 +795,6 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 				return
 			}
 		}
-		if module.ListCountWithRows {
-			executor = db.WithListCountRows(executor)
-		}
 		results, count, err := executor.List(
 			l,
 			module.Table,

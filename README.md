@@ -1883,17 +1883,3 @@ Bypasses, Evictions и PrepareErrors без текста SQL и параметр
 механизм от кэша результатов: он не хранит строки, не меняет TTL и не
 инвалидирует результаты при записи. `db/sqlcache.WrapDB` дополнительно
 сохраняет свой ограниченный набор неиспользуемых физических statements.
-
-### Counting a list with its page
-
-`BaseModule.ListCountWithRows` is an optional PostgreSQL read optimization.
-Enable it only when `PrimaryKey` is unique and non-null in the base relation.
-For nonempty lists without joins, one statement filters the relation, counts
-it with a window, and projects the requested page. Expensive selected fields
-remain outside the counted relation. Permission predicates, filters, sorting,
-result fields and the total-count response contract are unchanged.
-
-Joined lists, zero-size requests and executors without this capability use the
-ordinary separate count. Empty pages (including offsets beyond the last row)
-execute the original count query because no row can carry the window total.
-The SQL result cache and its configured TTL apply to the combined statement.

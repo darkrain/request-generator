@@ -32,13 +32,12 @@ func SafeSQLIdentifier(name string) bool {
 
 type DB struct {
 	DBExecutor
-	sql               *sql.DB
-	Debug             bool
-	preparedViews     *preparedViewCache
-	listSelectCache   *listSelectCache
-	readContext       context.Context
-	readCTEs          []pg.CommonTableExpression
-	listCountWithRows bool
+	sql             *sql.DB
+	Debug           bool
+	preparedViews   *preparedViewCache
+	listSelectCache *listSelectCache
+	readContext     context.Context
+	readCTEs        []pg.CommonTableExpression
 }
 type Tx struct {
 	sql *sql.Tx
@@ -518,30 +517,12 @@ func (db *DB) List(
 		}
 	}
 
-	countFrom := from
-	// The producer explicitly guarantees a unique, non-null primary key.
-	// Keep projections outside the counted relation so expensive fields are
-	// evaluated only for the selected page. Joins retain their distinct count.
-	countWithRows := db.listCountWithRows && len(joins) == 0 && size > 0 && tableRef != "__rg_matched"
-	var countedTotal pg.IntegerExpression
-	if countWithRows {
-		matched := pg.SELECT(primaryKey.AS("__rg_pk"), pg.RawInt("COUNT(*) OVER ()").AS("__rg_total")).FROM(from)
-		if len(conditions) > 0 {
-			matched = matched.WHERE(pg.AND(conditions...))
-		}
-		quote := func(value string) string { return `"` + strings.ReplaceAll(value, `"`, `""`) + `"` }
-		from = table.INNER_JOIN(matched.AsTable("__rg_matched"), pg.RawBool(quote(tableRef)+"."+quote(pkName)+` = "__rg_matched"."__rg_pk"`))
-		countedTotal = pg.RawInt(`"__rg_matched"."__rg_total"`)
-		projections = append(projections, countedTotal.AS("__rg_total"))
-	}
+	// Build SELECT statement
 	stmt := pg.SELECT(projections[0], projections[1:]...).FROM(from)
-	if len(conditions) > 0 && !countWithRows {
+	if len(conditions) > 0 {
 		stmt = stmt.WHERE(pg.AND(conditions...))
 	}
 	groupBy := groupByPrimaryAndJoinedFields(primaryKey, moduleFields, tableRef, sortColumn(sort))
-	if countWithRows {
-		groupBy = append(groupBy, countedTotal)
-	}
 	stmt = stmt.GROUP_BY(groupBy...)
 	if sort != nil {
 		if sort.Direction == actions.SortDESC {
@@ -557,14 +538,16 @@ func (db *DB) List(
 	if len(joins) > 0 {
 		countProjection = pg.COUNT(pg.DISTINCT(primaryKey))
 	}
-	countStmt := pg.SELECT(countProjection).FROM(countFrom)
+	countStmt := pg.SELECT(countProjection).FROM(from)
 	if len(conditions) > 0 {
 		countStmt = countStmt.WHERE(pg.AND(conditions...))
 	}
 
 	query, args := db.readSQL(stmt)
+	countQuery, countArgs := db.readSQL(countStmt)
 
 	db.debugQuery(log, "[DEBUG] LIST QUERY: ", query, args)
+	db.debugQuery(log, "[DEBUG] LIST COUNT QUERY: ", countQuery, countArgs)
 
 	// Reuse the SQL shape when this executor has a prepared-read cache. Values
 	// and rows remain request-specific; the uncached path is unchanged.
@@ -584,7 +567,6 @@ func (db *DB) List(
 		}
 	}
 	results := make([]interface{}, 0, min(max(size, 0), 256))
-	var pageTotal int64
 	var columnValues []interface{}
 	var convertedColumns []int
 	// Built-in nullable scanners overwrite their value on every Scan, and
@@ -613,9 +595,6 @@ func (db *DB) List(
 					var columnValue json.RawMessage
 					columnValues = append(columnValues, &columnValue)
 				}
-			}
-			if countWithRows {
-				columnValues = append(columnValues, &pageTotal)
 			}
 		}
 		for _, i := range convertedColumns {
@@ -687,14 +666,6 @@ func (db *DB) List(
 		result = results
 	}
 
-	if countWithRows && len(results) > 0 {
-		return result, pageTotal, nil
-	}
-
-	// An empty page carries no window value; count separately even for an
-	// offset beyond the last page. The result must not silently become zero.
-	countQuery, countArgs := db.readSQL(countStmt)
-	db.debugQuery(log, "[DEBUG] LIST COUNT QUERY: ", countQuery, countArgs)
 	// COUNT uses the same request context and bounded cache as the list query.
 	countResult, err := db.queryList(countQuery, countArgs...)
 	if err != nil {
