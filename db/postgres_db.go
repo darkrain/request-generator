@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -389,7 +390,16 @@ func (db *DB) List(
 
 	// Filters
 	if len(filter) > 0 {
-		for key, value := range filter {
+		// Exact SQL and ordered arguments identify both prepared statements and
+		// cached results. Map iteration must not create several cache entries
+		// for the same conjunction.
+		keys := make([]string, 0, len(filter))
+		for key := range filter {
+			keys = append(keys, key)
+		}
+		slices.Sort(keys)
+		for _, key := range keys {
+			value := filter[key]
 			parts := strings.Split(key, ".")
 			colName := key
 			tblRef := tableRef
