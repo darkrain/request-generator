@@ -1883,3 +1883,10 @@ Bypasses, Evictions и PrepareErrors без текста SQL и параметр
 механизм от кэша результатов: он не хранит строки, не меняет TTL и не
 инвалидирует результаты при записи. `db/sqlcache.WrapDB` дополнительно
 сохраняет свой ограниченный набор неиспользуемых физических statements.
+
+With `sqlcache.Cache.WrapDB`, early refresh is admitted only when the backend
+pool reports spare connection capacity. Saturation postpones speculative work,
+not the original expiry: a still-valid result can be reused, while expired
+results still require a fresh read. The capacity check is advisory; a concurrent
+request can acquire the available connection first. Global TTL, cancellation,
+transaction/session bypass and write behavior remain unchanged.

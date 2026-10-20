@@ -146,6 +146,12 @@ func (c *Cache) query(ctx context.Context, query string, args []driver.NamedValu
 // A prepared statement retains only immutable SQL metadata. Arguments, session
 // state, cancellation and the current global result TTL are checked per call.
 func (c *Cache) queryWithHash(ctx context.Context, query string, args []driver.NamedValue, eligible bool, preparedHash *[32]byte, run func() (driver.Rows, error)) (driver.Rows, error) {
+	return c.queryWithRefreshAdmission(ctx, query, args, eligible, preparedHash, nil, run)
+}
+
+// Early refresh is optional work. A pooled caller may postpone it while the
+// backend is saturated, but never extend a snapshot's original expiry.
+func (c *Cache) queryWithRefreshAdmission(ctx context.Context, query string, args []driver.NamedValue, eligible bool, preparedHash *[32]byte, canRefresh func() bool, run func() (driver.Rows, error)) (driver.Rows, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -175,7 +181,7 @@ retry:
 	if opts.TTL > 0 {
 		if e, ok := c.entries[k]; ok {
 			now := time.Now()
-			if e.usable(now, opts.TTL) && (now.Before(e.refreshAt) || c.flights[k] != nil) {
+			if e.usable(now, opts.TTL) && (now.Before(e.refreshAt) || c.flights[k] != nil || canRefresh != nil && !canRefresh()) {
 				c.hits.Add(1)
 				c.mu.RUnlock()
 				return e.data.reader(), nil
@@ -200,7 +206,7 @@ retry:
 		return run()
 	}
 	now := time.Now()
-	if e, ok := c.entries[k]; ok && e.usable(now, opts.TTL) && (now.Before(e.refreshAt) || c.flights[k] != nil) {
+	if e, ok := c.entries[k]; ok && e.usable(now, opts.TTL) && (now.Before(e.refreshAt) || c.flights[k] != nil || canRefresh != nil && !canRefresh()) {
 		c.hits.Add(1)
 		c.mu.Unlock()
 		return e.data.reader(), nil
