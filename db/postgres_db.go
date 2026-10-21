@@ -33,13 +33,12 @@ func SafeSQLIdentifier(name string) bool {
 
 type DB struct {
 	DBExecutor
-	sql                 *sql.DB
-	Debug               bool
-	preparedViews       *preparedViewCache
-	listSelectCache     *listSelectCache
-	readContext         context.Context
-	readCTEs            []pg.CommonTableExpression
-	shortFirstPageCount bool
+	sql             *sql.DB
+	Debug           bool
+	preparedViews   *preparedViewCache
+	listSelectCache *listSelectCache
+	readContext     context.Context
+	readCTEs        []pg.CommonTableExpression
 }
 type Tx struct {
 	sql *sql.Tx
@@ -544,9 +543,21 @@ func (db *DB) List(
 	}
 	stmt = stmt.LIMIT(size).OFFSET(size * page)
 
+	// Build COUNT statement
+	countProjection := pg.COUNT(pg.STAR)
+	if len(joins) > 0 {
+		countProjection = pg.COUNT(pg.DISTINCT(primaryKey))
+	}
+	countStmt := pg.SELECT(countProjection).FROM(from)
+	if len(conditions) > 0 {
+		countStmt = countStmt.WHERE(pg.AND(conditions...))
+	}
+
 	query, args := db.readSQL(stmt)
+	countQuery, countArgs := db.readSQL(countStmt)
 
 	db.debugQuery(log, "[DEBUG] LIST QUERY: ", query, args)
+	db.debugQuery(log, "[DEBUG] LIST COUNT QUERY: ", countQuery, countArgs)
 
 	// Reuse the SQL shape when this executor has a prepared-read cache. Values
 	// and rows remain request-specific; the uncached path is unchanged.
@@ -664,24 +675,6 @@ func (db *DB) List(
 	if len(results) > 0 {
 		result = results
 	}
-
-	// An incomplete first page is the exhaustive result only for producers
-	// that explicitly promise one result per base row and stable predicates.
-	// Joins, full pages and later/invalid pages retain the ordinary COUNT.
-	if db.shortFirstPageCount && len(joins) == 0 && page == 0 && size > 0 && int64(len(results)) < size {
-		return result, int64(len(results)), nil
-	}
-
-	countProjection := pg.COUNT(pg.STAR)
-	if len(joins) > 0 {
-		countProjection = pg.COUNT(pg.DISTINCT(primaryKey))
-	}
-	countStmt := pg.SELECT(countProjection).FROM(from)
-	if len(conditions) > 0 {
-		countStmt = countStmt.WHERE(pg.AND(conditions...))
-	}
-	countQuery, countArgs := db.readSQL(countStmt)
-	db.debugQuery(log, "[DEBUG] LIST COUNT QUERY: ", countQuery, countArgs)
 
 	// COUNT uses the same request context and bounded cache as the list query.
 	countResult, err := db.queryList(countQuery, countArgs...)
