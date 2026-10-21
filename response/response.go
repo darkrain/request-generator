@@ -1,7 +1,6 @@
 package response
 
 import (
-	"encoding/json"
 	"github.com/gin-gonic/gin"
 	log "github.com/sirupsen/logrus"
 	"net/http"
@@ -18,7 +17,7 @@ func Response(l *log.Entry, c *gin.Context, data interface{}) {
 	c.Writer.WriteHeader(http.StatusOK)
 	response := data
 
-	if err := json.NewEncoder(c.Writer).Encode(response); err != nil {
+	if err := encodeJSON(c.Writer, response); err != nil {
 		l.WithFields(log.Fields{
 			"Data": data,
 		}).Error("Error json encode in Response")
@@ -46,7 +45,7 @@ func ErrorResponse(l *log.Entry, c *gin.Context, code int, message string, data 
 		Errors:     data,
 	}
 
-	if err := json.NewEncoder(c.Writer).Encode(response); err != nil {
+	if err := encodeJSON(c.Writer, response); err != nil {
 		l.WithFields(log.Fields{
 			"message": message,
 		}).Error("Error json encode in Response")
