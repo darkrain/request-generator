@@ -2,6 +2,21 @@ package sqlcache
 
 import "strings"
 
+// Statement metadata lives as long as its owning prepared statement, under
+// the existing pool retention limit. It contains no argument or result data.
+type statementSQL struct {
+	eligible bool
+	hash     [32]byte
+}
+
+func analyzeStatement(query string) statementSQL {
+	result := statementSQL{eligible: readOnly(query)}
+	if result.eligible {
+		result.hash = hashSQL(query)
+	}
+	return result
+}
+
 const (
 	readHead = 1 << iota
 	unsafeRead

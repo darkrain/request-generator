@@ -521,6 +521,7 @@ func NewCoursesModule() *module.BaseModule {
 | `EntityName`     | `string`                   | Имя сущности для translations (по умолч. = имя таблицы) |
 | `RoleWhere`      | `[]actions.RoleWhere`      | WHERE-условия по ролям                      |
 | `RoleJoin`       | `[]actions.RoleJoin`       | JOIN-ы по ролям                             |
+| `ReadCTEs`       | `func(*gin.Context) []pg.CommonTableExpression` | Общие SQL-выборки для чтения текущего запроса |
 | `RoleBeforeHook` | `[]actions.RoleHook`       | Хуки до обработки по ролям                  |
 | `RoleAfterHook`  | `[]actions.RoleAfterHook`  | Хуки после обработки по ролям               |
 | `Navigation`     | `[]module.NavigationEntry` | Пункты навигации и frontend page routes для config endpoint |
@@ -1311,6 +1312,35 @@ RoleJoin: []actions.RoleJoin{
 },
 ```
 
+#### ReadCTEs (общие выборки при чтении)
+
+`BaseModule.ReadCTEs` возвращает новые Jet CTE для текущего запроса.
+Генератор добавляет их перед SQL списка, его COUNT, карточки и чтения
+карточки после обновления. Все исходные RoleWhere, фильтры, сортировка
+и пагинация сохраняются. Callback описывает только read-only SELECT;
+операции записи и обращения к БД внутри callback не нужны.
+
+```go
+ReadCTEs: func(c *gin.Context) []pg.CommonTableExpression {
+    tenantID := currentTenantID(c) // приложение проверяет контекст читателя
+    return []pg.CommonTableExpression{
+        pg.CTE("visible_items").AS(pg.RawStatement(
+            "SELECT id FROM items WHERE tenant_id = #tenant",
+            pg.RawArgs{"#tenant": tenantID},
+        )),
+    }
+},
+```
+
+CTE доступны в выражениях полей и предикатах этого модуля; значения передаются
+как SQL-параметры. Не сохраняйте выражения с параметрами пользователя в общем
+модуле и не изменяйте их после возврата callback. Исполнитель PostgreSQL
+создаёт отдельную копию настроек для каждого запроса. Сторонний DBExecutor
+должен реализовать `WithReadCTEs([]pg.CommonTableExpression) DBExecutor`;
+при отсутствии поддержки модуль с CTE возвращает ошибку вместо чтения с
+пропущенным SQL-контекстом. Существующие модули без CTE работают как прежде.
+
+
 #### RoleHook / RoleAfterHook (хуки по ролям)
 
 ```go
@@ -1832,3 +1862,24 @@ TTL, ноль отключает повторное использование. 
 объединяются. Лимиты задаются через `Options`, счётчики доступны через `Stats`.
 При подключении этого слоя отдельный `EnableListSelectCache` включать не нужно:
 иначе получится два независимых окна устаревания.
+
+
+### Ограниченный кэш подготовленных чтений
+
+`db.NewDBWithPreparedReads(pool, maxStatements)` повторно использует SQL-формы
+для List, View, COUNT и `QueryContext`. После заполнения лимита новая форма
+вытесняет наименее недавно использованную свободную запись. Таким образом,
+разовый обход редких разделов не лишает последующие частые запросы подготовки.
+Если все места заняты подготовкой или началом выполнения, запрос идёт обычным
+путём; кэш не растёт и не задерживает запрос в ожидании вытеснения.
+
+Запись защищена до возврата `Stmt.QueryContext`: вытеснение не может закрыть
+statement между его получением и началом запроса. Возвращённые `sql.Rows`
+продолжают читаться по обычным гарантиям `database/sql`. `ClosePreparedViews`
+освобождает statements, но не закрывает переданный пул.
+
+`PreparedReadCacheStats()` возвращает Capacity, Entries, Pending, Hits, Misses,
+Bypasses, Evictions и PrepareErrors без текста SQL и параметров. Это отдельный
+механизм от кэша результатов: он не хранит строки, не меняет TTL и не
+инвалидирует результаты при записи. `db/sqlcache.WrapDB` дополнительно
+сохраняет свой ограниченный набор неиспользуемых физических statements.

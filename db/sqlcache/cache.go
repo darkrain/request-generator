@@ -6,6 +6,7 @@
 package sqlcache
 
 import (
+	"container/heap"
 	"context"
 	"crypto/sha256"
 	"database/sql/driver"
@@ -27,6 +28,11 @@ type Stats struct {
 	Hits, Misses, Shared, Bypassed uint64
 	Entries                        int
 	Bytes                          int64
+	// Plan counters describe WrapDB's shared statement registry, including raw
+	// reads. They are separate from the caller's prepared-read/result caches.
+	// A prepare counts backend.PrepareContext, not PostgreSQL's per-connection
+	// lazy prepares or planner invocations.
+	PlanPrepares, PlanReuses, PlanEvictions, PlanErrors uint64
 }
 
 type bypassKey struct{}
@@ -37,9 +43,16 @@ func WithoutCache(ctx context.Context) context.Context {
 }
 
 type entry struct {
-	data    *snapshot
-	expires time.Time
+	data      *snapshot
+	expires   time.Time
+	refreshAt time.Time
+	expiry    *expiryItem
 }
+
+func (e entry) usable(now time.Time, ttl time.Duration) bool {
+	return now.Before(e.expires) && now.Before(e.data.completed.Add(ttl))
+}
+
 type flight struct {
 	done     chan struct{}
 	data     *snapshot
@@ -49,12 +62,14 @@ type flight struct {
 
 // Cache is shared by connections in one pool, never across databases.
 type Cache struct {
-	mu                             sync.RWMutex
-	options                        Options
-	entries                        map[[32]byte]entry
-	flights                        map[[32]byte]*flight
-	hits, misses, shared, bypassed atomic.Uint64
-	bytes                          int64
+	mu                                                  sync.RWMutex
+	options                                             Options
+	entries                                             map[[32]byte]entry
+	expirations                                         expiryQueue
+	flights                                             map[[32]byte]*flight
+	hits, misses, shared, bypassed                      atomic.Uint64
+	bytes                                               int64
+	planPrepares, planReuses, planEvictions, planErrors atomic.Uint64
 }
 
 func New(options Options) *Cache {
@@ -65,7 +80,9 @@ func (c *Cache) Stats() Stats {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return Stats{TTL: c.options.TTL, Hits: c.hits.Load(), Misses: c.misses.Load(),
-		Shared: c.shared.Load(), Bypassed: c.bypassed.Load(), Entries: len(c.entries), Bytes: c.bytes}
+		Shared: c.shared.Load(), Bypassed: c.bypassed.Load(), Entries: len(c.entries), Bytes: c.bytes,
+		PlanPrepares: c.planPrepares.Load(), PlanReuses: c.planReuses.Load(),
+		PlanEvictions: c.planEvictions.Load(), PlanErrors: c.planErrors.Load()}
 }
 
 // SetTTL changes the global window. Existing entries keep their original expiry;
@@ -73,11 +90,23 @@ func (c *Cache) Stats() Stats {
 // Writes never invalidate entries.
 func (c *Cache) SetTTL(ttl time.Duration) {
 	c.mu.Lock()
+	if c.options.TTL != ttl {
+		// The original deadline never moves. A shorter global TTL additionally
+		// caps every entry's age; rebuilding is needed only on a setting change.
+		for _, e := range c.entries {
+			e.expiry.deadline = minExpiry(e.expires, e.data.completed.Add(ttl))
+		}
+		heap.Init(&c.expirations)
+	}
 	c.options.TTL = ttl
 	c.mu.Unlock()
 }
 
 func key(query string, args []driver.NamedValue) ([32]byte, error) {
+	return keyForSQLHash(hashSQL(query), args)
+}
+
+func legacyKeyForSQLHash(queryHash [32]byte, args []driver.NamedValue) ([32]byte, error) {
 	type argument struct {
 		Name, Type string
 		Ordinal    int
@@ -93,7 +122,7 @@ func key(query string, args []driver.NamedValue) ([32]byte, error) {
 	}
 	// Hash exact SQL bytes separately: quoting/escaping a large SQL string as
 	// JSON made every cache hit allocate another copy of the whole statement.
-	queryHash, argsHash := hashSQL(query), sha256.Sum256(encoded)
+	argsHash := sha256.Sum256(encoded)
 	var combined [64]byte
 	copy(combined[:32], queryHash[:])
 	copy(combined[32:], argsHash[:])
@@ -119,6 +148,12 @@ func hashSQL(query string) [32]byte {
 }
 
 func (c *Cache) query(ctx context.Context, query string, args []driver.NamedValue, eligible bool, run func() (driver.Rows, error)) (driver.Rows, error) {
+	return c.queryWithHash(ctx, query, args, eligible, nil, run)
+}
+
+// A prepared statement retains only immutable SQL metadata. Arguments, session
+// state, cancellation and the current global result TTL are checked per call.
+func (c *Cache) queryWithHash(ctx context.Context, query string, args []driver.NamedValue, eligible bool, preparedHash *[32]byte, run func() (driver.Rows, error)) (driver.Rows, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -126,7 +161,13 @@ func (c *Cache) query(ctx context.Context, query string, args []driver.NamedValu
 		c.bypassed.Add(1)
 		return run()
 	}
-	k, keyErr := key(query, args)
+	var queryHash [32]byte
+	if preparedHash == nil {
+		queryHash = hashSQL(query)
+	} else {
+		queryHash = *preparedHash
+	}
+	k, keyErr := keyForSQLHash(queryHash, args)
 	if keyErr != nil {
 		c.bypassed.Add(1)
 		return run()
@@ -142,7 +183,7 @@ retry:
 	if opts.TTL > 0 {
 		if e, ok := c.entries[k]; ok {
 			now := time.Now()
-			if now.Before(e.expires) && now.Before(e.data.completed.Add(opts.TTL)) {
+			if e.usable(now, opts.TTL) && (now.Before(e.refreshAt) || c.flights[k] != nil) {
 				c.hits.Add(1)
 				c.mu.RUnlock()
 				return e.data.reader(), nil
@@ -167,7 +208,7 @@ retry:
 		return run()
 	}
 	now := time.Now()
-	if e, ok := c.entries[k]; ok && now.Before(e.expires) && now.Before(e.data.completed.Add(opts.TTL)) {
+	if e, ok := c.entries[k]; ok && e.usable(now, opts.TTL) && (now.Before(e.refreshAt) || c.flights[k] != nil) {
 		c.hits.Add(1)
 		c.mu.Unlock()
 		return e.data.reader(), nil
@@ -181,14 +222,9 @@ retry:
 		}
 		return rows, err
 	}
-	// Reclaim only when starting a real miss. Hundreds of waiters for one
-	// expired key must not each sweep the entire cache under its write lock.
-	for k, e := range c.entries {
-		if !now.Before(e.expires) || !now.Before(e.data.completed.Add(opts.TTL)) {
-			delete(c.entries, k)
-			c.bytes -= e.data.bytes
-		}
-	}
+	// Only expired entries need work. Live entries are not scanned under the
+	// shared write lock on every miss.
+	c.reclaimExpired(now)
 	if len(c.flights) >= opts.MaxEntries {
 		c.bypassed.Add(1)
 		c.mu.Unlock()
@@ -198,6 +234,7 @@ retry:
 	c.flights[k] = f
 	c.misses.Add(1)
 	c.mu.Unlock()
+	started := time.Now()
 	rows, err := run()
 	var data *snapshot
 	if err == nil {
@@ -207,10 +244,37 @@ retry:
 	delete(c.flights, k)
 	f.data, f.err = data, err
 	f.canceled = err != nil && ctx.Err() != nil
+	var fallback driver.Rows
+	if err != nil && !f.canceled && c.options.TTL > 0 {
+		if previous, ok := c.entries[k]; ok && previous.usable(time.Now(), c.options.TTL) {
+			// An opportunistic refresh failure must not break a still-valid hit
+			// or trigger retries on every request. Keep the original deadline;
+			// after it passes the ordinary miss/error behavior applies.
+			previous.refreshAt = previous.expires
+			c.entries[k] = previous
+			fallback = previous.data.reader()
+		}
+	}
 	if err == nil && data != nil {
-		if len(c.entries) < opts.MaxEntries && c.bytes+data.bytes <= opts.MaxBytes {
-			c.entries[k] = entry{data, data.completed.Add(opts.TTL)}
-			c.bytes += data.bytes
+		entries, retained := len(c.entries), c.bytes
+		if previous, ok := c.entries[k]; ok {
+			entries--
+			retained -= previous.data.bytes
+		}
+		if entries < opts.MaxEntries && retained+data.bytes <= opts.MaxBytes {
+			// One foreground caller refreshes shortly before expiry. Concurrent
+			// callers may still read the OLD result only inside its original TTL.
+			// No driver connection escapes the caller and no stale window is added.
+			// Base the head start on observed read cost, capped at 1/4 of the TTL.
+			expires := data.completed.Add(opts.TTL)
+			ahead := min(2*data.completed.Sub(started), opts.TTL/4)
+			if previous, ok := c.entries[k]; ok {
+				heap.Remove(&c.expirations, previous.expiry.index)
+			}
+			expiry := &expiryItem{key: k, deadline: minExpiry(expires, data.completed.Add(c.options.TTL))}
+			heap.Push(&c.expirations, expiry)
+			c.entries[k] = entry{data: data, expires: expires, refreshAt: expires.Add(-ahead), expiry: expiry}
+			c.bytes = retained + data.bytes
 		} else {
 			c.bypassed.Add(1)
 		}
@@ -221,6 +285,9 @@ retry:
 	// Waking a large group can reschedule the leader. Unrelated cache hits
 	// must be able to proceed while the waiters become runnable.
 	close(f.done)
+	if fallback != nil {
+		return fallback, nil
+	}
 	return rows, err
 }
 

@@ -717,21 +717,25 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			size = action.Maxsize
 		}
 		isCSV := int64QueryParam(c, "csv", 0)
-		filter := generator.effectiveListFilters(c, module, action, lang)
+		addFilters := c.Query("addFilters")
+		filter := generator.listFilterRegistry(c, module, action, lang, addFilters == "true")
 		filters := generator.normalizeFilters(c.QueryMap("filter"), filter, lang)
 		searchText := c.Query("search")
-		addFilters := c.Query("addFilters")
 		addHeads := c.Query("addHeads")
 
 		columns := action.GetColumns(c)
 
-		realFields := make([]fields.ModuleField, 0, 10)
+		// Resolve each request-owned field while collecting it, avoiding a second
+		// full copy of the (large) ModuleField slice.
+		realFields := make([]fields.ModuleField, 0, len(columns))
 		for _, realField := range module.Fields {
 			if containsColumn(columns, realField.Column) {
-				realFields = append(realFields, realField)
+				realFields = append(realFields, realField.ResolveProjection(c))
 			}
 		}
-		realFields = fields.ResolveProjections(c, realFields)
+		if len(realFields) == 0 {
+			realFields = nil
+		}
 
 		var where pg.BoolExpression
 		if whereFn := actions.ResolveRoleWhere(module.RoleWhere, role); whereFn != nil {
@@ -783,7 +787,15 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 
 		tc := generator.buildTranslationContext(module)
 
-		results, count, err := db.WithRequestContext(generator.db(module), c.Request.Context()).List(
+		executor := db.WithRequestContext(generator.db(module), c.Request.Context())
+		if module.ReadCTEs != nil {
+			executor, err = db.WithReadCTEs(executor, module.ReadCTEs(c))
+			if err != nil {
+				response.ErrorResponse(l, c, http.StatusInternalServerError, err.Error(), nil)
+				return
+			}
+		}
+		results, count, err := executor.List(
 			l,
 			module.Table,
 			module.PrimaryKey,
@@ -828,11 +840,11 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
+		// RenderFor validates the complete producer result. Only list metadata
+		// is sent here: resolving resources in discarded forms/records can
+		// recursively build unrelated modules on every list request.
+		render = renderer.Universal{List: render.List, ResourceGrid: render.ResourceGrid}
 		if err := generator.resolveListSummaryResource(c, &render, role); err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
-			return
-		}
-		if err := generator.resolveFormSectionResources(c, &render, role); err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
@@ -1215,6 +1227,7 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
 		}
+		render = renderer.Universal{Form: render.Form}
 		if err := generator.resolveFormSectionResources(c, &render, actions.GetRoleFromContext(c)); err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
@@ -1280,13 +1293,17 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 
 		columns := action.GetColumns(c)
 
-		realFields := make([]fields.ModuleField, 0, 10)
+		// Resolve each request-owned field while collecting it, avoiding a second
+		// full copy of the (large) ModuleField slice.
+		realFields := make([]fields.ModuleField, 0, len(columns))
 		for _, realField := range module.Fields {
 			if containsColumn(columns, realField.Column) {
-				realFields = append(realFields, realField)
+				realFields = append(realFields, realField.ResolveProjection(c))
 			}
 		}
-		realFields = fields.ResolveProjections(c, realFields)
+		if len(realFields) == 0 {
+			realFields = nil
+		}
 
 		pkWhere := pg.RawBool(
 			fmt.Sprintf(`%s."%s" = #val`, module.Table.Alias(), whereKey),
@@ -1313,7 +1330,16 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 
 		tc := generator.buildTranslationContext(module)
 
-		result, err := db.WithRequestContext(generator.db(module), c.Request.Context()).View(l, module.Table, module.PrimaryKey, realFields, where, joins, tc)
+		executor := db.WithRequestContext(generator.db(module), c.Request.Context())
+		if module.ReadCTEs != nil {
+			var err error
+			executor, err = db.WithReadCTEs(executor, module.ReadCTEs(c))
+			if err != nil {
+				response.ErrorResponse(l, c, http.StatusInternalServerError, err.Error(), nil)
+				return
+			}
+		}
+		result, err := executor.View(l, module.Table, module.PrimaryKey, realFields, where, joins, tc)
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
@@ -1375,6 +1401,14 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 		if err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
 			return
+		}
+		switch pageType {
+		case renderer.PageTypeForm:
+			render = renderer.Universal{Form: render.Form}
+		case renderer.PageTypeRecord:
+			render = renderer.Universal{Record: render.Record}
+		default:
+			render = renderer.Universal{}
 		}
 		if err := generator.resolveFormSectionResources(c, &render, role); err != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
@@ -1607,6 +1641,15 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 			return
 		}
 
+		readExecutor := db.WithRequestContext(generator.db(module), c.Request.Context())
+		if module.ReadCTEs != nil {
+			readExecutor, err = db.WithReadCTEs(readExecutor, module.ReadCTEs(c))
+			if err != nil {
+				response.ErrorResponse(l, c, http.StatusInternalServerError, err.Error(), nil)
+				return
+			}
+		}
+
 		// Return view response if ViewAfterUpdate is enabled (default true) and ViewAction exists
 		useView := action.ViewAfterUpdate == nil || *action.ViewAfterUpdate
 		if useView {
@@ -1629,7 +1672,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 					viewJoins = append(roleJoins, viewJoins...)
 				}
 
-				viewResult, viewErr := generator.db(module).View(l, module.Table, module.PrimaryKey, viewFields, where, viewJoins, tc)
+				viewResult, viewErr := readExecutor.View(l, module.Table, module.PrimaryKey, viewFields, where, viewJoins, tc)
 				if viewErr == nil {
 					response.Response(l, c, viewResult)
 					action.AfterRequest(c)
@@ -1640,7 +1683,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 		}
 
 		// Fallback: re-fetch with update columns
-		fallbackResult, fallbackErr := generator.db(module).View(l, module.Table, module.PrimaryKey, fields.ResolveProjections(c, realFields), where, nil, tc)
+		fallbackResult, fallbackErr := readExecutor.View(l, module.Table, module.PrimaryKey, fields.ResolveProjections(c, realFields), where, nil, tc)
 		if fallbackErr != nil {
 			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, nil)
 			return

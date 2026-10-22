@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +38,7 @@ type DB struct {
 	preparedViews   *preparedViewCache
 	listSelectCache *listSelectCache
 	readContext     context.Context
+	readCTEs        []pg.CommonTableExpression
 }
 type Tx struct {
 	sql *sql.Tx
@@ -329,7 +331,8 @@ func (db *DB) List(
 	pkName := primaryKey.Name()
 
 	// Build projections: primary key + field columns + join aggregations
-	projections := []pg.Projection{primaryKey}
+	projections := make([]pg.Projection, 1, 1+len(moduleFields)+len(joins))
+	projections[0] = primaryKey
 	metas := make([]fieldMeta, len(moduleFields))
 
 	for i, field := range moduleFields {
@@ -387,7 +390,16 @@ func (db *DB) List(
 
 	// Filters
 	if len(filter) > 0 {
-		for key, value := range filter {
+		// Exact SQL and ordered arguments identify both prepared statements and
+		// cached results. Map iteration must not create several cache entries
+		// for the same conjunction.
+		keys := make([]string, 0, len(filter))
+		for key := range filter {
+			keys = append(keys, key)
+		}
+		slices.Sort(keys)
+		for _, key := range keys {
+			value := filter[key]
 			parts := strings.Split(key, ".")
 			colName := key
 			tblRef := tableRef
@@ -541,8 +553,8 @@ func (db *DB) List(
 		countStmt = countStmt.WHERE(pg.AND(conditions...))
 	}
 
-	query, args := stmt.Sql()
-	countQuery, countArgs := countStmt.Sql()
+	query, args := db.readSQL(stmt)
+	countQuery, countArgs := db.readSQL(countStmt)
 
 	db.debugQuery(log, "[DEBUG] LIST QUERY: ", query, args)
 	db.debugQuery(log, "[DEBUG] LIST COUNT QUERY: ", countQuery, countArgs)
@@ -556,25 +568,47 @@ func (db *DB) List(
 	}
 	defer rows.Close()
 
-	results := make([]interface{}, 0, 10)
+	// Scan destinations and result keys are known before reading the rows.
+	// Reserve their final capacity instead of repeatedly growing each row.
+	columnCount := 1 + len(metas)
+	for _, join := range joins {
+		if len(join.Columns) != 0 {
+			columnCount++
+		}
+	}
+	results := make([]interface{}, 0, min(max(size, 0), 256))
+	var columnValues []interface{}
+	var convertedColumns []int
+	// Built-in nullable scanners overwrite their value on every Scan, and
+	// their Value methods return independent scalars. Parsed JSON, translations
+	// and joins are decoded into fresh results before the next row is read.
 	for rows.Next() {
-		columnValues := make([]interface{}, 0, 10)
-		var primaryValue interface{}
-		columnValues = append(columnValues, &primaryValue)
-
-		for i, meta := range metas {
-			if meta.translatable {
-				columnValues = append(columnValues, &sql.NullString{})
-			} else {
-				columnValues = append(columnValues, moduleFields[i].NewScanValue())
+		if columnValues == nil {
+			// Allocate only when the list has a row, not for empty results.
+			columnValues = make([]interface{}, 0, columnCount)
+			var primaryValue interface{}
+			columnValues = append(columnValues, &primaryValue)
+			for i, meta := range metas {
+				if meta.translatable {
+					columnValues = append(columnValues, &sql.NullString{})
+				} else if moduleFields[i].ResultValueConverter != nil {
+					// A producer converter may retain its destination pointer.
+					// Preserve a fresh value per row for that callback.
+					convertedColumns = append(convertedColumns, i)
+					columnValues = append(columnValues, nil)
+				} else {
+					columnValues = append(columnValues, moduleFields[i].NewScanValue())
+				}
+			}
+			for _, join := range joins {
+				if len(join.Columns) != 0 {
+					var columnValue json.RawMessage
+					columnValues = append(columnValues, &columnValue)
+				}
 			}
 		}
-		for _, join := range joins {
-			if len(join.Columns) == 0 {
-				continue
-			}
-			var columnValue json.RawMessage
-			columnValues = append(columnValues, &columnValue)
+		for _, i := range convertedColumns {
+			columnValues[i+1] = moduleFields[i].NewScanValue()
 		}
 
 		err = rows.Scan(columnValues...)
@@ -583,7 +617,7 @@ func (db *DB) List(
 			return nil, 0, err
 		}
 
-		currentResult := make(map[string]interface{})
+		currentResult := make(map[string]interface{}, columnCount)
 		offset := 1
 		for index, meta := range metas {
 			if meta.translatable {
@@ -620,55 +654,10 @@ func (db *DB) List(
 				continue
 			}
 
-			var joinValues [][]interface{}
-			err := json.Unmarshal(*converted, &joinValues)
+			joinResultUnique, err := decodeListJoin(*converted, join.Columns)
 			if err != nil {
 				log.Errorln("LIST JOIN ERR: ", err)
 				continue
-			}
-
-			checkString := ""
-			for _, val := range joinValues {
-				if val == nil {
-					continue
-				}
-				for _, v := range val {
-					if v == nil {
-						continue
-					}
-					checkString = fmt.Sprintf("%v%v", checkString, v)
-				}
-			}
-
-			joinResults := make([]map[string]interface{}, 0, 10)
-			if len(checkString) > 0 {
-				for _, joinValue := range joinValues {
-					resultMap := make(map[string]interface{})
-					for idx, col := range join.Columns {
-						resultMap[col.Name()] = joinValue[idx]
-					}
-					joinResults = append(joinResults, resultMap)
-				}
-			}
-
-			joinStringsArray := make([]string, 0, 10)
-			for _, res := range joinResults {
-				jsonRes, err := json.Marshal(res)
-				if err != nil {
-					continue
-				}
-				joinStringsArray = append(joinStringsArray, string(jsonRes))
-			}
-			resultUnique := removeDuplicate(joinStringsArray)
-
-			joinResultUnique := make([]map[string]interface{}, 0, 10)
-			for _, res := range resultUnique {
-				var mapResult map[string]interface{}
-				err := json.Unmarshal([]byte(res), &mapResult)
-				if err != nil {
-					continue
-				}
-				joinResultUnique = append(joinResultUnique, mapResult)
 			}
 
 			currentResult[join.ResultArrayName] = joinResultUnique
@@ -682,7 +671,10 @@ func (db *DB) List(
 	}
 	rows.Close()
 
-	result = append(result, results...)
+	// Keep nil for an empty result, as before, without copying nonempty rows.
+	if len(results) > 0 {
+		result = results
+	}
 
 	// COUNT uses the same request context and bounded cache as the list query.
 	countResult, err := db.queryList(countQuery, countArgs...)
@@ -764,7 +756,8 @@ func (db *DB) View(
 	tableRef := table.TableName()
 	pkName := primaryKey.Name()
 
-	projections := []pg.Projection{primaryKey}
+	projections := make([]pg.Projection, 1, 1+len(moduleFields)+len(joins))
+	projections[0] = primaryKey
 	metas := make([]fieldMeta, len(moduleFields))
 
 	for i, field := range moduleFields {
@@ -793,7 +786,7 @@ func (db *DB) View(
 	}
 	stmt = stmt.GROUP_BY(groupByPrimaryAndJoinedFields(primaryKey, moduleFields, tableRef)...).LIMIT(1)
 
-	query, args := stmt.Sql()
+	query, args := db.readSQL(stmt)
 	db.debugQuery(log, "[DEBUG] VIEW QUERY: ", query, args)
 
 	rows, err := db.queryView(query, args...)
@@ -1199,16 +1192,4 @@ func (db *DB) RawRequest(log *log.Entry, query string, params ...interface{}) (*
 
 func (db *DB) RawDB() *sql.DB {
 	return db.sql
-}
-
-func removeDuplicate(sliceList []string) []string {
-	allKeys := make(map[string]bool)
-	var list []string
-	for _, item := range sliceList {
-		if _, value := allKeys[item]; !value {
-			allKeys[item] = true
-			list = append(list, item)
-		}
-	}
-	return list
 }

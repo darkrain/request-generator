@@ -1,6 +1,7 @@
 package sqlcache
 
 import (
+	"container/list"
 	"context"
 	"database/sql"
 	"database/sql/driver"
@@ -28,12 +29,22 @@ type poolConnector struct {
 	cache      *Cache
 	mu         sync.Mutex
 	statements map[string]*poolStatement
+	idle       list.List
+	closed     bool
 }
+
+// Logical cache connections can churn independently of the physical pool.
+// Retain a bounded set of unused statements so that this does not force SQL
+// parsing and planning again. Active references are never evicted.
+const maxIdlePoolStatements = 64
+
 type poolStatement struct {
+	sql   statementSQL
 	ready chan struct{}
 	stmt  *sql.Stmt
 	err   error
 	refs  int
+	idle  *list.Element
 }
 
 func (p *poolConnector) Connect(ctx context.Context) (driver.Conn, error) {
@@ -54,6 +65,11 @@ func (poolDriver) Open(string) (driver.Conn, error) { return nil, errors.New("sq
 func (p *poolConnector) prepare(ctx context.Context, query string) (*poolStatement, error) {
 	p.mu.Lock()
 	if s := p.statements[query]; s != nil {
+		p.cache.planReuses.Add(1)
+		if s.idle != nil {
+			p.idle.Remove(s.idle)
+			s.idle = nil
+		}
 		s.refs++
 		p.mu.Unlock()
 		select {
@@ -71,9 +87,14 @@ func (p *poolConnector) prepare(ctx context.Context, query string) (*poolStateme
 	s := &poolStatement{ready: make(chan struct{}), refs: 1}
 	p.statements[query] = s
 	p.mu.Unlock()
+	p.cache.planPrepares.Add(1)
 	stmt, err := p.backend.PrepareContext(ctx, query)
+	if err != nil {
+		p.cache.planErrors.Add(1)
+	}
+	metadata := analyzeStatement(query)
 	p.mu.Lock()
-	s.stmt, s.err = stmt, err
+	s.stmt, s.err, s.sql = stmt, err, metadata
 	close(s.ready)
 	p.mu.Unlock()
 	if err != nil {
@@ -85,14 +106,47 @@ func (p *poolConnector) prepare(ctx context.Context, query string) (*poolStateme
 func (p *poolConnector) release(query string, s *poolStatement) {
 	p.mu.Lock()
 	s.refs--
-	last := s.refs == 0
-	if last && p.statements[query] == s {
-		delete(p.statements, query)
+	var expired *sql.Stmt
+	if s.refs == 0 {
+		if p.closed || s.err != nil {
+			delete(p.statements, query)
+			expired = s.stmt
+		} else {
+			s.idle = p.idle.PushBack(query)
+			if p.idle.Len() > maxIdlePoolStatements {
+				oldest := p.idle.Front()
+				key := oldest.Value.(string)
+				expired = p.statements[key].stmt
+				delete(p.statements, key)
+				p.idle.Remove(oldest)
+				p.cache.planEvictions.Add(1)
+			}
+		}
 	}
 	p.mu.Unlock()
-	if last && s.stmt != nil {
-		_ = s.stmt.Close()
+	if expired != nil {
+		_ = expired.Close()
 	}
+}
+
+// database/sql invokes io.Closer on its connector when the logical DB closes.
+// In-flight references finish normally and release their statements afterwards.
+func (p *poolConnector) Close() error {
+	p.mu.Lock()
+	p.closed = true
+	var statements []*sql.Stmt
+	for e := p.idle.Front(); e != nil; e = e.Next() {
+		key := e.Value.(string)
+		statements = append(statements, p.statements[key].stmt)
+		delete(p.statements, key)
+	}
+	p.idle.Init()
+	p.mu.Unlock()
+	var result error
+	for _, stmt := range statements {
+		result = errors.Join(result, stmt.Close())
+	}
+	return result
 }
 
 type poolConn struct {
@@ -127,14 +181,14 @@ func sqlArguments(args []driver.NamedValue) []any {
 	}
 	return values
 }
-func (c *poolConn) query(ctx context.Context, query string, args []driver.NamedValue, prepared *sql.Stmt, eligible bool) (driver.Rows, error) {
+func (c *poolConn) query(ctx context.Context, query string, args []driver.NamedValue, prepared *sql.Stmt, eligible bool, preparedHash *[32]byte) (driver.Rows, error) {
 	if !eligible {
 		if err := c.pin(ctx); err != nil {
 			return nil, err
 		}
 		c.track(query)
 	}
-	return c.pool.cache.query(ctx, query, args, eligible && c.pinned == nil && c.tx == nil, func() (driver.Rows, error) {
+	return c.pool.cache.queryWithHash(ctx, query, args, eligible && c.pinned == nil && c.tx == nil, preparedHash, func() (driver.Rows, error) {
 		values := sqlArguments(args)
 		var rows *sql.Rows
 		var err error
@@ -146,7 +200,16 @@ func (c *poolConn) query(ctx context.Context, query string, args []driver.NamedV
 		case prepared != nil:
 			rows, err = prepared.QueryContext(ctx, values...)
 		default:
-			rows, err = c.pool.backend.QueryContext(ctx, query, values...)
+			// Raw reads use the same bounded server-plan retention as explicitly
+			// prepared reads. A result-cache miss must not parse and plan the
+			// entire statement again. Pinned/session reads and transactions have
+			// already taken their dedicated paths above.
+			statement, prepareErr := c.pool.prepare(ctx, query)
+			if prepareErr != nil {
+				return nil, prepareErr
+			}
+			defer c.pool.release(query, statement)
+			rows, err = statement.stmt.QueryContext(ctx, values...)
 		}
 		if err != nil {
 			return nil, err
@@ -155,7 +218,7 @@ func (c *poolConn) query(ctx context.Context, query string, args []driver.NamedV
 	})
 }
 func (c *poolConn) QueryContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Rows, error) {
-	return c.query(ctx, q, args, nil, readOnly(q))
+	return c.query(ctx, q, args, nil, readOnly(q), nil)
 }
 func (c *poolConn) ExecContext(ctx context.Context, q string, args []driver.NamedValue) (driver.Result, error) {
 	if err := c.pin(ctx); err != nil {
@@ -182,12 +245,12 @@ func (c *poolConn) PrepareContext(ctx context.Context, q string) (driver.Stmt, e
 		if err != nil {
 			return nil, err
 		}
-		return &logicalStatement{conn: c, query: q, shared: s, eligible: readOnly(q)}, nil
+		return &logicalStatement{conn: c, query: q, shared: s, sql: s.sql}, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	return &logicalStatement{conn: c, query: q, owned: stmt, eligible: readOnly(q)}, nil
+	return &logicalStatement{conn: c, query: q, owned: stmt, sql: analyzeStatement(q)}, nil
 }
 func (c *poolConn) Begin() (driver.Tx, error) {
 	return c.BeginTx(context.Background(), driver.TxOptions{})
@@ -243,11 +306,11 @@ func (c *poolConn) Ping(ctx context.Context) error {
 func (c *poolConn) CheckNamedValue(*driver.NamedValue) error { return driver.ErrSkip }
 
 type logicalStatement struct {
-	eligible bool
-	conn     *poolConn
-	query    string
-	shared   *poolStatement
-	owned    *sql.Stmt
+	sql    statementSQL
+	conn   *poolConn
+	query  string
+	shared *poolStatement
+	owned  *sql.Stmt
 }
 
 func (s *logicalStatement) Close() error {
@@ -272,7 +335,7 @@ func (s *logicalStatement) QueryContext(ctx context.Context, args []driver.Named
 	if s.shared != nil {
 		prepared = s.shared.stmt
 	}
-	return s.conn.query(ctx, s.query, args, prepared, s.eligible)
+	return s.conn.query(ctx, s.query, args, prepared, s.sql.eligible, &s.sql.hash)
 }
 func (s *logicalStatement) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
 	return s.conn.ExecContext(ctx, s.query, args)

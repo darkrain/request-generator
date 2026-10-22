@@ -83,21 +83,35 @@ parentLoop:
 // effectiveListFilters is the sole typed registry for a list action. Virtual
 // definitions intentionally override the same logical key for that action.
 func (generator *Generator) effectiveListFilters(c *gin.Context, module *BaseModule, action actions.ListModuleAction, lang locale.Lang) map[string]fields.ModuleFilterField {
+	return generator.listFilterRegistry(c, module, action, lang, true)
+}
+
+// Query execution needs types, checks and columns even when filter metadata
+// is not requested. Resolve options and translated labels only for responses
+// that actually include them; discovery still uses the complete registry.
+func (generator *Generator) listFilterRegistry(c *gin.Context, module *BaseModule, action actions.ListModuleAction, lang locale.Lang, metadata bool) map[string]fields.ModuleFilterField {
 	allowedColumns := append([]pg.Column{}, action.Filter...)
 	if action.FilterFunc != nil {
 		allowedColumns = append(allowedColumns, action.FilterFunc(c)...)
 	}
 	registry := make(map[string]fields.ModuleFilterField)
 	role := string(actions.GetRoleFromContext(c))
-	for _, field := range module.Fields {
+	for i := range module.Fields {
+		field := &module.Fields[i]
 		if field.FilterCondition != nil && !field.FilterCondition(c) || !containsColumn(allowedColumns, field.Column) {
 			continue
 		}
-		registry[field.ColumnName()] = fields.ModuleFilterField{
-			Column: field.Column, Title: generator.Translate(lang, field.Title), Type: field.Type, FormType: field.FormType,
-			Example: field.Example, AllLabel: generator.Translate(lang, field.AllLabel), Options: generator.fieldOptions(c, field, role, lang),
+		definition := fields.ModuleFilterField{
+			Column: field.Column, Type: field.Type, FormType: field.FormType,
+			Example:       field.Example,
 			OptionsSource: field.OptionsSource, Check: field.Check, Convert: field.Convert,
 		}
+		if metadata {
+			definition.Title = generator.Translate(lang, field.Title)
+			definition.AllLabel = generator.Translate(lang, field.AllLabel)
+			definition.Options = generator.fieldOptions(c, *field, role, lang)
+		}
+		registry[field.ColumnName()] = definition
 	}
 	for _, field := range action.VirtualFilters {
 		if field.FilterCondition != nil && !field.FilterCondition(c) {
@@ -110,13 +124,15 @@ func (generator *Generator) effectiveListFilters(c *gin.Context, module *BaseMod
 		if key == "" {
 			continue
 		}
-		options := append([]fields.ModuleFieldOptions(nil), field.Options...)
-		for i := range options {
-			options[i].Label = generator.Translate(lang, options[i].Label)
+		if metadata {
+			options := append([]fields.ModuleFieldOptions(nil), field.Options...)
+			for i := range options {
+				options[i].Label = generator.Translate(lang, options[i].Label)
+			}
+			field.Title = generator.Translate(lang, field.Title)
+			field.AllLabel = generator.Translate(lang, field.AllLabel)
+			field.Options = options
 		}
-		field.Title = generator.Translate(lang, field.Title)
-		field.AllLabel = generator.Translate(lang, field.AllLabel)
-		field.Options = options
 		registry[key] = field
 	}
 	return registry

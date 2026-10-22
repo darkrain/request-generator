@@ -43,9 +43,8 @@ func TestPreparedViewsBoundedReuseAndFailures(t *testing.T) {
 	stmt.ExpectQuery().WithArgs(56).WillReturnError(queryErr)
 	_, err = db.queryView(query, 56)
 	require.ErrorIs(t, err, queryErr)
-	// A new shape beyond the cap executes normally, without preparing or
-	// evicting the existing statement.
-	mock.ExpectQuery("SELECT 2").WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(2))
+	// A later shape can replace an idle statement once the cache is full.
+	mock.ExpectPrepare("SELECT 2").WillBeClosed().ExpectQuery().WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(2))
 	rows, err := db.queryView("SELECT 2")
 	require.NoError(t, err)
 	require.NoError(t, rows.Close())
