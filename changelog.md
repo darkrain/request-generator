@@ -4,6 +4,33 @@
 
 ### Added
 
+- **`NavigationEntry.Tag` (`navigation[].tag`, theGHub1/api#531).** Короткое
+  слово рядом с пунктом меню — например, «soon» у раздела, который скоро
+  откроется. Ключ перевода; в `/api/config` приходит переведённым, у пункта
+  без него поля нет.
+
+- **Фильтры галереи (theGHub1/api#514).** `MediaGalleryLabels.FilterVisibility`
+  (`filter_visibility`), `FilterType` (`filter_type`) и `FilterPhoto`
+  (`filter_photo`): галерея читается выбором видимости и выбором типа вместо
+  частей. `FormSection.MediaBadgeFilter` (`media_badge_filter`) — отбор по
+  отметкам элементов (`label`, `all_label`, `options[{badge_id, label, icon,
+  tone}]`), можно выбрать несколько; пустые поля и повтор `badge_id`
+  отклоняются, подписи локализуются.
+
+- **`FormSection.MediaSelection` (`media_selection`)** — галерея даёт выбрать
+  несколько элементов сразу и сделать с ними одно действие: `actions` (что
+  предлагается для выбранного), `limit`, подписи `start_label`,
+  `cancel_label`, `count_label` (`{count}`), `limit_label` и пояснение `note`.
+  Элемент называет действия, для которых его можно выбрать, в
+  `MediaGalleryItem.SelectActions` (`select_actions`); элемент без них не
+  выбирается. Действие без `id`, повтор `id`, отрицательный `limit` и
+  `select_actions`, которого нет среди `actions`, отклоняются; подписи
+  локализуются, действия входят в `Universal.Actions()` (theGHub1/api#488).
+
+- **`MediaGalleryItem.Tone` (`tone`)** — тон рамки плитки галереи: фото, ещё
+  не прошедшее модерацию, обведено жёлтым, с плашками или без
+  (theGHub1/api#487).
+
 - **`FieldPresentation.MinFieldNotice` (`min_field_notice`)** — что сказать
   под полем, когда control поднял введенное число до `min_field`: цена заказа
   ниже ставки модели становится ставкой, и человек видит почему
