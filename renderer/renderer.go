@@ -157,6 +157,12 @@ func (r Universal) Validate() error {
 			if err := validateMediaVisibilityStates(fmt.Sprintf("form section %q", section.ID), section.MediaVisibilityStates); err != nil {
 				return err
 			}
+			if err := validateMediaSelection(fmt.Sprintf("form section %q", section.ID), section.MediaSelection, section.MediaItems); err != nil {
+				return err
+			}
+			if err := validateMediaBadgeFilter(fmt.Sprintf("form section %q", section.ID), section.MediaBadgeFilter); err != nil {
+				return err
+			}
 			if section.Collection == nil {
 				if err := validateMediaActions(section.MediaActions); err != nil {
 					return err
@@ -899,6 +905,83 @@ func validateMediaActions(actions *MediaGalleryActions) error {
 	for i := range actions.Under {
 		if err := validateAction("media under", &actions.Under[i]); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// MediaGalleryBadgeFilter narrows a gallery to the items that carry one of
+// the chosen badges. Nothing is chosen at first, and the whole gallery shows
+// under AllLabel; a choice shows the items carrying any of the chosen
+// badges, and letting the last one go shows the whole gallery again.
+type MediaGalleryBadgeFilter struct {
+	// Label names the filter as a whole, for a reader of the page.
+	Label    string                          `json:"label,omitempty"`
+	AllLabel string                          `json:"all_label"`
+	Options  []MediaGalleryBadgeFilterOption `json:"options"`
+}
+
+// MediaGalleryBadgeFilterOption is one badge an item may be chosen by.
+type MediaGalleryBadgeFilterOption struct {
+	BadgeID string `json:"badge_id"`
+	Label   string `json:"label"`
+	Icon    string `json:"icon,omitempty"`
+	Tone    string `json:"tone,omitempty"`
+}
+
+// validateMediaBadgeFilter holds a badge filter to what a consumer can draw:
+// named, with options of their own badges and words.
+func validateMediaBadgeFilter(scope string, filter *MediaGalleryBadgeFilter) error {
+	if filter == nil {
+		return nil
+	}
+	if filter.AllLabel == "" {
+		return fmt.Errorf("renderer.Universal: %s media badge filter must define all_label", scope)
+	}
+	if len(filter.Options) == 0 {
+		return fmt.Errorf("renderer.Universal: %s media badge filter must define options", scope)
+	}
+	seen := make(map[string]struct{}, len(filter.Options))
+	for _, option := range filter.Options {
+		if option.BadgeID == "" || option.Label == "" {
+			return fmt.Errorf("renderer.Universal: %s media badge filter option must define badge_id and label", scope)
+		}
+		if _, exists := seen[option.BadgeID]; exists {
+			return fmt.Errorf("renderer.Universal: %s media badge filter option %q is declared twice", scope, option.BadgeID)
+		}
+		seen[option.BadgeID] = struct{}{}
+	}
+	return nil
+}
+
+// validateMediaSelection holds a gallery's selection to what a consumer can
+// draw: every action is named, named once and valid, the limit is not
+// negative, and an item is picked only for actions the selection declares.
+func validateMediaSelection(scope string, selection *MediaGallerySelection, items []MediaGalleryItem) error {
+	declared := map[string]struct{}{}
+	if selection != nil {
+		if selection.Limit < 0 {
+			return fmt.Errorf("renderer.Universal: %s media selection limit must not be negative", scope)
+		}
+		for index := range selection.Actions {
+			action := &selection.Actions[index]
+			if action.ID == "" {
+				return fmt.Errorf("renderer.Universal: %s media selection action must define id", scope)
+			}
+			if _, exists := declared[action.ID]; exists {
+				return fmt.Errorf("renderer.Universal: %s media selection action %q is declared twice", scope, action.ID)
+			}
+			declared[action.ID] = struct{}{}
+			if err := validateAction(scope+" media selection", action); err != nil {
+				return err
+			}
+		}
+	}
+	for index := range items {
+		for _, id := range items[index].SelectActions {
+			if _, exists := declared[id]; !exists {
+				return fmt.Errorf("renderer.Universal: %s media item %q is picked for selection action %q the gallery does not declare", scope, items[index].ID, id)
+			}
 		}
 	}
 	return nil
@@ -2297,8 +2380,15 @@ type FormSection struct {
 	// a role that has a shape of its own - a round avatar, most of all.
 	MediaCropper *MediaCropperConfig `json:"media_cropper,omitempty"`
 	MediaPresets *MediaPresetsConfig `json:"media_presets,omitempty"`
-	Prompts      *PromptList         `json:"prompts,omitempty"`
-	DateRange    *DateRangeConfig    `json:"date_range,omitempty"`
+	// MediaSelection lets several items of this gallery be picked at once and
+	// says what the pick can be sent to. A gallery that declares none is
+	// worked with one item at a time, as every gallery was before.
+	MediaSelection *MediaGallerySelection `json:"media_selection,omitempty"`
+	// MediaBadgeFilter narrows the gallery to the items that carry one of
+	// the badges chosen: where a picture is published, most of all.
+	MediaBadgeFilter *MediaGalleryBadgeFilter `json:"media_badge_filter,omitempty"`
+	Prompts          *PromptList              `json:"prompts,omitempty"`
+	DateRange        *DateRangeConfig         `json:"date_range,omitempty"`
 	// Info explains the section beside its title: what its controls do that
 	// the words on them cannot say.
 	Info *InfoHint `json:"info,omitempty"`
@@ -2488,6 +2578,13 @@ type FieldMatrixCell struct {
 	// and cannot be changed. A channel turned off for every notification
 	// reads off in the row of each type at once (theGHub1/api#405).
 	EnabledIf *Condition `json:"enabled_if,omitempty"`
+	// ConnectedField names a value of the record that says this device is
+	// connected to what the cell switches on - a browser holding its push
+	// subscription. While it is false the cell reads off, whatever the field
+	// holds; switched on, the cell runs ConnectAction first and turns the
+	// field on only once that has connected the device (theGHub1/api#546).
+	ConnectedField string  `json:"connected_field,omitempty"`
+	ConnectAction  *Action `json:"connect_action,omitempty"`
 }
 
 // FieldMatrixDataSource connects a table layout to a standard list/update
@@ -2614,6 +2711,17 @@ func validateFieldMatrixCells(sectionID string, rowIndex, heads int, hasLabel bo
 		if cell.EnabledIf != nil && cell.Field == "" {
 			return fmt.Errorf("renderer.Universal: matrix section %q row %d cell %d enabled condition requires field", sectionID, rowIndex, cellIndex)
 		}
+		if (cell.ConnectedField == "") != (cell.ConnectAction == nil) {
+			return fmt.Errorf("renderer.Universal: matrix section %q row %d cell %d needs both connected_field and connect_action", sectionID, rowIndex, cellIndex)
+		}
+		if cell.ConnectAction != nil {
+			if cell.Field == "" {
+				return fmt.Errorf("renderer.Universal: matrix section %q row %d cell %d connection requires field", sectionID, rowIndex, cellIndex)
+			}
+			if err := cell.ConnectAction.Validate(); err != nil {
+				return fmt.Errorf("renderer.Universal: matrix section %q row %d cell %d connect_action: %w", sectionID, rowIndex, cellIndex, err)
+			}
+		}
 	}
 	return nil
 }
@@ -2686,6 +2794,36 @@ type MediaGalleryItem struct {
 	// Set is every file of the publication a tile stands for, in the
 	// publication's order, so they can be looked through where the tile is.
 	Set []MediaGalleryItem `json:"set,omitempty"`
+	// Tone is the colour token the item's tile wears on its frame while its
+	// state is the first thing to read about it - an item still waiting to be
+	// let through, say. Empty leaves the frame as the consumer draws it. It
+	// is an application token, like a badge's tone: the library keeps no list.
+	Tone string `json:"tone,omitempty"`
+	// SelectActions names, by id, the actions of the gallery's selection
+	// this item may be picked for. An item that names none is not picked.
+	SelectActions []string `json:"select_actions,omitempty"`
+}
+
+// MediaGallerySelection lets several items of a gallery be picked at once and
+// says what the pick can be sent to. Each action receives the picked items in
+// the order they were picked. An item says which of the actions it may be
+// picked for (MediaGalleryItem.SelectActions); a consumer offers an action
+// while at least one picked item names it, and sends the whole pick with it.
+type MediaGallerySelection struct {
+	Actions []Action `json:"actions,omitempty"`
+	// Limit is how many items one pick holds. Zero is no limit.
+	Limit int `json:"limit,omitempty"`
+	// StartLabel opens the picking and CancelLabel leaves it with nothing
+	// sent.
+	StartLabel  string `json:"start_label,omitempty"`
+	CancelLabel string `json:"cancel_label,omitempty"`
+	// CountLabel says how many items are picked; {count} stands for the
+	// number.
+	CountLabel string `json:"count_label,omitempty"`
+	// LimitLabel is said when one more item would pass Limit.
+	LimitLabel string `json:"limit_label,omitempty"`
+	// Note is a line read with the actions: what sending the pick also does.
+	Note string `json:"note,omitempty"`
 }
 
 type MediaGalleryLabels struct {
@@ -2712,8 +2850,16 @@ type MediaGalleryLabels struct {
 	FilterHidden      string `json:"filter_hidden,omitempty"`
 	FilterVideo       string `json:"filter_video,omitempty"`
 	FilterUnpublished string `json:"filter_unpublished,omitempty"`
-	Hidden            string `json:"hidden,omitempty"`
-	HiddenHint        string `json:"hidden_hint,omitempty"`
+	// A gallery read by who sees a picture and by what it is names the two
+	// choices: by FilterVisibility over all, public, private and hidden, and
+	// by FilterType over all, photos (FilterPhoto) and videos (FilterVideo).
+	// A consumer given these reads the gallery by the two choices instead of
+	// its parts.
+	FilterVisibility string `json:"filter_visibility,omitempty"`
+	FilterType       string `json:"filter_type,omitempty"`
+	FilterPhoto      string `json:"filter_photo,omitempty"`
+	Hidden           string `json:"hidden,omitempty"`
+	HiddenHint       string `json:"hidden_hint,omitempty"`
 	// A gallery beside a profile shows the first few pictures and says how to
 	// see the rest. Without these it shows everything it was given.
 	More    string `json:"more,omitempty"`
