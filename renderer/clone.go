@@ -621,6 +621,9 @@ func cloneMediaGalleryItems(values []MediaGalleryItem) []MediaGalleryItem {
 	for i := range values {
 		out[i] = values[i]
 		out[i].AccessGranted = clonePtr(values[i].AccessGranted)
+		out[i].Crop = clonePtr(values[i].Crop)
+		out[i].FocalPoint = clonePtr(values[i].FocalPoint)
+		out[i].Set = cloneMediaGalleryItems(values[i].Set)
 		out[i].Actions = cloneActions(values[i].Actions)
 		out[i].OpenAction = cloneAction(values[i].OpenAction)
 		out[i].SelectActions = cloneSlice(values[i].SelectActions)
@@ -634,6 +637,9 @@ func cloneMediaGalleryItem(v *MediaGalleryItem) *MediaGalleryItem {
 	}
 	cp := *v
 	cp.AccessGranted = clonePtr(v.AccessGranted)
+	cp.Crop = clonePtr(v.Crop)
+	cp.FocalPoint = clonePtr(v.FocalPoint)
+	cp.Set = cloneMediaGalleryItems(v.Set)
 	cp.Actions = cloneActions(v.Actions)
 	cp.OpenAction = cloneAction(v.OpenAction)
 	cp.SelectActions = cloneSlice(v.SelectActions)

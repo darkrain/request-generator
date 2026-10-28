@@ -3945,3 +3945,13 @@ the generic renderer does not store files or choose a storage endpoint.
 The existing viewport/output validation remains in force. Localization clones
 this option without altering it. Consumers supporting the 1.0.0 baseline must
 implement this mode; omission retains the existing crop-to-file behavior.
+
+### Gallery framing metadata (1.1.0)
+
+`MediaGalleryItem` additionally carries optional `fit`, `focal_point: {x,y}` and
+`crop: {x,y,w,h}`. Coordinates are finite fractions in [0,1]; crop width/height
+must be positive and the rectangle must fit the source image (rounding tolerance
+0.0001). `fit="crop"` fills the display around the focal point; omitted `fit`
+retains the consumer's existing presentation. These optional fields preserve
+backward compatibility. Localization and cloning retain independent copies of
+all coordinate values, including nested sets. Invalid coordinates are rejected.

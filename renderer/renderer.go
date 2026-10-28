@@ -1021,6 +1021,17 @@ func validateMediaGalleryItemOpenAction(scope string, item MediaGalleryItem) err
 
 func validateMediaGalleryItems(scope string, items []MediaGalleryItem) error {
 	for index := range items {
+		item := items[index]
+		fraction := func(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) && v >= 0 && v <= 1 }
+		if p := item.FocalPoint; p != nil && (!fraction(p.X) || !fraction(p.Y)) {
+			return fmt.Errorf("renderer.Universal: %s media focal point must be normalized", scope)
+		}
+		if c := item.Crop; c != nil && (!fraction(c.X) || !fraction(c.Y) || !fraction(c.W) || !fraction(c.H) || c.W <= 0 || c.H <= 0 || c.X+c.W > 1.0001 || c.Y+c.H > 1.0001) {
+			return fmt.Errorf("renderer.Universal: %s media crop must fit the image", scope)
+		}
+		if err := validateMediaGalleryItems(scope, item.Set); err != nil {
+			return err
+		}
 		if err := validateActions(fmt.Sprintf("%s media item %q", scope, items[index].ID), items[index].Actions); err != nil {
 			return err
 		}
