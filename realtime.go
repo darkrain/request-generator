@@ -27,6 +27,9 @@ type RealtimeConfig struct {
 	Broker  RealtimeBroker
 	Path    string
 	SSEPath string
+	// ExternalDelivery routes live fanout through the broker consumer, including
+	// locally published events, preserving the broker's global ordering.
+	ExternalDelivery bool
 }
 
 type RealtimeBroker interface {
@@ -662,8 +665,33 @@ func (generator *Generator) publishRealtimeEvent(ctx context.Context, module *Ba
 	if err != nil {
 		return RealtimeEvent{}, err
 	}
-	generator.realtimeHub.publish(published)
+	if !generator.Realtime.ExternalDelivery {
+		generator.realtimeHub.publish(published)
+	}
 	return published, nil
+}
+
+// DeliverRealtime fans out an already persisted broker event without publishing
+// it back to the broker. Only a trusted internal consumer may call this method.
+// It validates the same module/action contract as local publications.
+func (generator *Generator) DeliverRealtime(event RealtimeEvent) error {
+	if !generator.Realtime.Enabled || generator.realtimeHub == nil {
+		return fmt.Errorf("realtime is not initialized")
+	}
+	if event.Type != "event" || event.EventID == "" || len(event.Topics) == 0 {
+		return fmt.Errorf("invalid persisted realtime event")
+	}
+	mod, ok := generator.moduleByName(event.Module)
+	if !ok {
+		return fmt.Errorf("unknown realtime module %q", event.Module)
+	}
+	pub := RealtimePublish{Topics: event.Topics, RecordID: event.RecordID, Correlation: event.Correlation, Payload: event.Payload}
+	if err := generator.validateRealtimePublish(mod, actions.ModuleActionName(event.Action), pub); err != nil {
+		return err
+	}
+	event.Correlation = cloneRealtimeCorrelation(event.Correlation)
+	generator.realtimeHub.publish(event)
+	return nil
 }
 
 func (generator *Generator) validateRealtimePublish(module *BaseModule, actionName actions.ModuleActionName, pub RealtimePublish) error {
