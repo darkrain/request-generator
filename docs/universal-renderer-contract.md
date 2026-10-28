@@ -3934,3 +3934,14 @@ UniversalRenderer использует только canonical typed shapes эт�
 поддерживает, и только потом producer начинает их отдавать — так же, как для
 `form_page.navigation` в «Opt-in form section tabs» («Deploy the supporting
 consumer before enabling the option in a producer»).
+
+### Non-destructive media framing (1.0.0 baseline)
+
+`MediaCropperConfig.frame` is an optional boolean (default false). With `frame=true`,
+the consumer selects a normalized rectangle in the original image and preserves
+that image rather than uploading a cut copy. The image identifier and selected
+rectangle are handled by the application's existing action/media integration;
+the generic renderer does not store files or choose a storage endpoint.
+The existing viewport/output validation remains in force. Localization clones
+this option without altering it. Consumers supporting the 1.0.0 baseline must
+implement this mode; omission retains the existing crop-to-file behavior.

@@ -1,6 +1,7 @@
 package renderer
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -91,4 +92,23 @@ func TestLocalizeFieldMediaCropperClonesAndLocalizes(t *testing.T) {
 	require.Equal(t, 512, localized.Cropper.Output.Width)
 	require.Equal(t, "Publish", localized.Item.Actions[0].Label)
 	require.Equal(t, "media.publish", source.Item.Actions[0].Label)
+}
+
+// A frame changes selection semantics, without sharing mutable cropper state.
+func TestMediaCropperFrameSurvivesLocalizationAndSerialization(t *testing.T) {
+	source := &FieldMediaConfig{Cropper: validMediaCropper()}
+	source.Cropper.Frame = true
+	localized := LocalizeFieldMedia(source, func(value, _ string) string { return value })
+	require.NoError(t, localized.Cropper.Validate())
+	require.True(t, localized.Cropper.Frame)
+	data, err := json.Marshal(localized.Cropper)
+	require.NoError(t, err)
+	require.Contains(t, string(data), `"frame":true`)
+	localized.Cropper.Frame = false
+	require.True(t, source.Cropper.Frame)
+	data, err = json.Marshal(localized.Cropper)
+	require.NoError(t, err)
+	require.NotContains(t, string(data), `"frame"`)
+	localized.Cropper.Viewport.AspectRatio = 0
+	require.Error(t, localized.Cropper.Validate())
 }
