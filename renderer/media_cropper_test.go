@@ -1,6 +1,8 @@
 package renderer
 
 import (
+	"encoding/json"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -91,4 +93,50 @@ func TestLocalizeFieldMediaCropperClonesAndLocalizes(t *testing.T) {
 	require.Equal(t, 512, localized.Cropper.Output.Width)
 	require.Equal(t, "Publish", localized.Item.Actions[0].Label)
 	require.Equal(t, "media.publish", source.Item.Actions[0].Label)
+}
+
+// A frame changes selection semantics, without sharing mutable cropper state.
+func TestMediaCropperFrameSurvivesLocalizationAndSerialization(t *testing.T) {
+	source := &FieldMediaConfig{Cropper: validMediaCropper()}
+	source.Cropper.Frame = true
+	localized := LocalizeFieldMedia(source, func(value, _ string) string { return value })
+	require.NoError(t, localized.Cropper.Validate())
+	require.True(t, localized.Cropper.Frame)
+	data, err := json.Marshal(localized.Cropper)
+	require.NoError(t, err)
+	require.Contains(t, string(data), `"frame":true`)
+	localized.Cropper.Frame = false
+	require.True(t, source.Cropper.Frame)
+	data, err = json.Marshal(localized.Cropper)
+	require.NoError(t, err)
+	require.NotContains(t, string(data), `"frame"`)
+	localized.Cropper.Viewport.AspectRatio = 0
+	require.Error(t, localized.Cropper.Validate())
+}
+
+func TestGalleryFrameContract(t *testing.T) {
+	original := &FieldMediaConfig{Item: &MediaGalleryItem{
+		Fit: "crop", Crop: &MediaCrop{X: 0.1, Y: 0.2, W: 0.5, H: 0.5}, FocalPoint: &MediaFocalPoint{X: 0.4, Y: 0.6},
+	}}
+	require.NoError(t, validateMediaGalleryItems("test", []MediaGalleryItem{*original.Item}))
+	clone := LocalizeFieldMedia(original, func(value, _ string) string { return value })
+	data, err := json.Marshal(clone.Item)
+	require.NoError(t, err)
+	require.Contains(t, string(data), `"focal_point":{"x":0.4,"y":0.6}`)
+	require.Contains(t, string(data), `"crop":{"x":0.1,"y":0.2,"w":0.5,"h":0.5}`)
+	clone.Item.Crop.X = 0.3
+	clone.Item.FocalPoint.X = 0.8
+	require.Equal(t, 0.1, original.Item.Crop.X)
+	require.Equal(t, 0.4, original.Item.FocalPoint.X)
+	for _, bad := range []MediaGalleryItem{
+		{FocalPoint: &MediaFocalPoint{X: math.NaN()}},
+		{FocalPoint: &MediaFocalPoint{Y: 1.1}},
+		{Crop: &MediaCrop{W: 0, H: 0.5}},
+		{Crop: &MediaCrop{X: 0.8, W: 0.5, H: 0.5}},
+	} {
+		require.Error(t, validateMediaGalleryItems("test", []MediaGalleryItem{bad}))
+	}
+	items := cloneMediaGalleryItems([]MediaGalleryItem{*original.Item})
+	items[0].Crop.X = 0.7
+	require.Equal(t, 0.1, original.Item.Crop.X)
 }

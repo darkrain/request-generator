@@ -1021,6 +1021,17 @@ func validateMediaGalleryItemOpenAction(scope string, item MediaGalleryItem) err
 
 func validateMediaGalleryItems(scope string, items []MediaGalleryItem) error {
 	for index := range items {
+		item := items[index]
+		fraction := func(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) && v >= 0 && v <= 1 }
+		if p := item.FocalPoint; p != nil && (!fraction(p.X) || !fraction(p.Y)) {
+			return fmt.Errorf("renderer.Universal: %s media focal point must be normalized", scope)
+		}
+		if c := item.Crop; c != nil && (!fraction(c.X) || !fraction(c.Y) || !fraction(c.W) || !fraction(c.H) || c.W <= 0 || c.H <= 0 || c.X+c.W > 1.0001 || c.Y+c.H > 1.0001) {
+			return fmt.Errorf("renderer.Universal: %s media crop must fit the image", scope)
+		}
+		if err := validateMediaGalleryItems(scope, item.Set); err != nil {
+			return err
+		}
 		if err := validateActions(fmt.Sprintf("%s media item %q", scope, items[index].ID), items[index].Actions); err != nil {
 			return err
 		}
@@ -1972,6 +1983,10 @@ type MediaCropperConfig struct {
 	Accept       string                     `json:"accept,omitempty"`
 	Viewport     MediaCropperViewportConfig `json:"viewport"`
 	Output       MediaCropperOutputConfig   `json:"output"`
+	// Frame keeps the picture whole: no file is cut. The part chosen goes
+	// with the action as the link's crop, and whoever serves the picture in
+	// that role shows that part of it. Output then says nothing.
+	Frame bool `json:"frame,omitempty"`
 }
 
 type MediaCropperViewportConfig struct {
@@ -2749,6 +2764,22 @@ type MediaPresetsConfig struct {
 	AddLabel  string `json:"add_label,omitempty"`
 }
 
+// MediaFocalPoint is a point of a picture, as fractions of its width and
+// height from the top left corner.
+type MediaFocalPoint struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+}
+
+// MediaCrop is a part of a picture, as fractions of its width and height
+// from the top left corner.
+type MediaCrop struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+	W float64 `json:"w"`
+	H float64 `json:"h"`
+}
+
 type MediaGalleryItem struct {
 	ID              string          `json:"id,omitempty"`
 	MediaID         int64           `json:"media_id,omitempty"`
@@ -2783,6 +2814,15 @@ type MediaGalleryItem struct {
 	// Cover marks the picture that stands for the whole set - a profile's
 	// cover. It is shown as the set's face and is not one of its items.
 	Cover bool `json:"cover,omitempty"`
+	// Fit and FocalPoint frame the picture the way its publication framed
+	// it: "crop" fills the frame around the focal point, as the publication
+	// shows it; empty leaves the frame to the consumer.
+	Fit        string           `json:"fit,omitempty"`
+	FocalPoint *MediaFocalPoint `json:"focal_point,omitempty"`
+	// Crop is the part of the picture its owner's avatar shows, when the
+	// picture is that avatar and was framed for it. A consumer that lets the
+	// owner frame it again starts from here.
+	Crop *MediaCrop `json:"crop,omitempty"`
 	// RemoveRefusal is said instead of removing an item that cannot go - the
 	// photo that is a person's face and cover, which is replaced, never taken
 	// away (theGHub1/api#449). Empty means the item is removed as any other.
