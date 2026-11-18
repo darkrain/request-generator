@@ -400,35 +400,17 @@ func (db *DB) List(
 		slices.Sort(keys)
 		for _, key := range keys {
 			value := filter[key]
-			parts := strings.Split(key, ".")
-			colName := key
-			tblRef := tableRef
-			if len(parts) > 1 {
-				// A dotted filter key names a joined table before the column.
-				// That table reference is pasted into SQL, so it must be a
-				// plain identifier - never an expression a caller assembled.
-				if !SafeSQLIdentifier(parts[0]) {
-					continue
-				}
-				colName = parts[1]
-				tblRef = parts[0]
-			}
-
+			// Only a key registered for the action is a filter, and its
+			// predicate always tests the declared column on the declared
+			// table. A caller-chosen table prefix ("alias.column") is never
+			// trusted: it could point the predicate at joined rows the role
+			// may not read.
 			definition, ok := filterRegistry[key]
-			if !ok {
-				// Dotted relation filters retain the existing physical-key path.
-				definition, ok = filterRegistry[colName]
-			}
 			if !ok || definition.Column == nil {
 				continue
 			}
-			// A logical filter key may point at a joined column through the typed
-			// registry. Preserve an explicitly dotted request target, otherwise
-			// qualify the predicate with the declared column table.
-			if len(parts) == 1 {
-				tblRef = columnTableRef(definition.Column, tblRef)
-			}
-			colName = definition.Column.Name()
+			tblRef := columnTableRef(definition.Column, tableRef)
+			colName := definition.Column.Name()
 			ft := definition.Type
 			fmt2 := definition.FormType
 
