@@ -248,47 +248,45 @@ func (h *realtimeHub) publish(event RealtimeEvent) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for c := range h.connections {
-		if !c.matches(event.Topics) {
+		delivered, ok := realtimeEventForRecipient(event, c.topics)
+		if !ok {
 			continue
 		}
 		select {
-		case c.send <- event:
+		case c.send <- delivered:
 		default:
 		}
 	}
 	for c := range h.sseConnections {
-		if !c.matches(event.Topics) {
+		delivered, ok := realtimeEventForRecipient(event, c.topics)
+		if !ok {
 			continue
 		}
 		select {
-		case c.send <- event:
+		case c.send <- delivered:
 		default:
 		}
 	}
 }
 
-func (c *realtimeConnection) matches(topics []string) bool {
-	if len(c.topics) == 0 {
-		return false
+// realtimeEventForRecipient is the event as one connection receives it. An
+// event addressed to several people names all their topics; a recipient is
+// told only its own, so one person's event never lists who else got it.
+func realtimeEventForRecipient(event RealtimeEvent, own map[string]struct{}) (RealtimeEvent, bool) {
+	if len(own) == 0 {
+		return event, false
 	}
-	for _, topic := range topics {
-		if _, ok := c.topics[topic]; ok {
-			return true
+	var matched []string
+	for _, topic := range event.Topics {
+		if _, ok := own[topic]; ok {
+			matched = append(matched, topic)
 		}
 	}
-	return false
-}
-
-func (c *sseConnection) matches(topics []string) bool {
-	if len(c.topics) == 0 {
-		return false
+	if len(matched) == 0 {
+		return event, false
 	}
-	for _, topic := range topics {
-		if _, ok := c.topics[topic]; ok {
-			return true
-		}
-	}
-	return false
+	event.Topics = matched
+	return event, true
 }
 
 func (generator *Generator) initRealtime() {
@@ -445,8 +443,8 @@ func (generator *Generator) handleRealtimeSSE() gin.HandlerFunc {
 				replay = "resync_required"
 			} else {
 				for _, event := range events {
-					if sc.matches(event.Topics) {
-						writeSSE(c.Writer, event.EventID, "message", event)
+					if delivered, ok := realtimeEventForRecipient(event, sc.topics); ok {
+						writeSSE(c.Writer, delivered.EventID, "message", delivered)
 					}
 				}
 			}
@@ -534,8 +532,8 @@ func (c *realtimeConnection) handleHello(generator *Generator, msg realtimeClien
 			replay = "resync_required"
 		} else {
 			for _, event := range events {
-				if c.matches(event.Topics) {
-					c.send <- event
+				if delivered, ok := realtimeEventForRecipient(event, c.topics); ok {
+					c.send <- delivered
 				}
 			}
 		}

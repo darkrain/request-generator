@@ -28,3 +28,19 @@ func TestExternalRealtimeDeliveryDoesNotEchoOrRepublish(t *testing.T) {
 	require.Error(t, g.DeliverRealtime(event))
 	require.Empty(t, subscriber.send)
 }
+
+// An event addressed to several people does not tell one recipient who the
+// others are: each connection receives only its own matching topics.
+func TestRealtimeDeliveryShowsEachRecipientOnlyItsOwnTopics(t *testing.T) {
+	hub := newRealtimeHub()
+	first := &sseConnection{send: make(chan RealtimeEvent, 1), topics: map[string]struct{}{"user:7": {}, "role:all": {}}}
+	second := &sseConnection{send: make(chan RealtimeEvent, 1), topics: map[string]struct{}{"user:8": {}}}
+	outsider := &sseConnection{send: make(chan RealtimeEvent, 1), topics: map[string]struct{}{"user:9": {}}}
+	hub.addSSE(first)
+	hub.addSSE(second)
+	hub.addSSE(outsider)
+	hub.publish(RealtimeEvent{EventID: "1", Topics: []string{"user:7", "user:8", "user:10"}})
+	require.Equal(t, []string{"user:7"}, (<-first.send).Topics)
+	require.Equal(t, []string{"user:8"}, (<-second.send).Topics)
+	require.Empty(t, outsider.send)
+}
