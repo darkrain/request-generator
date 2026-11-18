@@ -70,13 +70,11 @@ parentLoop:
 		resultFilterMap[key] = filterValue
 	}
 
-	for key, value := range data {
-		result := strings.Split(key, ".")
-		if len(result) > 1 && db.SafeSQLIdentifier(result[0]) {
-			resultFilterMap[key] = value
-		}
-	}
-
+	// Only keys of the action's typed registry reach the query. A dotted key
+	// such as "joined_alias.status" used to be copied through as is and tested
+	// a column of whatever joined alias the caller named, including joined rows
+	// the role may not read. A filter on a joined table must be declared for
+	// the action like any other filter.
 	return resultFilterMap
 }
 
