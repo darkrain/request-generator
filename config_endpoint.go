@@ -126,7 +126,7 @@ type RouteQuery struct {
 func (generator *Generator) actionConfigEndpoint() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
-		l, _ := icontext.GetLogger(ctx)
+		l := icontext.Logger(ctx)
 
 		user, ok := icontext.GetUser(ctx)
 		if !ok {
@@ -145,17 +145,17 @@ func (generator *Generator) actionConfigEndpoint() gin.HandlerFunc {
 
 		navigation, err := generator.buildNavigation(c, role, lang)
 		if err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			generator.failMessage(c, l, nil, http.StatusBadRequest, err)
 			return
 		}
 		routes, err := generator.buildRouteRegistry(c, role)
 		if err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			generator.failMessage(c, l, nil, http.StatusBadRequest, err)
 			return
 		}
 		widgets, err := generator.buildWidgets(c, role)
 		if err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			generator.failMessage(c, l, nil, http.StatusBadRequest, err)
 			return
 		}
 

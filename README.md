@@ -1187,6 +1187,22 @@ WHERE s.token = $1 AND s.expires_at > NOW()
 
 ## Middleware и порядок регистрации
 
+Логгер запроса (`icontext.LoggerContextKey`) необязателен: без него
+обработчики пишут в стандартный логгер logrus (`icontext.Logger`).
+
+### Ошибки базы данных
+
+Текст драйвера базы клиенту не отдаётся: он пишется в лог, а ответ несёт
+локализуемый текст (`generator.errors.db.conflict`, `.reference`,
+`.invalid_value`, `.required`, `.not_found`, `.internal`) и `code`. Свой текст
+для ограничения:
+
+```go
+mod.ConstraintMessages = map[string]string{
+    "users_email_key": "users.errors.email_taken", // ключ перевода
+}
+```
+
 ### Инициализация Generator
 
 ```go

@@ -3,6 +3,7 @@ package module
 import (
 	"database/sql"
 	"fmt"
+	"github.com/darkrain/request-generator/icontext"
 	"sort"
 	"strconv"
 	"strings"
@@ -191,6 +192,12 @@ func (generator *Generator) checkRequest(
 func (generator *Generator) validationErrorMessage(field fields.ModuleField, lang locale.Lang, err error) string {
 	if err == nil {
 		return ""
+	}
+	// A rule that asked the database and failed says nothing of the
+	// database to the client (darkrain/request-generator#169).
+	if classified, ok := ClassifyDBError(err); ok {
+		icontext.Logger(nil).WithField("field", field.ColumnName()).Errorln("VALIDATION DB ERR: ", classified.Err)
+		return generator.dbErrorText(lang, nil, classified)
 	}
 	message := err.Error()
 	label := strings.TrimSpace(generator.TranslateWithFallback(lang, field.Title, field.ColumnName()))

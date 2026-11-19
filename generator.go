@@ -38,6 +38,9 @@ type Generator struct {
 	AuthMiddleware       func(module actions.ModuleAction) gin.HandlerFunc
 	PermissionMiddleware func(action actions.ModuleAction, permissions []actions.Role) gin.HandlerFunc
 	Locales              []locale.Lang
+	// ConstraintMessages is BaseModule.ConstraintMessages for every module:
+	// constraint name -> translation key. A module's own entry wins.
+	ConstraintMessages   map[string]string
 	DefaultLocale        locale.Lang
 	translations         map[locale.Lang]map[string]string
 	translationResponses atomic.Value // immutable map[locale.Lang][]byte, guarded for publication by overridesMu
@@ -91,7 +94,7 @@ func (generator *Generator) getLang(c *gin.Context) locale.Lang {
 func (generator *Generator) FeaturesMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
-		l, _ := icontext.GetLogger(ctx)
+		l := icontext.Logger(ctx)
 		lang := generator.getLang(c)
 		generator.setTranslationContext(c, lang)
 
@@ -684,14 +687,14 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 		defer action.AfterRequest(c)
 
 		ctx := c.Request.Context()
-		l, _ := icontext.GetLogger(ctx)
+		l := icontext.Logger(ctx)
 		role := actions.GetRoleFromContext(c)
 		lang := generator.getLang(c)
 		generator.setTranslationContext(c, lang)
 
 		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
 			if err := hook(c); err != nil {
-				response.ErrorResponse(l, c, actions.ErrorStatus(err, http.StatusBadRequest), err.Error(), nil)
+				generator.failMessage(c, l, module, actions.ErrorStatus(err, http.StatusBadRequest), err)
 				return
 			}
 		}
@@ -703,7 +706,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 
 		err := action.BeforeRequest(c)
 		if err != nil {
-			response.ErrorResponse(l, c, actions.ErrorStatus(err, http.StatusBadRequest), err.Error(), nil)
+			generator.failMessage(c, l, module, actions.ErrorStatus(err, http.StatusBadRequest), err)
 			return
 		}
 
@@ -751,7 +754,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 		}
 		scope, status, err := generator.resolveRelationScope(c, module)
 		if err != nil {
-			response.ErrorResponse(l, c, status, err.Error(), nil)
+			generator.failMessage(c, l, module, status, err)
 			return
 		}
 		where = appendRelationScopeWhere(module, where, scope)
@@ -791,7 +794,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 		if module.ReadCTEs != nil {
 			executor, err = db.WithReadCTEs(executor, module.ReadCTEs(c))
 			if err != nil {
-				response.ErrorResponse(l, c, http.StatusInternalServerError, err.Error(), nil)
+				generator.failMessage(c, l, module, http.StatusInternalServerError, err)
 				return
 			}
 		}
@@ -813,7 +816,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 		)
 
 		if err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			generator.failMessage(c, l, module, http.StatusBadRequest, err)
 			return
 		}
 		results = generator.localizeResultList(lang, realFields, results)
@@ -837,7 +840,7 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 
 		render, err := module.RenderFor(c)
 		if err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			generator.failMessage(c, l, module, http.StatusBadRequest, err)
 			return
 		}
 		// RenderFor validates the complete producer result. Only list metadata
@@ -845,12 +848,12 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 		// recursively build unrelated modules on every list request.
 		render = renderer.Universal{List: render.List, ResourceGrid: render.ResourceGrid}
 		if err := generator.resolveListSummaryResource(c, &render, role); err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			generator.failMessage(c, l, module, http.StatusBadRequest, err)
 			return
 		}
 		render = generator.localizeOwnedRenderer(lang, render)
 		if err := validateListFilterAvailability(render.List, filter); err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			generator.failMessage(c, l, module, http.StatusBadRequest, err)
 			return
 		}
 		responseFilters := filter
@@ -908,14 +911,14 @@ func (generator *Generator) actionList(module *BaseModule, action actions.ListMo
 		} else {
 			resultJsonString, err := json.Marshal(results)
 			if err != nil {
-				response.ErrorResponse(l, c, http.StatusInternalServerError, err.Error(), nil)
+				generator.failMessage(c, l, module, http.StatusInternalServerError, err)
 				return
 			}
 
 			var d []map[string]interface{}
 			err = json.Unmarshal(resultJsonString, &d)
 			if err != nil {
-				response.ErrorResponse(l, c, http.StatusInternalServerError, err.Error(), nil)
+				generator.failMessage(c, l, module, http.StatusInternalServerError, err)
 				return
 			}
 
@@ -969,7 +972,7 @@ func activeSortResponse(sort *actions.SortOption) *actions.SortActiveResponse {
 func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModuleAction) func(c *gin.Context) {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
-		l, _ := icontext.GetLogger(ctx)
+		l := icontext.Logger(ctx)
 		role := actions.GetRoleFromContext(c)
 		lang := generator.getLang(c)
 		generator.setTranslationContext(c, lang)
@@ -978,7 +981,7 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 		if action.Mode != actions.AddModeAtomic {
 			if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
 				if err := hook(c); err != nil {
-					response.ErrorResponse(l, c, actions.ErrorStatus(err, http.StatusBadRequest), err.Error(), nil)
+					generator.failMessage(c, l, module, actions.ErrorStatus(err, http.StatusBadRequest), err)
 					return
 				}
 			}
@@ -991,9 +994,7 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 			err := action.BeforeRequest(c)
 			if err != nil {
 				if !c.Writer.Written() {
-					response.ErrorResponse(l, c, actions.ErrorStatus(err, http.StatusBadRequest), err.Error(), []string{
-						err.Error(),
-					})
+					generator.failBoth(c, l, module, actions.ErrorStatus(err, http.StatusBadRequest), err)
 				}
 				return
 			}
@@ -1017,15 +1018,15 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 		}
 		scope, status, err := generator.resolveRelationScope(c, module)
 		if err != nil {
-			response.ErrorResponse(l, c, status, GeneratorErrorAdd, []string{err.Error()})
+			generator.failErrors(c, l, module, status, GeneratorErrorAdd, err)
 			return
 		}
 		if err := rejectScopedSourceField(input, scope); err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{err.Error()})
+			generator.failErrors(c, l, module, http.StatusBadRequest, GeneratorErrorAdd, err)
 			return
 		}
 		if _, err := injectRelationScopeInput(c, input, nil, nil, module, scope); err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{err.Error()})
+			generator.failErrors(c, l, module, http.StatusBadRequest, GeneratorErrorAdd, err)
 			return
 		}
 
@@ -1069,13 +1070,13 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 		}
 		realFields, err = injectRelationScopeInput(c, input, mapInput, realFields, module, scope)
 		if err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{err.Error()})
+			generator.failErrors(c, l, module, http.StatusBadRequest, GeneratorErrorAdd, err)
 			return
 		}
 		if action.Mode == actions.AddModeAtomic {
 			atomicInput, err := atomicInputFromFields(realFields, mapInput)
 			if err != nil {
-				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{err.Error()})
+				generator.failErrors(c, l, module, http.StatusBadRequest, GeneratorErrorAdd, err)
 				return
 			}
 			rawDB := generator.db(module).RawDB()
@@ -1085,7 +1086,7 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 			}
 			tx, err := rawDB.BeginTx(ctx, nil)
 			if err != nil {
-				response.ErrorResponse(l, c, http.StatusInternalServerError, GeneratorErrorAdd, []string{err.Error()})
+				generator.failErrors(c, l, module, http.StatusInternalServerError, GeneratorErrorAdd, err)
 				return
 			}
 			committed := false
@@ -1098,7 +1099,7 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 			if err != nil {
 				if rejection, ok := actions.AsAtomicCommittedRejection(err); ok {
 					if err := tx.Commit(); err != nil {
-						response.ErrorResponse(l, c, http.StatusInternalServerError, GeneratorErrorAdd, []string{err.Error()})
+						generator.failErrors(c, l, module, http.StatusInternalServerError, GeneratorErrorAdd, err)
 						return
 					}
 					committed = true
@@ -1108,29 +1109,29 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 				// A refusal that names its status - a record not found, a plan
 				// that does not include the step - answers with it, as a
 				// refusal of a hook does; the transaction is rolled back.
-				response.ErrorResponse(l, c, actions.ErrorStatus(err, http.StatusBadRequest), err.Error(), []string{err.Error()})
+				generator.failBoth(c, l, module, actions.ErrorStatus(err, http.StatusBadRequest), err)
 				return
 			}
 			if output.PrimaryKey == "" {
 				output.PrimaryKey = module.PrimaryKey.Name()
 			}
 			if err := validateAtomicResult(action.Atomic, output); err != nil {
-				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{err.Error()})
+				generator.failErrors(c, l, module, http.StatusBadRequest, GeneratorErrorAdd, err)
 				return
 			}
 			atomicPublishes, err := atomicRealtimePublishes(action.Atomic, atomicInput, output)
 			if err != nil {
-				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{err.Error()})
+				generator.failErrors(c, l, module, http.StatusBadRequest, GeneratorErrorAdd, err)
 				return
 			}
 			if tc != nil {
 				if err := db.InsertTranslations(tx, tc, output.Value, realFields, mapInput); err != nil {
-					response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{err.Error()})
+					generator.failErrors(c, l, module, http.StatusBadRequest, GeneratorErrorAdd, err)
 					return
 				}
 			}
 			if err := tx.Commit(); err != nil {
-				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{err.Error()})
+				generator.failErrors(c, l, module, http.StatusBadRequest, GeneratorErrorAdd, err)
 				return
 			}
 			committed = true
@@ -1141,9 +1142,7 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 
 		output, err := generator.db(module).Add(l, module.Table, module.PrimaryKey, realFields, mapInput, tc)
 		if err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorAdd, []string{
-				err.Error(),
-			})
+			generator.failErrors(c, l, module, http.StatusBadRequest, GeneratorErrorAdd, err)
 			return
 		}
 
@@ -1157,13 +1156,13 @@ func (generator *Generator) actionAdd(module *BaseModule, action actions.AddModu
 func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context) {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
-		l, _ := icontext.GetLogger(ctx)
+		l := icontext.Logger(ctx)
 		lang := generator.getLang(c)
 		generator.setTranslationContext(c, lang)
 
 		err := module.Defrec.BeforeRequest(c)
 		if err != nil {
-			response.ErrorResponse(l, c, actions.ErrorStatus(err, http.StatusBadRequest), err.Error(), nil)
+			generator.failMessage(c, l, module, actions.ErrorStatus(err, http.StatusBadRequest), err)
 			return
 		}
 
@@ -1224,12 +1223,12 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 
 		render, err := module.RenderFor(c)
 		if err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			generator.failMessage(c, l, module, http.StatusBadRequest, err)
 			return
 		}
 		render = renderer.Universal{Form: render.Form}
 		if err := generator.resolveFormSectionResources(c, &render, actions.GetRoleFromContext(c)); err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			generator.failMessage(c, l, module, http.StatusBadRequest, err)
 			return
 		}
 		render = generator.localizeOwnedRenderer(lang, render)
@@ -1244,14 +1243,14 @@ func (generator *Generator) actionDefrec(module *BaseModule) func(c *gin.Context
 func (generator *Generator) actionView(module *BaseModule, action actions.ViewModuleAction) func(c *gin.Context) {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
-		l, _ := icontext.GetLogger(ctx)
+		l := icontext.Logger(ctx)
 		role := actions.GetRoleFromContext(c)
 		lang := generator.getLang(c)
 		generator.setTranslationContext(c, lang)
 
 		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
 			if err := hook(c); err != nil {
-				response.ErrorResponse(l, c, actions.ErrorStatus(err, http.StatusBadRequest), err.Error(), nil)
+				generator.failMessage(c, l, module, actions.ErrorStatus(err, http.StatusBadRequest), err)
 				return
 			}
 		}
@@ -1265,7 +1264,7 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 
 		err := action.BeforeRequest(c)
 		if err != nil {
-			response.ErrorResponse(l, c, actions.ErrorStatus(err, http.StatusBadRequest), err.Error(), nil)
+			generator.failMessage(c, l, module, actions.ErrorStatus(err, http.StatusBadRequest), err)
 			return
 		}
 
@@ -1277,9 +1276,7 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 		}
 		err = validation.In(allowedKeys...).Error(fmt.Sprintf(`allowed keys %v`, allowedKeys)).Validate(whereKey)
 		if err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorDelete, []string{
-				err.Error(),
-			})
+			generator.failErrors(c, l, module, http.StatusBadRequest, GeneratorErrorDelete, err)
 			return
 		}
 
@@ -1335,13 +1332,13 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			var err error
 			executor, err = db.WithReadCTEs(executor, module.ReadCTEs(c))
 			if err != nil {
-				response.ErrorResponse(l, c, http.StatusInternalServerError, err.Error(), nil)
+				generator.failMessage(c, l, module, http.StatusInternalServerError, err)
 				return
 			}
 		}
 		result, err := executor.View(l, module.Table, module.PrimaryKey, realFields, where, joins, tc)
 		if err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			generator.failMessage(c, l, module, http.StatusBadRequest, err)
 			return
 		}
 		result = generator.localizeResultValue(lang, realFields, result)
@@ -1399,7 +1396,7 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 
 		render, err := module.RenderFor(c)
 		if err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			generator.failMessage(c, l, module, http.StatusBadRequest, err)
 			return
 		}
 		switch pageType {
@@ -1411,7 +1408,7 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 			render = renderer.Universal{}
 		}
 		if err := generator.resolveFormSectionResources(c, &render, role); err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, err.Error(), nil)
+			generator.failMessage(c, l, module, http.StatusBadRequest, err)
 			return
 		}
 		render = generator.localizeOwnedRenderer(lang, render)
@@ -1441,7 +1438,7 @@ func (generator *Generator) actionView(module *BaseModule, action actions.ViewMo
 func (generator *Generator) actionUpdate(module *BaseModule, action actions.UpdateModuleAction) func(c *gin.Context) {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
-		l, _ := icontext.GetLogger(ctx)
+		l := icontext.Logger(ctx)
 		role := actions.GetRoleFromContext(c)
 		lang := generator.getLang(c)
 		generator.setTranslationContext(c, lang)
@@ -1451,7 +1448,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 		if action.Mode != actions.UpdateModeAtomic {
 			if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
 				if err := hook(c); err != nil {
-					response.ErrorResponse(l, c, actions.ErrorStatus(err, http.StatusBadRequest), err.Error(), nil)
+					generator.failMessage(c, l, module, actions.ErrorStatus(err, http.StatusBadRequest), err)
 					return
 				}
 			}
@@ -1464,7 +1461,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 			err = action.BeforeRequest(c)
 			if err != nil {
 				if !c.Writer.Written() {
-					response.ErrorResponse(l, c, actions.ErrorStatus(err, http.StatusBadRequest), err.Error(), []string{err.Error()})
+					generator.failBoth(c, l, module, actions.ErrorStatus(err, http.StatusBadRequest), err)
 				}
 				return
 			}
@@ -1477,9 +1474,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 		}
 		err = validation.In(allowedKeys...).Error(fmt.Sprintf(`allowed keys %v`, allowedKeys)).Validate(whereKey)
 		if err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, []string{
-				err.Error(),
-			})
+			generator.failErrors(c, l, module, http.StatusBadRequest, GeneratorErrorUpdate, err)
 			return
 		}
 
@@ -1494,7 +1489,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 		if action.Mode == actions.UpdateModeAtomic {
 			atomicSelector, err = atomicUpdateSelectorFromRoute(c, module, action.By, whereKey, whereValue)
 			if err != nil {
-				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, []string{err.Error()})
+				generator.failErrors(c, l, module, http.StatusBadRequest, GeneratorErrorUpdate, err)
 				return
 			}
 		}
@@ -1507,11 +1502,11 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 		}
 		scope, status, err := generator.resolveRelationScope(c, module)
 		if err != nil {
-			response.ErrorResponse(l, c, status, GeneratorErrorUpdate, []string{err.Error()})
+			generator.failErrors(c, l, module, status, GeneratorErrorUpdate, err)
 			return
 		}
 		if err := rejectScopedSourceField(input, scope); err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, []string{err.Error()})
+			generator.failErrors(c, l, module, http.StatusBadRequest, GeneratorErrorUpdate, err)
 			return
 		}
 
@@ -1561,7 +1556,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 		if action.Mode == actions.UpdateModeAtomic {
 			atomicInput, err := atomicInputFromFields(realFields, mapInput)
 			if err != nil {
-				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, []string{err.Error()})
+				generator.failErrors(c, l, module, http.StatusBadRequest, GeneratorErrorUpdate, err)
 				return
 			}
 			rawDB := generator.db(module).RawDB()
@@ -1571,7 +1566,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 			}
 			tx, err := rawDB.BeginTx(ctx, nil)
 			if err != nil {
-				response.ErrorResponse(l, c, http.StatusInternalServerError, GeneratorErrorUpdate, []string{err.Error()})
+				generator.failErrors(c, l, module, http.StatusInternalServerError, GeneratorErrorUpdate, err)
 				return
 			}
 			committed := false
@@ -1593,7 +1588,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 			if err != nil {
 				if rejection, ok := actions.AsAtomicCommittedRejection(err); ok {
 					if err := tx.Commit(); err != nil {
-						response.ErrorResponse(l, c, http.StatusInternalServerError, GeneratorErrorUpdate, []string{err.Error()})
+						generator.failErrors(c, l, module, http.StatusInternalServerError, GeneratorErrorUpdate, err)
 						return
 					}
 					committed = true
@@ -1603,29 +1598,29 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 				// A refusal that names its status - a record not found, a plan
 				// that does not include the step - answers with it, as a
 				// refusal of a hook does; the transaction is rolled back.
-				response.ErrorResponse(l, c, actions.ErrorStatus(err, http.StatusBadRequest), err.Error(), []string{err.Error()})
+				generator.failBoth(c, l, module, actions.ErrorStatus(err, http.StatusBadRequest), err)
 				return
 			}
 			if output.PrimaryKey == "" {
 				output.PrimaryKey = module.PrimaryKey.Name()
 			}
 			if err := validateAtomicUpdateResult(action.Atomic, output); err != nil {
-				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, []string{err.Error()})
+				generator.failErrors(c, l, module, http.StatusBadRequest, GeneratorErrorUpdate, err)
 				return
 			}
 			atomicPublishes, err := atomicUpdateRealtimePublishes(action.Atomic, atomicInput, output)
 			if err != nil {
-				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, []string{err.Error()})
+				generator.failErrors(c, l, module, http.StatusBadRequest, GeneratorErrorUpdate, err)
 				return
 			}
 			if tc != nil {
 				if err := db.UpsertTranslations(tx, tc, recordID, realFields, mapInput); err != nil {
-					response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, []string{err.Error()})
+					generator.failErrors(c, l, module, http.StatusBadRequest, GeneratorErrorUpdate, err)
 					return
 				}
 			}
 			if err := tx.Commit(); err != nil {
-				response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, []string{err.Error()})
+				generator.failErrors(c, l, module, http.StatusBadRequest, GeneratorErrorUpdate, err)
 				return
 			}
 			committed = true
@@ -1637,7 +1632,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 		_, err = generator.db(module).Update(l, module.Table, module.PrimaryKey, realFields, mapInput, where, tc)
 		if err != nil {
 			l.Errorln("UPDATE ERR: ", err)
-			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorUpdate, []string{err.Error()})
+			generator.failErrors(c, l, module, http.StatusBadRequest, GeneratorErrorUpdate, err)
 			return
 		}
 
@@ -1645,7 +1640,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 		if module.ReadCTEs != nil {
 			readExecutor, err = db.WithReadCTEs(readExecutor, module.ReadCTEs(c))
 			if err != nil {
-				response.ErrorResponse(l, c, http.StatusInternalServerError, err.Error(), nil)
+				generator.failMessage(c, l, module, http.StatusInternalServerError, err)
 				return
 			}
 		}
@@ -1699,7 +1694,7 @@ func (generator *Generator) actionUpdate(module *BaseModule, action actions.Upda
 func (generator *Generator) actionDelete(module *BaseModule, action actions.DeleteModuleAction) func(c *gin.Context) {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
-		l, _ := icontext.GetLogger(ctx)
+		l := icontext.Logger(ctx)
 		role := actions.GetRoleFromContext(c)
 		// A refusal says why in the language of the request, as every other
 		// action does (theGHub1/api#449).
@@ -1707,7 +1702,7 @@ func (generator *Generator) actionDelete(module *BaseModule, action actions.Dele
 
 		if hook := actions.ResolveRoleHook(module.RoleBeforeHook, role); hook != nil {
 			if err := hook(c); err != nil {
-				response.ErrorResponse(l, c, actions.ErrorStatus(err, http.StatusBadRequest), err.Error(), nil)
+				generator.failMessage(c, l, module, actions.ErrorStatus(err, http.StatusBadRequest), err)
 				return
 			}
 		}
@@ -1719,7 +1714,7 @@ func (generator *Generator) actionDelete(module *BaseModule, action actions.Dele
 
 		err := action.BeforeRequest(c)
 		if err != nil {
-			response.ErrorResponse(l, c, actions.ErrorStatus(err, http.StatusBadRequest), err.Error(), []string{err.Error()})
+			generator.failBoth(c, l, module, actions.ErrorStatus(err, http.StatusBadRequest), err)
 			return
 		}
 
@@ -1730,9 +1725,7 @@ func (generator *Generator) actionDelete(module *BaseModule, action actions.Dele
 		}
 		err = validation.In(allowedKeys...).Error(fmt.Sprintf(`allowed keys %v`, allowedKeys)).Validate(whereKey)
 		if err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorDelete, []string{
-				err.Error(),
-			})
+			generator.failErrors(c, l, module, http.StatusBadRequest, GeneratorErrorDelete, err)
 			return
 		}
 
@@ -1764,16 +1757,14 @@ func (generator *Generator) actionDelete(module *BaseModule, action actions.Dele
 		}
 		scope, status, err := generator.resolveRelationScope(c, module)
 		if err != nil {
-			response.ErrorResponse(l, c, status, GeneratorErrorDelete, []string{err.Error()})
+			generator.failErrors(c, l, module, status, GeneratorErrorDelete, err)
 			return
 		}
 		where = appendRelationScopeWhere(module, where, scope)
 
 		err = generator.db(module).Delete(l, module.Table, where, tc)
 		if err != nil {
-			response.ErrorResponse(l, c, http.StatusBadRequest, GeneratorErrorDelete, []string{
-				err.Error(),
-			})
+			generator.failErrors(c, l, module, http.StatusBadRequest, GeneratorErrorDelete, err)
 			return
 		}
 

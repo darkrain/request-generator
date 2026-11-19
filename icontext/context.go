@@ -38,6 +38,19 @@ func GetLogger(ctx context.Context) (*log.Entry, bool) {
 	return u, ok
 }
 
+// Logger is the request's logger, or the standard logger when the request
+// carries none. Handlers log through it on their error paths, so a request
+// without a logger middleware answers its error instead of panicking on a nil
+// entry (darkrain/request-generator#167).
+func Logger(ctx context.Context) *log.Entry {
+	if ctx != nil {
+		if l, ok := ctx.Value(LoggerContextKey).(*log.Entry); ok && l != nil && l.Logger != nil {
+			return l
+		}
+	}
+	return log.NewEntry(log.StandardLogger())
+}
+
 type UserInfo struct {
 	ID   int64
 	Role string
