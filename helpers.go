@@ -3,6 +3,7 @@ package module
 import (
 	"database/sql"
 	"fmt"
+	"github.com/darkrain/request-generator/icontext"
 	"sort"
 	"strconv"
 	"strings"
@@ -70,13 +71,11 @@ parentLoop:
 		resultFilterMap[key] = filterValue
 	}
 
-	for key, value := range data {
-		result := strings.Split(key, ".")
-		if len(result) > 1 && db.SafeSQLIdentifier(result[0]) {
-			resultFilterMap[key] = value
-		}
-	}
-
+	// Only keys of the action's typed registry reach the query. A dotted key
+	// such as "joined_alias.status" used to be copied through as is and tested
+	// a column of whatever joined alias the caller named, including joined rows
+	// the role may not read. A filter on a joined table must be declared for
+	// the action like any other filter.
 	return resultFilterMap
 }
 
@@ -193,6 +192,12 @@ func (generator *Generator) checkRequest(
 func (generator *Generator) validationErrorMessage(field fields.ModuleField, lang locale.Lang, err error) string {
 	if err == nil {
 		return ""
+	}
+	// A rule that asked the database and failed says nothing of the
+	// database to the client (darkrain/request-generator#169).
+	if classified, ok := ClassifyDBError(err); ok {
+		icontext.Logger(nil).WithField("field", field.ColumnName()).Errorln("VALIDATION DB ERR: ", classified.Err)
+		return generator.dbErrorText(lang, nil, classified)
 	}
 	message := err.Error()
 	label := strings.TrimSpace(generator.TranslateWithFallback(lang, field.Title, field.ColumnName()))

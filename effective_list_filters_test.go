@@ -93,3 +93,16 @@ func TestEffectiveListFilters_VirtualDefinitionOverridesModuleField(t *testing.T
 	normalized := generator.normalizeFilters(map[string]string{"ethnicity": "{asian,latin}"}, registry, locale.EN)
 	require.Equal(t, "{asian,latin}", normalized["ethnicity"])
 }
+
+// A dotted key naming a join alias is not a filter unless the action
+// registered exactly that key.
+func TestNormalizeFiltersDropsUnregisteredDottedKeys(t *testing.T) {
+	status := pg.StringColumn("status")
+	registry := map[string]fields.ModuleFilterField{"status": {Column: status, Type: fields.ModuleFieldTypeString}}
+	normalized := (&Generator{}).normalizeFilters(map[string]string{
+		"status":             "open",
+		"child_alias.status": "declined",
+		"child_alias.id":     "7",
+	}, registry, locale.EN)
+	require.Equal(t, map[string]string{"status": "open"}, normalized)
+}

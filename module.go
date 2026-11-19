@@ -111,6 +111,12 @@ type BaseModule struct {
 	// Modules without either discovery hook retain their runtime RenderFunc.
 	DiscoveryFunc DiscoveryFunc    `json:"-"`
 	Relations     []ModuleRelation `json:"-"`
+	// ConstraintMessages names the text a client reads when the database
+	// refuses a write by one of this module's constraints: constraint name ->
+	// translation key (for example a unique index -> "... already exists").
+	// Without one the generic text of the refusal's kind is used; the
+	// driver's own message never reaches the client.
+	ConstraintMessages map[string]string `json:"-"`
 }
 
 func (module *BaseModule) RenderFor(c *gin.Context) (renderer.Universal, error) {
