@@ -226,3 +226,13 @@ func (generator *Generator) failBoth(c *gin.Context, l *log.Entry, module *BaseM
 	status, text, code := generator.clientError(c, l, module, status, err)
 	response.ErrorResponseWithCode(l, c, status, text, []string{text}, code)
 }
+
+// Text is the client's text of a classified database error in the language
+// of the request: the translation of Key, or its English fallback.
+func (e *DBError) Text(c *gin.Context) string {
+	fallback := dbErrorFallbacks[e.Key]
+	if fallback == "" {
+		fallback = dbErrorFallbacks[DBErrorKeyInternal]
+	}
+	return Translate(c, e.Key, fallback)
+}

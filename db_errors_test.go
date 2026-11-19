@@ -265,3 +265,10 @@ func TestDBErrorWithoutContextLogger(t *testing.T) {
 		t.Fatal("Logger must never be nil")
 	}
 }
+
+func TestDBErrorTextFallsBackToEnglish(t *testing.T) {
+	classified, _ := ClassifyDBError(uniqueViolation)
+	if got := classified.Text(nil); got != dbErrorFallbacks[DBErrorKeyConflict] {
+		t.Fatalf("text = %q", got)
+	}
+}
