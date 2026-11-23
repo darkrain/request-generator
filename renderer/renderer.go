@@ -768,6 +768,9 @@ func validateFilterPills(scope string, filters *Filters) error {
 	if !filters.Presentation.Valid() {
 		return fmt.Errorf("renderer.Universal: %s filters have invalid presentation %q", scope, filters.Presentation)
 	}
+	if filters.SingleChoice && len(filters.PillRows) == 0 && len(filters.SecondaryPillRows) == 0 {
+		return fmt.Errorf("renderer.Universal: %s filters single choice requires pill rows", scope)
+	}
 	for _, row := range append(append([][]FilterPill{}, filters.PillRows...), filters.SecondaryPillRows...) {
 		for _, pill := range row {
 			if !pill.Presentation.Valid() {
@@ -1091,6 +1094,12 @@ type Filters struct {
 	// Disclosure folds every filter control under one heading, so a list whose
 	// filters are many opens on its records rather than on rows of controls.
 	Disclosure *FilterDisclosure `json:"disclosure,omitempty"`
+	// SingleChoice makes every pill of PillRows and SecondaryPillRows one
+	// choice: choosing a pill clears the filters of all other pills, choosing
+	// the active pill again returns to the pill with no key, and the pill with
+	// no key is active only while no other pill is. Without it each pill sets
+	// or clears only its own key and pills of different keys combine.
+	SingleChoice bool `json:"single_choice,omitempty"`
 }
 
 // FilterDisclosure names the heading the filters fold under and says

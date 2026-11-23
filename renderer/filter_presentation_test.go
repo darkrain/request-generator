@@ -82,3 +82,35 @@ func TestFilterPillsCanBeOfferedAsOneMenu(t *testing.T) {
 	require.NoError(t, err)
 	require.JSONEq(t, `[{"label":"All roles","presentation":"menu"},{"label":"Agencies","key":"profile_type","val":"agency","presentation":"menu"}]`, string(payload))
 }
+
+func TestFilterPillsCanBeOneChoice(t *testing.T) {
+	value := Universal{List: &ListPage{Filters: &Filters{
+		Presentation: FilterPresentationToolbar,
+		SingleChoice: true,
+		PillRows: [][]FilterPill{{
+			{Label: "All", Presentation: FilterPillPresentationTabs},
+			{Label: "Unread", Key: "read", Val: "false", Presentation: FilterPillPresentationToggle},
+			{Label: "Archived", Key: "archived", Val: "true", Presentation: FilterPillPresentationTabs},
+		}},
+	}}}
+
+	require.NoError(t, value.Validate())
+	payload, err := json.Marshal(value)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"list_page":{"filters":{"presentation":"toolbar","enabled":false,"single_choice":true,"pill_rows":[[{"label":"All","presentation":"tabs"},{"label":"Unread","key":"read","val":"false","presentation":"toggle"},{"label":"Archived","key":"archived","val":"true","presentation":"tabs"}]]}}}`, string(payload))
+
+	clone := value.Clone()
+	require.True(t, clone.List.Filters.SingleChoice)
+	localized := Localize(value, func(value, _ string) string { return value })
+	require.True(t, localized.List.Filters.SingleChoice)
+
+	combined := Filters{PillRows: value.List.Filters.PillRows}
+	payload, err = json.Marshal(combined)
+	require.NoError(t, err)
+	require.NotContains(t, string(payload), "single_choice")
+}
+
+func TestFilterSingleChoiceRequiresPills(t *testing.T) {
+	err := (Universal{List: &ListPage{Filters: &Filters{SingleChoice: true}}}).Validate()
+	require.EqualError(t, err, "renderer.Universal: list page filters single choice requires pill rows")
+}
