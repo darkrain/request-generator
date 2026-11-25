@@ -2,10 +2,13 @@ package module
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/darkrain/request-generator/locale"
 	"github.com/gin-gonic/gin"
@@ -332,6 +335,35 @@ func (g *Generator) handleLangTranslations() gin.HandlerFunc {
 			c.JSON(http.StatusNotFound, gin.H{"message": fmt.Sprintf("locale %q not found", string(key))})
 			return
 		}
+		// The dictionary is the same for every visitor and changes only when
+		// the files or an administrator's override change, so the browser
+		// keeps it and asks again with If-None-Match: an unchanged one comes
+		// back as 304 without its body (lang/ru is ~860 KB, loaded at every
+		// app start; load test 26.11, theGHub1/docs#233).
+		tag := translationTag(encoded)
+		c.Header("ETag", tag)
+		c.Header("Cache-Control", "private, no-cache")
+		if etagMatches(c.GetHeader("If-None-Match"), tag) {
+			c.Status(http.StatusNotModified)
+			return
+		}
 		c.Data(http.StatusOK, "application/json; charset=utf-8", encoded)
 	}
+}
+
+func translationTag(encoded []byte) string {
+	sum := sha256.Sum256(encoded)
+	return `"` + hex.EncodeToString(sum[:16]) + `"`
+}
+
+// etagMatches reads an If-None-Match list; a weak tag (W/) from a proxy that
+// compressed the body still names the same dictionary.
+func etagMatches(header, tag string) bool {
+	for _, part := range strings.Split(header, ",") {
+		part = strings.TrimPrefix(strings.TrimSpace(part), "W/")
+		if part == tag || part == "*" {
+			return true
+		}
+	}
+	return false
 }

@@ -128,3 +128,37 @@ func BenchmarkTranslationResponse(b *testing.B) {
 		}
 	})
 }
+
+// The browser keeps the dictionary: an unchanged one answers 304 without a
+// body, a changed one (an administrator's override) comes back in full.
+func TestTranslationsAreRevalidatedByETag(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	g := &Generator{translations: map[locale.Lang]map[string]string{locale.RU: {"a": "1"}}}
+	engine := gin.New()
+	engine.GET("/api/lang/:key", g.handleLangTranslations())
+	get := func(tag string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodGet, "/api/lang/ru", nil)
+		if tag != "" {
+			request.Header.Set("If-None-Match", tag)
+		}
+		recorder := httptest.NewRecorder()
+		engine.ServeHTTP(recorder, request)
+		return recorder
+	}
+	first := get("")
+	tag := first.Header().Get("ETag")
+	require.Equal(t, http.StatusOK, first.Code)
+	require.NotEmpty(t, tag)
+	require.Equal(t, "private, no-cache", first.Header().Get("Cache-Control"))
+
+	again := get(tag)
+	require.Equal(t, http.StatusNotModified, again.Code)
+	require.Empty(t, again.Body.Bytes())
+	require.Equal(t, http.StatusNotModified, get("W/"+tag).Code, "a weak tag from a compressing proxy")
+
+	g.SetTranslationOverrides(locale.RU, map[string]string{"a": "2"})
+	changed := get(tag)
+	require.Equal(t, http.StatusOK, changed.Code)
+	require.NotEqual(t, tag, changed.Header().Get("ETag"))
+	require.JSONEq(t, `{"a":"2"}`, changed.Body.String())
+}
