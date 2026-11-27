@@ -268,6 +268,40 @@ func arrayElementType(value string) string {
 	return "integer"
 }
 
+// numberRangeBounds parses a number-range filter value into its bounds
+// (each may be empty: an open end). Accepted forms: "a..b", "..b", "a..",
+// and the legacy "a-b", "a-" where a and b may be negative ("-10--5",
+// "-10-5"). A value that is a single number ("42", "-42", "1.5") is not a
+// range (ok false), so a negative number filters by equality; "..b" is the
+// unambiguous form of "at most b".
+func numberRangeBounds(value string) (string, string, bool) {
+	value = strings.TrimSpace(value)
+	isNum := func(s string) bool { _, err := strconv.ParseFloat(s, 64); return err == nil }
+	if isNum(value) {
+		return "", "", false
+	}
+	valid := func(lo, hi string) bool {
+		return (lo != "" || hi != "") && (lo == "" || isNum(lo)) && (hi == "" || isNum(hi))
+	}
+	if lo, hi, found := strings.Cut(value, ".."); found {
+		lo, hi = strings.TrimSpace(lo), strings.TrimSpace(hi)
+		if !valid(lo, hi) {
+			return "", "", false
+		}
+		return lo, hi, true
+	}
+	for i := 1; i < len(value); i++ {
+		if value[i] != '-' {
+			continue
+		}
+		lo, hi := strings.TrimSpace(value[:i]), strings.TrimSpace(value[i+1:])
+		if lo != "" && valid(lo, hi) {
+			return lo, hi, true
+		}
+	}
+	return "", "", false
+}
+
 func dateRangeBounds(value string) (time.Time, time.Time, bool, bool, bool) {
 	parts := strings.SplitN(value, "..", 2)
 	if len(parts) != 2 {
@@ -450,8 +484,29 @@ func (db *DB) List(
 						),
 					)
 				}
+			} else if minVal, maxVal, ok := numberRangeBounds(value); fmt2 == fields.ModuleFieldFormTypeNumber && ok {
+				// 3. Number range: "18-20", "-10--5", "18-", "..20", "-50..-10" → >= min AND <= max.
+				// A lone number, negative too ("-42"), is not a range: it falls through to equality.
+				var rangeConds []pg.BoolExpression
+				if minVal != "" {
+					ph := fmt.Sprintf("#%s_min", colName)
+					rangeConds = append(rangeConds, pg.RawBool(
+						fmt.Sprintf(`%s."%s" >= %s`, tblRef, colName, ph),
+						pg.RawArgs{ph: minVal},
+					))
+				}
+				if maxVal != "" {
+					ph := fmt.Sprintf("#%s_max", colName)
+					rangeConds = append(rangeConds, pg.RawBool(
+						fmt.Sprintf(`%s."%s" <= %s`, tblRef, colName, ph),
+						pg.RawArgs{ph: maxVal},
+					))
+				}
+				if len(rangeConds) > 0 {
+					conditions = append(conditions, pg.AND(rangeConds...))
+				}
 			} else if strings.Contains(value, "..") {
-				// 3. Date/datetime range: "2026-06-01..2026-06-29" → >= start AND < next day
+				// 4. Date/datetime range: "2026-06-01..2026-06-29" → >= start AND < next day
 				from, to, hasFrom, hasTo, ok := dateRangeBounds(value)
 				if !ok {
 					continue
@@ -469,29 +524,6 @@ func (db *DB) List(
 					rangeConds = append(rangeConds, pg.RawBool(
 						fmt.Sprintf(`%s."%s" < %s`, tblRef, colName, ph),
 						pg.RawArgs{ph: to},
-					))
-				}
-				if len(rangeConds) > 0 {
-					conditions = append(conditions, pg.AND(rangeConds...))
-				}
-			} else if fmt2 == fields.ModuleFieldFormTypeNumber && strings.Contains(value, "-") {
-				// 4. Number range: "18-20" → >= 18 AND <= 20
-				rangeParts := strings.SplitN(value, "-", 2)
-				minVal := strings.TrimSpace(rangeParts[0])
-				maxVal := strings.TrimSpace(rangeParts[1])
-				var rangeConds []pg.BoolExpression
-				if minVal != "" {
-					ph := fmt.Sprintf("#%s_min", colName)
-					rangeConds = append(rangeConds, pg.RawBool(
-						fmt.Sprintf(`%s."%s" >= %s`, tblRef, colName, ph),
-						pg.RawArgs{ph: minVal},
-					))
-				}
-				if maxVal != "" {
-					ph := fmt.Sprintf("#%s_max", colName)
-					rangeConds = append(rangeConds, pg.RawBool(
-						fmt.Sprintf(`%s."%s" <= %s`, tblRef, colName, ph),
-						pg.RawArgs{ph: maxVal},
 					))
 				}
 				if len(rangeConds) > 0 {
